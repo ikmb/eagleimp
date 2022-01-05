@@ -1,0 +1,568 @@
+#!/bin/bash
+#
+#    Copyright (C) 2018-2021 by Lars Wienbrandt,
+#    Institute of Clinical Molecular Biology, Kiel University
+#
+#    This file is part of EagleImp.
+#
+#    EagleImp is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    EagleImp is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with EagleImp. If not, see <https://www.gnu.org/licenses/>.
+#
+
+# Please configure the following variables to your needs.
+# For the reference and genetic map templates use ## as placeholder for
+# chromosome number.
+# When executing the script, provide target folder as first argument
+# and additional options for EagleImp afterwards.
+
+# template for your .qref reference files
+# (choose ## as placeholder for the chromosome number)
+REFERENCE=/to/be/configured/eg/chr##.haplotypes.qref
+
+# template for your genetic maps
+# (choose ## as placeholder for the chromosome number)
+GENMAP=/to/be/configured/eg/genetic_map_hg19_chr##.txt
+
+# provide "1" if your build is GRCh37/hg19 or "0" if your build is GRCh38/hg38
+HG19FLAG=1
+
+# path to where the output should appear
+# (if you choose a relative path, this is relative to your target directory)
+OUTPUTPATH=output
+
+# path to where status files should appear
+# (if you choose a relative path, this is relative to your output directory,
+#  leave empty if the status files should appear in your output dir)
+STATDIR=
+
+# additional options provided to EagleImp. Leave empty if you don't
+# need them or if you always want to provide them via the command line.
+STDARGS="--excludeMultiAllRef"
+
+# path to your EagleImp executable. If it is in your $PATH variable,
+# you just need to state "EagleImp"
+EAGLEIMP=EagleImp
+
+# path to bcftools executable. Just state "bcftools" if it's in your $PATH
+BCFTOOLS=bcftools
+
+# path to gawk executable. Just state "gawk" if it's in your $PATH
+GAWK=gawk
+
+# this is the path where you cloned the repository to
+# (an .awk file should be located there)
+REPOPATH=/path/to/your/repository/EagleImp
+
+# state the available RAM memory of your computing machine in GB
+AVMEM=16
+
+# state the available number of system threads of your computing machine
+AVTHR=8
+
+# you can provide a directory for (very small) temporary files, most people
+# may leave this as is
+TMPDIR=/tmp
+
+###
+### Please do not edit below here.
+###
+
+if [[ $# -lt 1 || ! -d $1 ]]; then
+  echo "Please provide target directory as first argument."
+  echo "Usage: $0 <targetdir> [<additional EagleImp options> ...]"
+  exit 1
+fi
+
+# first argument is the target folder
+TARGETPATH="$1"
+
+# set status file path (if not absolute, it's relative to output path)
+if [[ $STATDIR == /* ]]; then
+  STATPATH="$STATDIR"
+else
+  STATPATH="${OUTPUTPATH%/}/$STATDIR"
+fi
+
+# awk script for summary extraction
+SUMMARYAWK="${REPOPATH%/}/extract_summary.awk"
+
+# determine according to system specifications:
+# NPAR: number of parallel running analyses dividing up the CPU ressources
+# NWORK: number of workers that are started concurrently but have to share parts of the CPU
+if (( $AVTHR <= 8 )); then
+  NPAR=1
+elif (( $AVTHR <= 16 )); then
+  NPAR=2
+else
+  NPAR=4
+fi
+NWORK=$(( 2*$NPAR ))
+
+# first argument is target folder (already read), so consume this argument
+shift
+
+# add standard args and prvided args to global args
+GLOBARGS="$STDARGS $@"
+
+# parse job folder and run each file seperately
+# only choose .vcf.gz or .bcf
+# check if .csi or .tbi is present, if not create .csi
+
+# switch to job folder
+cd "$TARGETPATH"
+if [[ $? != 0 ]]; then
+  echo "Target path not found."
+  exit 1
+fi
+
+# check if output folder exists, if not, create it
+if [[ ! -d $OUTPUTPATH ]]; then
+  mkdir $OUTPUTPATH
+  if [[ $? != 0 ]]; then
+    echo "Could not create or find output path."
+    exit 1
+  fi
+fi
+
+# check if stat folder existst, if not, create it
+if [[ ! -d $STATPATH ]]; then
+  mkdir $STATPATH
+  if [[ $? != 0 ]]; then
+    echo "Could not create or find status path."
+    exit 1
+  fi
+fi
+
+# start time stamp
+START=$(date +%s)
+
+# check/create index, scan for (chr)X or (chr)23 and split if necessary
+FILECOUNT=0
+SPLITX=
+for FILE in $(ls -v -d *)
+do
+    # continue only if filename is .bcf or .vcf.gz
+    if [[ $FILE == *.bcf || $FILE == *.vcf.gz ]]
+    then
+      # base file name
+      FILEBASE="${FILE##*/}"
+      # per convention the chromosome has to be encoded at the beginning of the file name before the first dot
+      # it may be named with or without leading "chr". we cut this off anyway.
+      CHR="${FILEBASE%%.*}"
+      STUB="${FILEBASE#*.}"
+
+      # stat file
+      STAT="$STATPATH/$FILEBASE.stat"
+
+      # check if the index file exists. if not, create it.
+      if [[ ! -s "$FILE.csi" && ! -s "$FILE.tbi" ]]
+      then
+        # create index file
+        echo "0,Creating index" > "$STAT"
+        chmod 644 "$STAT"
+        $BCFTOOLS index -m15 $FILE --threads $AVTHR
+      fi
+      echo "0,Indexed" > "$STAT"
+
+      if [[ ${CHR#chr} == 23 || ${CHR#chr} == X ]]; then
+      	# need to split chr23 in PAR/nonPAR regions
+      	# pre-processing ensures that this part is called only once
+	SPLITX="$FILE"
+	if [[ HG19FLAG -eq 1 ]]; then
+	    REGPAR1="1-2699520"
+	    REGNONPAR="2699521-154931043"
+	    REGPAR2="154931044-"
+	else
+	    REGPAR1="1-2781479"
+	    REGNONPAR="2781480-155701382"
+	    REGPAR2="155701383-"
+	fi
+	if [[ $FILE == *.bcf ]]; then
+	    FMT=b
+	else
+	    FMT=z
+	fi
+	PARSTAT="$STATPATH/$CHR"_PAR1."$STUB".stat
+	echo "0,Split PAR regions" > "$STAT"
+	echo "0,Creating index" > "$PARSTAT"
+	$BCFTOOLS view $FILE -r "23:$REGPAR1,chr23:$REGPAR1,X:$REGPAR1,chrX:$REGPAR1" -O$FMT -o "$CHR"_PAR1."$STUB"
+	$BCFTOOLS index -m15 "$CHR"_PAR1."$STUB"
+	echo "0,Indexed" > "$PARSTAT"
+	PARSTAT="$STATPATH/$CHR"_nonPAR."$STUB".stat
+	echo "0,Creating index" > "$PARSTAT"
+	$BCFTOOLS view $FILE -r "23:$REGNONPAR,chr23:$REGNONPAR,X:$REGNONPAR,chrX:$REGNONPAR" -O$FMT -o "$CHR"_nonPAR."$STUB"
+	$BCFTOOLS index -m15 "$CHR"_nonPAR."$STUB"
+	echo "0,Indexed" > "$PARSTAT"
+	PARSTAT="$STATPATH/$CHR"_PAR2."$STUB".stat
+	echo "0,Creating index" > "$PARSTAT"
+	$BCFTOOLS view $FILE -r "23:$REGPAR2,chr23:$REGPAR2,X:$REGPAR2,chrX:$REGPAR2" -O$FMT -o "$CHR"_PAR2."$STUB"
+	$BCFTOOLS index -m15 "$CHR"_PAR2."$STUB"
+	echo "0,Indexed" > "$PARSTAT"
+	echo "0,Finished split PAR regions" > "$STAT"
+	# this disables the original file from further analysis
+	mv "$FILE" "$FILE".disabled
+      fi
+      FILECOUNT=$(($FILECOUNT+1))
+    fi
+done
+# correct NWORK and NPAR to better distribute system ressources according to really analyzed files
+if (( $NWORK > $FILECOUNT )); then
+  NWORK=$FILECOUNT
+fi
+if (( $NPAR > $FILECOUNT )); then
+  NPAR=$FILECOUNT
+fi
+
+# create FIFO and CPU-lock files
+FIFO=$(mktemp -u -p $TMPDIR launch_eagleimp.queue.XXXXXX)
+mkfifo $FIFO
+LOCK=$(mktemp -p $TMPDIR launch_eagleimp.lock.XXXXXX)
+CPULOCK=$(mktemp -u -p $TMPDIR launch_eagleimp.cpulock.XXXXXX)
+
+# function to kill subprocesses
+subkill() {
+  for P in $@; do
+#    echo "killing PID $P"
+    kill -TERM $P
+  done
+  rm $FIFO
+  rm $LOCK
+  rm -f $CPULOCK.*
+  exit 1
+}
+
+# catch SIGTERM to kill subprocesses
+trap 'subkill ${workerpids[@]}' SIGTERM
+
+# worker function
+work() {
+  MYID=$1
+  # catch SIGTERM to kill EagleImp process
+  trap 'if [[ -n $hpid ]]; then kill -TERM $hpid; fi; exit 1' SIGTERM
+  exec 3<$FIFO
+  exec 4<$LOCK
+  while true; do
+    flock 4
+    read -u 3 FILE LOG STAT ARGS
+    rdstat=$?
+    if [[ $rdstat == 0 ]]; then
+      sleep 1 # to prevent other workers from exiting too early
+      COMMAND="$EAGLEIMP $ARGS --stat $STAT --lockfile $CPULOCK.$(( ($MYID-1)%$NPAR ))"
+      echo "Executing $COMMAND > $LOG 2>&1"
+      flock -u 4 # unlock (other readers may read FIFO now)
+      # Execute
+      $COMMAND > $LOG 2>&1 &
+      hpid=$!
+      wait $hpid
+      status=$?
+      unset hpid
+      if [[ $status -ne 0 ]]; then
+          echo "$FILE failed with status $status!"
+          # when status is 1, the stat-file should have been updated by the tool already
+          if [[ $status -ne 1 ]]; then
+              echo "0,Failed" > $STAT
+          fi
+      fi
+    else # empty or error
+      flock -u 4 # immediate unlock
+      break
+    fi
+  done
+  exec 3<&-
+  exec 4<&-
+}
+
+# launch workers
+for (( I=1; I<=$NWORK; I++ )); do
+  work $I &
+  workerpids[$I]=$!
+done
+
+# process all .bcf and .vcf.gz files:
+NORUNSFLAG=1
+for FILE in $(ls -v -d *)
+do
+    # continue only if filename is .bcf or .vcf.gz
+    if [[ $FILE == *.bcf || $FILE == *.vcf.gz ]]
+    then
+      # base file name
+      FILEBASE="${FILE##*/}"
+      # per convention the chromosome has to be encoded at the beginning of the file name before the first dot
+      # it may be named with or without leading "chr". we cut this off anyway.
+      CHR="${FILEBASE%%.*}"
+      CHR="${CHR#chr}"
+
+      # add target file
+      currargs="--target $FILE"
+
+      # add genetic map
+      GMAP="${GENMAP//\#\#/$CHR}"
+      if [[ ! -e $GMAP ]]; then
+        # if chromosome is 23 or X, try 23 without trailing PAR/nonPAR, then X without trailing PAR/nonPAR
+        CHRPRE=${CHR%%_*}
+        if [[ $CHRPRE == "23" || $CHRPRE == "X" ]]; then
+          GMAP="${GENMAP//\#\#/23}"
+          if [[ ! -e $GMAP ]]; then
+            GMAP="${GENMAP//\#\#/X}"
+          fi
+        fi
+        # if the map is still not available, it could be Y which is ok, otherwise let the tool crash...
+      fi
+      currargs="$currargs --geneticMap $GMAP"
+
+      # add reference
+      QREF="${REFERENCE//\#\#/$CHR}"
+      if [[ ! -e $QREF ]]; then
+        CHRPRE=${CHR%%_*}
+        CHRSUF=${CHR#*_}
+        # if chromosome is 23* try X*
+        if [[ $CHRPRE == "23" ]]; then
+          QREF="${REFERENCE//\#\#/X_$CHRSUF}"
+          # if there is no suffix or the suffix is nonPAR, try X alone
+          if [[ ! -e $QREF ]]; then
+            if [[ $CHRSUF == "nonPAR" || -z $CHRSUF ]]; then
+              QREF="${REFERENCE//\#\#/X}"
+            fi
+          fi
+        # else if chromosome is X* try 23*
+        elif [[ $CHRPRE == "X" ]]; then
+          QREF="${REFERENCE//\#\#/23_$CHRSUF}"
+          # if there is no suffix or the suffix is nonPAR, try 23 alone
+          if [[ ! -e $QREF ]]; then
+            if [[ $CHRSUF == "nonPAR" || -z $CHRSUF ]]; then
+              QREF="${REFERENCE//\#\#/23}"
+            fi
+          fi
+        # else if chromosome is 24 try Y
+        elif [[ $CHRPRE == "24" ]]; then
+          QREF="${REFERENCE//\#\#/Y}"
+        # else if chromosome is Y try 24
+        elif [[ $CHRPRE == "Y" ]]; then
+          QREF="${REFERENCE//\#\#/24}"
+        fi
+        # if the Qref is still not available, the tool will exit below.
+      fi
+      currargs="$currargs --ref $QREF"
+
+      # check file extension and set output format accordingly
+      if [[ $FILEBASE == *.bcf ]]; then
+          currargs="$currargs --vcfOutFormat b"
+          FILECUT="${FILEBASE%.bcf}"
+      else
+          currargs="$currargs --vcfOutFormat z"
+          FILECUT="${FILEBASE%.vcf.gz}"
+      fi
+
+      # add output prefix
+      currargs="$currargs -o $OUTPUTPATH/$FILECUT"
+
+      # add global args, num threads and max mem
+      currargs="$currargs $GLOBARGS -t $(( $AVTHR/$NPAR )) --maxChunkMem $(( $AVMEM/$NWORK ))"
+
+      # activate stat file
+      STAT="$STATPATH/$FILEBASE.stat"
+
+      # run EagleImp
+      LOG="$OUTPUTPATH/$FILECUT.log"
+      # ... but skip if no reference file is available
+      if [[ ! -e $QREF ]]; then
+          echo "WARNING: Analysis skipped: No reference available for this chromosome." > "$LOG"
+          echo "<h3>WARNING:</h3>" > "$STAT.warning"
+          echo "<ul><li><b>Analysis skipped:</b> No reference available for this chromosome.</li></ul>" >> "$STAT.warning"
+          echo "1,Skipped" > "$STAT"
+          continue
+      fi
+      # ... and skip if there are no variants in the input target
+      if [[ $($BCFTOOLS index -n $FILE) -eq 0 ]]; then
+          echo "WARNING: Analysis skipped: No variants in target." > "$LOG"
+          echo "<h3>WARNING:</h3>" > "$STAT.warning"
+          echo "<ul><li><b>Analysis skipped:</b> No variants in target.</li></ul>" >> "$STAT.warning"
+          echo "1,Skipped" > "$STAT"
+          continue
+      fi
+
+      # insert into queue to execute
+      echo "$FILE" "$LOG" "$STAT" "$currargs" > "$FIFO"
+      # this flag is reset if at least one run was inserted into queue
+      NORUNSFLAG=0
+
+    fi
+done
+if [[ $NORUNSFLAG == 1 ]]; then
+  # no runs could be performed, kill workers
+  subkill ${workerpids[@]}
+else
+  wait
+fi
+
+# build summary.info:
+# we add only those files to the summary that have not failed with an error
+# (i.e. where no error file is present)
+unset SUMMARYFILES
+for FILE in $(ls -v "$STATPATH"/*.info)
+do
+    if [[ ! -f ${FILE%.info}.error ]]; then
+        SUMMARYFILES+=("$FILE")
+    fi
+done
+# generate summary only if at least one file was successfully analyzed
+if [[ ${#SUMMARYFILES[@]} -gt 0 ]]; then
+    $GAWK -f $SUMMARYAWK ${SUMMARYFILES[@]} > $STATPATH/summary.info
+fi
+
+# if we had to split chromosome X, we are merging the results back now
+if [[ -n "$SPLITX" ]]; then
+    CHR="${SPLITX%%.*}"
+    STUB=".""${SPLITX#*.}"
+    STAT="$STATPATH/$SPLITX.stat"
+    if [[ $SPLITX == *.bcf ]]; then
+    	FMT=b
+    	SUFF=bcf
+    	STUB=${STUB%bcf}
+    else
+	FMT=z
+	SUFF=vcf.gz
+	STUB=${STUB%vcf.gz}
+    fi
+    ERRCNT=0
+
+    # disable split files
+    for F in "$CHR"_*."$SUFF"; do
+        mv $F $F.disabled
+    done
+
+    # enable original file again
+    mv "$SPLITX.disabled" "$SPLITX"
+
+    # merge .varinfo files
+    echo "0,Concatenating PAR regions" > "$STAT"
+    INFOOUT="$OUTPUTPATH/$CHR""$STUB"varinfo
+    INFOINIT=0
+    TMP="$OUTPUTPATH/$CHR"_PAR1"$STUB"varinfo
+    if [[ -f $TMP ]]; then
+    	INFOINIT=1
+    	mv "$TMP" "$INFOOUT"
+    fi
+    TMP="$OUTPUTPATH/$CHR"_nonPAR"$STUB"varinfo
+    if [[ -f $TMP ]]; then
+        if [[ $INFOINIT -eq 1 ]]; then
+            tail -n +2 "$TMP" >> "$INFOOUT"
+            rm "$TMP"
+        else
+            INFOINIT=1
+	    mv "$TMP" "$INFOOUT"
+	fi
+    fi
+    TMP="$OUTPUTPATH/$CHR"_PAR2"$STUB"varinfo
+    if [[ -f $TMP ]]; then
+        if [[ $INFOINIT -eq 1 ]]; then
+            tail -n +2 "$TMP" >> "$INFOOUT"
+            rm "$TMP"
+        else
+            INFOINIT=1
+	    mv "$TMP" "$INFOOUT"
+	fi
+    fi
+
+    # merge .log files
+    LOGOUT="$OUTPUTPATH/$CHR""$STUB"log
+    rm -f "$LOGOUT" # just to ensure an empty file
+    for PART in PAR1 nonPAR PAR2; do
+        TMP="$OUTPUTPATH/$CHR"_"$PART""$STUB"log
+        if [[ -f $TMP ]]; then
+            echo "$CHR"_"$PART""$STUB"log":" >> "$LOGOUT"
+    	    cat "$TMP" >> "$LOGOUT"
+    	    echo >> "$LOGOUT"
+    	    rm "$TMP"
+        fi
+    done
+
+    # merge confidence files
+    CONFOUT="$OUTPUTPATH/$CHR""$STUB"phased.confidences
+    rm -f "$CONFOUT" # just to ensure an empty file
+    for PART in PAR1 nonPAR PAR2; do
+        TMP="$OUTPUTPATH/$CHR"_"$PART""$STUB"phased.confidences
+        if [[ -f $TMP ]]; then
+            echo "$CHR"_"$PART""$STUB"phased.confidences":" >> "$CONFOUT"
+    	    cat "$TMP" >> "$CONFOUT"
+    	    echo >> "$CONFOUT"
+    	    rm "$TMP"
+        fi
+    done
+
+    # merge stat.info/.warning/.error files
+    for IWE in info warning error; do
+        rm -rf $STAT.$IWE
+        for PART in PAR1 nonPAR PAR2; do
+            TMP="$STATPATH/$CHR"_"$PART$STUB$SUFF".stat.$IWE
+            if [[ -f $TMP ]]; then
+                echo "<h4>$CHR"_"$PART$STUB$SUFF:</h4>" >> $STAT.$IWE
+                cat "$TMP" >> $STAT.$IWE
+                if [[ $IWE == "error" ]]; then
+                    ERRCNT=$(( $ERRCNT + 1 ))
+                fi
+                rm "$TMP"
+            fi
+        done
+    done
+
+    # merge imputation and phasing results
+    echo "0.2,Concatenating PAR regions" > "$STAT"
+    HAVEFILES=0
+    for TYPE in phased imputed; do
+    	FILEPAR1=
+    	FILENONPAR=
+    	FILEPAR2=
+    	TMP="$OUTPUTPATH/$CHR"_PAR1"$STUB""$TYPE"."$SUFF"
+    	if [[ -f $TMP ]]; then
+      	    FILEPAR1="$TMP"
+    	fi
+    	TMP="$OUTPUTPATH/$CHR"_nonPAR"$STUB""$TYPE"."$SUFF"
+    	if [[ -f $TMP ]]; then
+      	    FILENONPAR="$TMP"
+    	fi
+    	TMP="$OUTPUTPATH/$CHR"_PAR2"$STUB""$TYPE"."$SUFF"
+    	if [[ -f $TMP ]]; then
+            FILEPAR2="$TMP"
+    	fi
+    	if [[ -f $FILEPAR1 || -f $FILENONPAR || -f $FILEPAR2 ]]; then
+    	    echo "--------------------------------------------------------" >> "$LOGOUT"
+    	    echo "Concatenating $TYPE output..." >> "$LOGOUT"
+    	    $BCFTOOLS concat $FILEPAR1 $FILENONPAR $FILEPAR2 -n -o "$OUTPUTPATH/$CHR""$STUB""$TYPE"."$SUFF" >> "$LOGOUT" 2>&1
+    	    HAVEFILES=1
+    	    rm -f "$FILEPAR1" "$FILENONPAR" "$FILEPAR2"
+    	fi
+    done
+
+    if [[ $ERRCNT -eq 0 && $HAVEFILES -eq 1 ]]; then
+        # no errors and merged at least one file
+        echo "1,Finished" > "$STAT"
+    elif [[ $ERRCNT -eq 0 && $HAVEFILES -eq 0 ]]; then
+        # no errors, but also no files merged -> must have skipped everything
+        echo "1,Skipped" > "$STAT"
+    elif [[ $HAVEFILES -eq 0 ]]; then
+        # no files and at least one error
+        echo "1,Failed" > "$STAT"
+    else
+        # merged at least one file, but also have at least one error
+        echo "1,Partially failed" > "$STAT"
+    fi
+fi
+
+# end time stamp
+END=$(date +%s)
+echo $(($END-$START)) > "$STATPATH"/runtime
+
+rm $FIFO
+rm $LOCK
+rm -f $CPULOCK.*
