@@ -5,13 +5,14 @@ EagleImp combines genotype phasing and imputation in a single tool. The algorith
 EagleImp also adds support for FPGA-based accelerated phasing if you have an Alpha Data ADM-PCIE-8K5 FPGA accelerator card available. The release of the FPGA part is in preparation. Please contact us if you want to use EagleImp with FPGA acceleration.
 
 ### Prerequisites
-EagleImp has been tested on an Ubuntu 21.04 Linux system, but should also work on similar distributions.
+EagleImp has been tested first on an Ubuntu 21.04 Linux system, but should also work on similar (especially later) distributions.
 Compilation depends on the *development* files of several system libraries, in particular **OpenMP**, **zlib**, **BOOST** (filesystem and program_options), **TBB** and others.
 On Ubuntu, most dependencies can already be resolved by the following installation:
 ```
 $ sudo apt install zlib1g-dev libboost-dev libboost-filesystem-dev libboost-program-options-dev libtbb-dev
 ```
-It also depends on the installation of **HTSlib** to read and write VCF files (<https://github.com/samtools/htslib>).
+It also depends on the installation of **HTSlib** to read and write VCF files (<https://github.com/samtools/htslib>). Please follow the instructions listed in the file **INSTALL** there to install **HTSlib**.
+
 If you want to take advantage of our automation script `launch_eagleimp` for simultaneous analysis of multiple input files, including automated chromosome X splitting into pseudo-autosomal regions (PARs), you need to have *GNU Awk* (**gawk**, included in most Linux distributions) or similar and **bcftools** installed as well (<https://github.com/samtools/bcftools>).
 You also need the basic tools for compiling C++ code, i.e. the **build-essential** package and a recent *GCC* (**g++**).
 Since EagleImp is a **CMake** project, you must have the **cmake** package installed:
