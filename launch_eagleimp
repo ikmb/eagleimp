@@ -50,8 +50,8 @@ STATDIR=
 STDARGS="--excludeMultiAllRef"
 
 # path to your EagleImp executable. If it is in your $PATH variable,
-# you just need to state "EagleImp"
-EAGLEIMP=EagleImp
+# you just need to state "eagleimp"
+EAGLEIMP=eagleimp
 
 # path to bcftools executable. Just state "bcftools" if it's in your $PATH
 BCFTOOLS=bcftools
@@ -61,7 +61,7 @@ GAWK=gawk
 
 # this is the path where you cloned the repository to
 # (an .awk file should be located there)
-REPOPATH=/path/to/your/repository/EagleImp
+REPOPATH=/path/to/your/repository/eagleimp
 
 # state the available RAM memory of your computing machine in GB
 AVMEM=16
@@ -79,7 +79,7 @@ TMPDIR=/tmp
 
 if [[ $# -lt 1 || ! -d $1 ]]; then
   echo "Please provide target directory as first argument."
-  echo "Usage: $0 <targetdir> [<additional EagleImp options> ...]"
+  echo "Usage: $0 <targetdir> [<additional eagleimp options> ...]"
   exit 1
 fi
 
@@ -247,7 +247,7 @@ trap 'subkill ${workerpids[@]}' SIGTERM
 # worker function
 work() {
   MYID=$1
-  # catch SIGTERM to kill EagleImp process
+  # catch SIGTERM to kill eagleimp process
   trap 'if [[ -n $hpid ]]; then kill -TERM $hpid; fi; exit 1' SIGTERM
   exec 3<$FIFO
   exec 4<$LOCK
@@ -372,7 +372,7 @@ do
       # activate stat file
       STAT="$STATPATH/$FILEBASE.stat"
 
-      # run EagleImp
+      # run eagleimp
       LOG="$OUTPUTPATH/$FILECUT.log"
       # ... but skip if no reference file is available
       if [[ ! -e $QREF ]]; then
