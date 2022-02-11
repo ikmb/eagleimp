@@ -206,13 +206,14 @@ void FPGA::unlock() {
 //    std::string lockfile = getLockDirectory() + "/" + getLockFileName();
 //    if(unlink(lockfile.c_str()) == -1)
 //        std::cerr << "Could not unlink lockfile " << lockfile << std::endl;
-    int ftr = ftruncate(lockfd, 0); // clear the contents of the lockfile
-    if (ftr != 0)
-        std::cerr << "WARNING! Release FPGA lock returned status " << ftr << "." << std::endl;
-    close(lockfd);
-    locked = false;
-    lockfd = 0;
-    locked = false;
+    if (locked) {
+        int ftr = ftruncate(lockfd, 0); // clear the contents of the lockfile
+        if (ftr != 0)
+            std::cerr << "WARNING! Release FPGA lock returned status " << ftr << "." << std::endl;
+        close(lockfd);
+        lockfd = 0;
+        locked = false;
+    }
 }
 
 #ifdef USE_AD_FPGA
@@ -295,7 +296,7 @@ FPGA::FPGA(int bus_, int slot_)
 
 void FPGA::reset(bool force) {
     if(!locked)
-        throw std::runtime_error("This operation requires an FPGA lock");
+        throw std::runtime_error("reset: This operation requires an FPGA lock");
 
     // check status if a reset is necessary
     createThreadHandle();
@@ -411,9 +412,7 @@ FPGA::~FPGA() {
         }
     }
 
-    if(locked) {
-        unlock();
-    }
+    unlock();
 #endif
 }
 
@@ -529,7 +528,7 @@ void FPGA::unlockBuffer(BufferHandle bufferHandle) {
 FPGA::Result FPGA::writeDMA(const FPGABuffer &buffer, unsigned channel, std::chrono::milliseconds timeout, size_t size) {
 #ifdef USE_AD_FPGA
     if(!locked)
-        throw std::runtime_error("This operation requires an FPGA lock");
+        throw std::runtime_error("writeDMA: This operation requires an FPGA lock");
 
     Result ret = Result::Success;
 
@@ -686,7 +685,7 @@ void FPGA::cancel(unsigned channel) {
 FPGA::Result FPGA::readDMA(FPGABuffer &buffer, unsigned channel, std::chrono::milliseconds timeout) {
 #ifdef USE_AD_FPGA
     if(!locked)
-        throw std::runtime_error("This operation requires an FPGA lock");
+        throw std::runtime_error("readDMA: This operation requires an FPGA lock");
 
     Result ret = Result::Success;
 

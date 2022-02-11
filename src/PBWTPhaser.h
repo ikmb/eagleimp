@@ -55,6 +55,8 @@ public:
         size_t ncalls;
     };
 
+    static atomic<bool> terminate;
+
     PBWTPhaser(hybridsys::Hybridsys &hysys, VCFData &vcfdata, unsigned numthreads,
             size_t Karg, uint32_t iters, fp_type expectIBDcM,
             fp_type hist, fp_type pErr, fp_type pLimit, bool impMissing,

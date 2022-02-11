@@ -49,7 +49,8 @@ public:
     {}
 
     ~ThreadPool() {
-        terminate(false);
+        setTerminationRequest(true);
+        waitForTermination();
     }
 
     void run() {
@@ -58,15 +59,16 @@ public:
         }
     }
 
-    void terminate(bool drainInqueue = true) {
-        // wait until the inqueue is drained
-        while(drainInqueue && (-static_cast<int>(inqueue.size()) != static_cast<int>(threads.size()))) {
-            std::this_thread::yield();
-        }
-
+    // set the indicator for a termination request.
+    // if inqueue_abort is set, abort the inqueue as well.
+    void setTerminationRequest(bool inqueue_abort) {
         // actually cancel threads
         terminationRequest = true;
-        inqueue.abort();
+        if (inqueue_abort)
+            inqueue.abort();
+    }
+
+    void waitForTermination() {
         for(std::thread &t : threads)
             t.join();
         threads.clear();

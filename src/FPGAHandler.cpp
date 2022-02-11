@@ -92,6 +92,8 @@ FPGAHandler::FPGAHandler(
     totalTargets = nt;
     targetsRemaining = nt;
     totalBlocks = nt / blocksize + (nt % blocksize ? 1 : 0);
+    fpga_blocks_sent = 0;
+    last_block = false;
 
     // Check if buffers will be large enough
 
@@ -413,7 +415,8 @@ void FPGAHandler::provideReferences(
         cout << "Launched Provide FPGA " << threadIndex << "." << endl;
 
     size_t blocksRem_local = totalBlocks; // not for multiple provide threads! (use global atomic blocksRemLocal then!)
-    while(!termination_request && blocksRem_local > 0) {
+    last_block = false;
+    while(!last_block) { // check ensures that the last block sent to the FPGA is marked with "last_block" (especially in the case of a user termination)
 
         PBWTPhaser::targetQueue_type block;
         try {
@@ -423,14 +426,15 @@ void FPGAHandler::provideReferences(
 
             inqueue.pop(block);
             blocksRem_local--;
+            fpga_blocks_sent++;
 
             // DEBUG
             if (debug)
                 cout << "Provide FPGA " << threadIndex << ": Got #" << (totalBlocks-blocksRem_local) << "/" << totalBlocks << "." << endl;
 
         } catch (tbb::user_abort &e) {
-            if (blocksRem_local > 0)
-                cout << "Provide FPGA " << threadIndex << ": User abort." << endl;
+            if (debug && blocksRem_local > 0)
+                cerr << "Provide FPGA " << threadIndex << ": User abort." << endl;
             break;
         }
 
@@ -440,26 +444,25 @@ void FPGAHandler::provideReferences(
             (*block)[tidx]->prepPhase();
         }
 
-        initTargets(*block, blocksRem_local == 0, threadIndex);
+        // initialize targets on FPGA
+        last_block = blocksRem_local == 0 || termination_request;
+        initTargets(*block, last_block, threadIndex);
 
         // stream prepared references to the FPGA
-
         if (debug)
             cout << "Reference data to FPGA..." << endl;
         for (const auto &rb : refbuffers) {
             FPGA::Result result;
-            do {
-                result = fpga.writeDMA(rb, 0, timeout, rb.getContentLength());
-                if (result == FPGA::Result::Timeout) {
-                    cout << endl;
-                    StatusFile::addError("Ref2FPGA timeout.");
-                    exit(EXIT_FAILURE);
-                } else if (result == FPGA::Result::Cancelled) {
-                    cout << endl;
-                    StatusFile::addError("Ref2FPGA cancelled.");
-                    exit(EXIT_FAILURE);
-                }
-            } while(result == FPGA::Result::Timeout); // TODO do NOT try again after timeout!!!
+            result = fpga.writeDMA(rb, 0, timeout, rb.getContentLength());
+            if (result == FPGA::Result::Timeout) {
+                cout << endl;
+                StatusFile::addError("Ref2FPGA timeout.");
+                exit(EXIT_FAILURE);
+            } else if (result == FPGA::Result::Cancelled) {
+                cout << endl;
+                StatusFile::addError("Ref2FPGA cancelled.");
+                exit(EXIT_FAILURE);
+            }
         }
 
         outqueue.push(block);
@@ -468,7 +471,6 @@ void FPGAHandler::provideReferences(
             cout << "Provide " << threadIndex << ": Pushing #" << (totalBlocks - blocksRem_local) << "/" << totalBlocks <<  "." << endl;
         }
     }
-
 
     if (debug) {
         if (blocksRem_local > 0)
@@ -493,7 +495,7 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
         cout << "Launched Process FPGA " << threadIndex << "." << endl;
 
     const size_t site512words = divideRounded(K, (size_t)512); // how many 512 bit words per site?
-    size_t blocksRem_local = totalBlocks; // not for multiple provide threads! (use global atomic blocksRemLocal then!)
+    size_t blocks_processed = 0; // not for multiple threads! (use global atomic then!)
     const size_t buffer512words = (bufferFactoryFPGA.getBufferSize()*8)/512; // number of 512bit words in buffer
     size_t buffer_rem512words = 0; // unprocessed 512bit words left in buffer
     shared_ptr<FPGABuffer> b;
@@ -502,22 +504,22 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
     size_t buffersread = 0;
     // __DEBUG
 
-    while(!termination_request && blocksRem_local > 0) {
+    while(!last_block || blocks_processed < fpga_blocks_sent) { // this ensures that all data from blocks sent to the FPGA will be fetched (especially in the case of a user termination)
 
         PBWTPhaser::targetQueue_type block;
         try {
             if (debug)
-                cout << "Process FPGA " << threadIndex << ": Waiting... rem: " << blocksRem_local << endl;
+                cout << "Process FPGA " << threadIndex << ": Waiting... rem: " << (totalBlocks - blocks_processed) << endl;
 
             inqueue.pop(block);
-            blocksRem_local--;
+            blocks_processed++;
 
             if (debug)
-                cout << "Process FPGA " << threadIndex << ": Got #" << (totalBlocks-blocksRem_local) << "/" << totalBlocks << "." << endl;
+                cout << "Process FPGA " << threadIndex << ": Got #" << blocks_processed << "/" << totalBlocks << "." << endl;
 
-        } catch (tbb::user_abort &e) {
-            if (blocksRem_local > 0)
-                cout << "Process FPGA " << threadIndex << ": User abort." << endl;
+        } catch (tbb::user_abort &e) { // should not occur since the queue should not be allowed to be aborted!!!
+            if (debug && blocks_processed < totalBlocks)
+                cerr << "Process FPGA " << threadIndex << ": User abort." << endl;
             break;
         }
 
@@ -528,7 +530,7 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
         for (size_t t = 0; t < block->size(); t++) {
             size_t capacity = site512words*512/8; //roundToMultiple(sitesize, UNITWORDS * sizeof(BooleanVector::data_type) * 8) / 8;
             size_t nsplits = (*block)[t]->getNSplits();
-            uint32_t *pbwtdata = (uint32_t*) MyMalloc::malloc((2*nsplits+1) * capacity * 2, string("pbwtdata_t")+to_string(t)+"_br"+to_string(blocksRem_local)); // space for the fwd and reverse PBWT for this target
+            uint32_t *pbwtdata = (uint32_t*) MyMalloc::malloc((2*nsplits+1) * capacity * 2, string("pbwtdata_t")+to_string(t)+"_b"+to_string(blocks_processed)); // space for the fwd and reverse PBWT for this target
             allpbwts[t] = pbwtdata; //new PBWTPhaser::refincs_type(2*nsplits+1, BooleanVector(refincdata, capacity));
 //            // reserve for each site the space required for all references
 //            auto curr_data = refincdata;
@@ -580,9 +582,6 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
                 }
             } // end if buffer_rem512words == 0
 
-            if (termination_request)
-                break; // leave while loop
-
             // data copying from buffer:
             // process as much data as possible for this target
             size_t copy512words = min(buffer_rem512words, tgt_rem512words);
@@ -603,7 +602,7 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
 #endif
 
             // copy
-            if (copy512words > 0 && curr_tgt < block->size()) // don't copy dummies!
+            if (copy512words > 0 && curr_tgt < block->size() && !termination_request) // don't copy dummies!
                 memcpy(curr_data, data, copy512words*512/8);
 
             // increment counters and data ptr
@@ -650,22 +649,21 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
 
         } // end while over current block
 
-        if (termination_request)
-            break; // leave while
-
         // else: received and processed all buffers for this block -> push into outqueue and continue with next block
-        if (debug)
-            cout << "Process " << threadIndex << ": Pushing #" << (totalBlocks - blocksRem_local) << "/" << totalBlocks <<  "." << endl;
-        for (size_t t = 0; t < block->size(); t++) {
-            PBWTPhaser::cPBWTQueue_type tgt;
-            tgt.target = (*block)[t];
-            tgt.cpbwt = allpbwts[t];
-            outqueue.push(tgt);
+        if (!termination_request) { // don't need to push the data into outqueue if we received a termination request
+            if (debug)
+                cout << "Process " << threadIndex << ": Pushing #" << blocks_processed << "/" << totalBlocks <<  "." << endl;
+            for (size_t t = 0; t < block->size(); t++) {
+                PBWTPhaser::cPBWTQueue_type tgt;
+                tgt.target = (*block)[t];
+                tgt.cpbwt = allpbwts[t];
+                outqueue.push(tgt);
+            }
         }
     } // end while over all blocks
 
     if (debug) {
-        if (blocksRem_local > 0)
+        if (blocks_processed < totalBlocks)
             cout << "Process FPGA terminated." << endl;
         else
             cout << "Process FPGA finished." << endl;
@@ -703,8 +701,8 @@ void FPGAHandler::processPBWT(
                 if (debug)
                     cout << "PcR FPGA " << threadIndex << ": Got #" << (totalTargets-targetsRemaining+1) << "/" << totalTargets << "." << endl;
             } catch (tbb::user_abort &e) {
-                if (targetsRemaining > 0)
-                    cout << "PcR FPGA " << threadIndex << ": User abort." << endl;
+                if (debug && targetsRemaining > 0)
+                    cerr << "PcR FPGA " << threadIndex << ": User abort." << endl;
                 break;
             }
 

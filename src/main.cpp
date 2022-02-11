@@ -50,29 +50,33 @@ StatusFile StatusFile::instance;
 
 MyMalloc MyMalloc::mm;
 
-//static atomic<bool> is_terminating;
+// this is required for a clean shutdown when using FPGAs
+static bool term_request = false;
+static bool term_wait = false;
 
-///**
-// * @brief Signal handler registered for SIGINT reception
-// *
-// * This function is registered for called by the operating system if a SIGINT
-// * is received (i.e. Ctrl+C). If we didn't catch it here, the program would
-// * be terminated without executing the cleanup callbacks that have been registered
-// * using atexit.
-// *
-// * @param signal The actual signal that has been received
-// */
-//static void signalHandler(int signal) {
-//    if(signal == SIGINT) {
-//        if(!is_terminating) {
-//            is_terminating = true;
-//            cerr << "Trying to shutdown gracefully, please be patient. Hit Ctrl+C again to terminate." << endl;
-//        } else {
-//            cerr << "Terminating..." << endl;
-//            exit(EXIT_FAILURE);
-//        }
-//    }
-//}
+/**
+ * @brief Signal handler registered for SIGINT reception
+ *
+ * This function is registered to be called by the operating system if a SIGINT
+ * is received (i.e. Ctrl+C). If we didn't catch it here, the program would
+ * be terminated without executing the cleanup callbacks that have been registered
+ * using atexit.
+ *
+ * @param signal The actual signal that has been received
+ */
+static void signalHandler(int signal) {
+    if(signal == SIGINT) {
+        cerr << "Received interrupt. ";
+        if(!term_request && term_wait) {
+            term_request = true;
+            PBWTPhaser::terminate = true;
+            cerr << "Trying to shutdown gracefully, please be patient. Hit Ctrl+C again to terminate immediately." << endl;
+        } else {
+            cerr << "Terminating..." << endl;
+            exit(EXIT_FAILURE);
+        }
+    }
+}
 
 
 int main(int argc, char *argv[]) {
@@ -118,10 +122,10 @@ int main(int argc, char *argv[]) {
 
     Args args = Args::parseArgs(argc, argv);
 
-    {
-//    // register Ctrl+C handler for proper cleanup on interruption
-//    is_terminating = false;
-//    signal(SIGINT, signalHandler);
+    { // at the end of this block all destructors for objects inside main were called. Useful for the (debug) usage of MyMalloc.
+
+    // register Ctrl+C handler for proper cleanup on interruption
+    signal(SIGINT, signalHandler);
 
     {
         ifstream f("/proc/self/status");
@@ -325,6 +329,7 @@ int main(int argc, char *argv[]) {
                 unsigned buffersFPGA = args.get<unsigned>("buffers-FPGA");
                 size_t buffersizeFPGA = args.get<size_t>("buffer-size-FPGA");
                 phaser.setFPGAParameters(buffersFPGA == 0 ? hysys.getFPGAs().size() + 2 : buffersFPGA, buffersizeFPGA, chrono::milliseconds(args.get<unsigned long>("timeout")), maxpbwtsites);
+                term_wait = true; // need proper shutdown procedure when using FPGAs
             }
             if (usegpu) {
                 // if not set explicitly numGPUs+2 buffers are prepared for GPU<->host communication
@@ -335,6 +340,13 @@ int main(int argc, char *argv[]) {
 
             phaser.phase(phasedTargets, phasedDosages, totconfidences, ncalls, chunk);
 
+            if (usefpga)
+                term_wait = false; // when using FPGAs, the critical part for user termination is over here
+
+            // if we had a user termination request, this is the place to terminate the complete program
+            if (term_request)
+                exit(EXIT_FAILURE);
+
             // determine start phases for the next chunk
             if (chunk < vcfdata.getNChunks()-1)
                 vcfdata.determineStartPhases(phasedTargets);
@@ -342,6 +354,7 @@ int main(int argc, char *argv[]) {
             swp.stop();
             if (!usefpga && !lockfile_plain.empty())
                 releaseLock(lockfd);
+
 
             if (args.outputPhased) {
                 Stopwatch swwp("Write Phased");

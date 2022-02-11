@@ -136,6 +136,8 @@ private:
     atomic<size_t> targetsRemaining;
     size_t totalBlocks;
     size_t blocksize;
+    atomic<size_t> fpga_blocks_sent;
+    atomic<bool> last_block;
 
     size_t constrequired_bufsize;
     size_t tgtsize;

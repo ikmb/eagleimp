@@ -39,6 +39,7 @@ using namespace std;
 using namespace placeholders;
 using namespace hybridsys;
 
+/* static */ atomic<bool> PBWTPhaser::terminate = false;
 
 PBWTPhaser::PBWTPhaser(Hybridsys &hysys_, VCFData &vcfdata_, unsigned numthreads_, size_t Karg_, uint32_t iters_,
         fp_type expectIBDcM_, fp_type hist_, fp_type pErr_, fp_type pLimit_, bool impMissing_, bool doPrePhasing_, bool noRevPhasing_, bool skipPhasing_, bool debug_)
@@ -205,7 +206,16 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
         // FPGA supports only even K
         if (localK % 2)
             localK--;
+        // acquire FPGA lock
         fpgahandler.initIteration(localK, iter);
+        // if we received a user termination request during waiting for the FPGA lock, we can stop here
+        if (terminate) {
+            for(FPGA &f : hysys.getFPGAs())
+                f.unlock();
+            cerr << "User abort." << endl;
+            exit(EXIT_FAILURE);
+        }
+
         fpgahandler.prepareReferenceBuffers();
 
         cout << "Phasing iteration " << iter << "/" << iters << " (K=" << localK << "): 0%" << flush;
@@ -251,9 +261,9 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT
         for (size_t nt = DEBUG_TARGET_START; nt <= DEBUG_TARGET_STOP; nt++)
 #else
-        for (size_t nt = 0; nt < nTarget; nt++)
+        for (size_t nt = 0; nt < nTarget && !terminate; nt++)
 #endif
-        { // TODO implement user abort
+        {
             if (curr_filled == blocksize) { // need to push the current data to the queue
                 if (debug)
                     cout << "Pushing block. (curr target: " << nt << ")" << endl;
@@ -269,9 +279,17 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
             target_block->push_back(tgtptr);
             curr_filled++;
         }
-        // push the last data (probably containing less than blocksize targets)
+
+        // push the last data (probably containing less than blocksize targets, but at least one!)
         if (debug)
             cout << "Pushing last block. (size: " << target_block->size() << ")" << endl;
+        // sets the termination request and ensures that at least one block is in the queue to release a pop operation
+        // and to mark the last block transmitted to the FPGA as "last_block".
+        if (terminate) {
+            fpgaProvider.setTerminationRequest(false); // do not abort inqueue! the next pop operation has to be successful to mark the block sent to the FPGA as "last_block"
+            fpgaOnlyPreProcessor.setTerminationRequest(false); // do not abort inqueue as the targets in the queue were all going to be processed by the FPGA and need to be fetched!
+            fpgaPhasingProcessor.setTerminationRequest(true); // abort inqueue as the preliminary process will not push to its outqueue after receiving the termination request
+        }
         provideQueue.push(shared_ptr<vector<Target*>>(target_block));
 
         // just fetch all confidences
@@ -294,11 +312,27 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
                     pgb++;
                 }
             }
+            // terminate the processor threads if there's a user termination request
+            if (terminate) { // termination request received -> terminate processor threads and leave
+                fpgaProvider.setTerminationRequest(false); // do not abort inqueue! the next pop operation has to be successful to mark the block sent to the FPGA as "last_block"
+                fpgaOnlyPreProcessor.setTerminationRequest(false); // do not abort inqueue as the targets in the queue were all going to be processed by the FPGA and need to be fetched!
+                fpgaPhasingProcessor.setTerminationRequest(true); // abort inqueue as the preliminary process will not push to its outqueue after receiving the termination request
+                break;
+            }
             confidence_type tconf;
             confidenceQueue.pop(tconf);
             totconfidences[tconf.id] += tconf.totalconf;
             ncalls[tconf.id] += tconf.ncalls;
         }
+
+        if (terminate) { // we could terminate now
+            fpgaProvider.waitForTermination();
+            fpgaOnlyPreProcessor.waitForTermination();
+            fpgaPhasingProcessor.waitForTermination();
+            cerr << "\nUser abort." << endl;
+            exit(EXIT_FAILURE);
+        }
+
         if (pgb==0) // just printed "xx%"
             cout << ".";
         cout << "100%" << endl;
@@ -655,6 +689,7 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
                     cout << "." << flush;
                     pgb++;
                 }
+                //if ( is terminating ) ... exit here!
             }
 
             Target t(phasedTargets[2*nt], phasedTargets[2*nt+1], phasedDosages[2*nt], phasedDosages[2*nt+1],
