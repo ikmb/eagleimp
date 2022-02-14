@@ -232,8 +232,8 @@ CPULOCK=$(mktemp -u -p $TMPDIR launch_eagleimp.cpulock.XXXXXX)
 # function to kill subprocesses
 subkill() {
   for P in $@; do
-#    echo "killing PID $P"
-    kill -TERM $P
+#    echo "send INT to PID $P"
+    kill -INT $P
   done
   rm $FIFO
   rm $LOCK
@@ -248,8 +248,8 @@ trap 'subkill ${workerpids[@]}' SIGINT
 # worker function
 work() {
   MYID=$1
-  # catch SIGTERM to kill eagleimp process
-  trap 'if [[ -n $hpid ]]; then kill -TERM $hpid; fi; exit 1' SIGTERM
+  # catch SIGINT to kill eagleimp process
+  trap 'if [[ -n $hpid ]]; then kill -INT $hpid; fi; exit 1' SIGINT
   exec 3<$FIFO
   exec 4<$LOCK
   while true; do
