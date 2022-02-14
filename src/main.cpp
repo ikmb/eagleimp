@@ -65,7 +65,7 @@ static bool term_wait = false;
  * @param signal The actual signal that has been received
  */
 static void signalHandler(int signal) {
-    if(signal == SIGINT) {
+    if(signal == SIGINT || signal == SIGTERM) {
         cerr << "Received interrupt. ";
         if(!term_request && term_wait) {
             term_request = true;

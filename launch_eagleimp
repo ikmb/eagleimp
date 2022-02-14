@@ -241,8 +241,9 @@ subkill() {
   exit 1
 }
 
-# catch SIGTERM to kill subprocesses
+# catch SIGTERM or SIGINT to kill subprocesses
 trap 'subkill ${workerpids[@]}' SIGTERM
+trap 'subkill ${workerpids[@]}' SIGINT
 
 # worker function
 work() {
