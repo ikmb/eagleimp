@@ -2,6 +2,8 @@
 ## _A combined genotype phasing and imputation tool (with optional FPGA acceleration)_
 EagleImp combines genotype phasing and imputation in a single tool. The algorithms are based on 'Eagle2' by Po-Ru Loh et al. _(Nature Genetics, 2016, https://pubmed.ncbi.nlm.nih.gov/27694958/)_ and 'PBWT' by Richard Durbin _(Bioinformatics, 2014, https://pubmed.ncbi.nlm.nih.gov/24413527/)_. For EagleImp, we have put a lot of effort in modifying the methods and implementation to achieve higher efficiency and faster processing. This includes the use of multi-processing features (especially in the imputation process), which makes the tool well suited for workstations or high-performance computers with many cores and lots of RAM, but common desktop computers or laptops also benefit from faster execution times.
 
+A preprint of the EagleImp paper is available at https://biorxiv.org/cgi/content/short/2022.01.11.475810v1.
+
 EagleImp also adds support for FPGA-based accelerated phasing if you have an Alpha Data ADM-PCIE-8K5 FPGA accelerator card available. The release of the FPGA part is in preparation. Please contact us if you want to use EagleImp with FPGA acceleration.
 
 ### Prerequisites
