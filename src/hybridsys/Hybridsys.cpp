@@ -134,7 +134,9 @@ Hybridsys::Hybridsys(std::vector<unsigned> allowed_fpgas, std::vector<unsigned> 
 
 #ifdef USE_CUDA_GPU
     // Initialize NVML
-    nvmlInit();
+    nvmlReturn_t ret = nvmlInit();
+    if (ret != NVML_SUCCESS)
+        throw std::runtime_error(nvmlErrorString(ret));
     devices.clear();
     devices = findDevices(pci_ident_gpu);
 

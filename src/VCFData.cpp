@@ -787,8 +787,14 @@ void VCFData::processNextChunk() {
     bool checkedChrom = false; // the first valid target line is checked to fit the set chromosome
     bool inOverlap = false;
 
+    // take over the values from the overlap from last chunk
     currM = currMOverlap; // 0 for first chunk, considered overlap for subsequent chunks
     currMref = currMrefOverlap; // 0 for first chunk or if no imputation is done, considered overlap for subsequent chunks
+    // lstats should contain the stats for the current chunk without the overlap from the previous chunk,
+    // so, we store the overlap here temporarily to remove it later to set the correct number
+    lstats.M = currMOverlap;
+    lstats.Mref = currMrefOverlap;
+    // reset current overlap
     currMOverlap = 0;
     currMrefOverlap = 0;
 
@@ -1371,8 +1377,8 @@ void VCFData::processNextChunk() {
     // set M and Mref for the current chunk
     M = currM;
     Mref = currMref;
-    lstats.M = currM;
-    lstats.Mref = currMref;
+    lstats.M = currM - lstats.M; // we have to remove the overlap size from previous chunk as it is contained in currM
+    lstats.Mref = currMref - lstats.Mref; // we have to remove the overlap size from previous chunk as it is contained in currMref
     lstats.MrefMultiAllreg = MrefMultiAllreg;
 
     // resize transposed reference according to the number of variants we inserted
@@ -1432,12 +1438,22 @@ void VCFData::processNextChunk() {
         if (loadQuickRef)
             lstats.MmultiAllelicRefOnly = MrefMultiAllreg - lstats.MmultiAllelicRefTgt;
 
-        StatusFile::addInfo("<p class='pinfo'><b>" + to_string(M) + " variants in both target and reference are used for phasing.</b></p>");
+        stringstream stmp;
+        stmp << "<p class='pinfo'><b>" << M << " variants in both target and reference are used for phasing.</b>";
+        if (currChunk+1 < nChunks)
+            stmp << "<br>\n  (Of these are " << currMOverlap << " variants in the overlap to next chunk.)";
+        stmp << "</p>";
         if (doImputation) {
             size_t Mreftmp = loadQuickRef ? Mref-MrefMultiAllreg : Mref;
-            StatusFile::addInfo("<p class='pinfo'>" + to_string(Mreftmp-M) + " variants exclusively in reference will be imputed.<br>");
-            StatusFile::addInfo("<b>Imputation output will contain " +to_string(Mreftmp) + " variants.</b></p>");
+            stmp << "\n<p class='pinfo'>" << (Mreftmp-M) << " variants exclusively in reference will be imputed.<br>\n";
+            if (currChunk+1 < nChunks)
+                stmp << "  (Of these are " << (currMrefOverlap - currMOverlap) << " variants in the overlap to next chunk.)<br>\n";
+            stmp << "<b>Imputation output will contain " << Mreftmp << " variants.</b>";
+            if (currChunk+1 < nChunks)
+                stmp << "<br>\n  (" << currMrefOverlap << " in the overlap to next chunk.)";
+             stmp << "</p>";
         }
+        StatusFile::addInfo(stmp.str());
 
         // determine SNP rate (only if we do phasing)
         if (!skipPhasing && chrom != CHRY) {
