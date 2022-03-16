@@ -1478,9 +1478,9 @@ void VCFData::processNextChunk() {
             StatusFile::addInfo("  Strands were flipped in " + to_string(lstats.numStrandFlips) + " variants.<br>");
 
         StatusFile::addInfo("  Dropped " + to_string(lstats.MtargetOnly) + " variants not found in reference.<br>");
-        if (lstats.MtargetOnly > M / 2) {
+        if (lstats.MtargetOnly > M) {
             StatusFile::addWarning("More than 50% of the target variants not found in reference! Wrong genome built?");
-        } else if (lstats.MtargetOnly > M / 10) {
+        } else if (lstats.MtargetOnly > (M+lstats.MtargetOnly) / 10) {
             stringstream s;
             s << "More than 10% of the target variants not found in reference.";
             if (!allowRefAltSwap && !allowStrandFlip)
