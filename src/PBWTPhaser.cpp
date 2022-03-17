@@ -127,11 +127,11 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
 
     stringstream ss;
     ss << "Phasing (Chunk " << chunk+1 << "/" << vcfdata.getNChunks() << ")";
-    StatusFile::updateStatus(chunk/(float)vcfdata.getNChunks(), ss.str() + ": Waiting");
+    StatusFile::updateStatus(0, ss.str() + ": Waiting");
 
     FPGAHandler fpgahandler(hysys, fpga_timeout, fpgaBufferFactory, gpuBufferFactory, vcfdata, maxpbwtsites, numthreads, !usegpu, debug);
 
-    StatusFile::updateStatus(chunk/(float)vcfdata.getNChunks(), ss.str());
+    StatusFile::updateStatus(0, ss.str());
 
     for (uint32_t iter = 1; iter <= iters; iter++) {
 
@@ -300,10 +300,10 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
 #endif
         { // we might not know the order in which the results arrive, but we know that there must be exactly nTarget results
             if (nt % 64 == 0) { // update status file every 64 targets
-                float progress = ((nt/(float)nTarget)/(float)iters)/(float)vcfdata.getNChunks();
-                progress += ((iter-1)/(float)iters)/(float)vcfdata.getNChunks();
-                progress += chunk/(float)vcfdata.getNChunks();
-                StatusFile::updateStatus(progress);
+//                float progress = ((nt/(float)nTarget)/(float)iters)/(float)vcfdata.getNChunks();
+//                progress += ((iter-1)/(float)iters)/(float)vcfdata.getNChunks();
+//                progress += chunk/(float)vcfdata.getNChunks();
+                StatusFile::updateStatus(nt/(float)nTarget);
                 if (pgb==3) { // printing % after three dots
                     cout << (100*nt)/nTarget << "%" << flush;
                     pgb = 0;
@@ -336,6 +336,8 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
         if (pgb==0) // just printed "xx%"
             cout << ".";
         cout << "100%" << endl;
+
+        StatusFile::nextStep(); // each iteration is one step!
     }
 
     // if we manipulated the reference by adding the phased targets, we need to rewind this change at least for the transposed reference
@@ -551,6 +553,8 @@ void PBWTPhaser::phaseGPU(vector<BooleanVector> &phasedTargets __attribute__((un
             cout << ".";
         cout << "100%" << endl;
         swpi.stop();
+
+        StatusFile::nextStep(); // each iteration is one step!
     }
 
     // if we manipulated the reference by adding the phased targets, we need to rewind this change at least for the transposed reference
@@ -581,7 +585,7 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
     {
         stringstream ss;
         ss << "Phasing (Chunk " << chunk+1 << "/" << vcfdata.getNChunks() << ")";
-        StatusFile::updateStatus(chunk/(float)vcfdata.getNChunks(), ss.str());
+        StatusFile::updateStatus(0, ss.str());
     }
 
     cout << "Using " <<
@@ -678,10 +682,10 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
 #endif
         {
             if (nt % 64 == 0) { // update status file every 64 targets
-                float progress = ((nt/(float)nTarget)/(float)iters)/(float)vcfdata.getNChunks();
-                progress += ((iter-1)/(float)iters)/(float)vcfdata.getNChunks();
-                progress += chunk/(float)vcfdata.getNChunks();
-                StatusFile::updateStatus(progress);
+//                float progress = ((nt/(float)nTarget)/(float)iters)/(float)vcfdata.getNChunks();
+//                progress += ((iter-1)/(float)iters)/(float)vcfdata.getNChunks();
+//                progress += chunk/(float)vcfdata.getNChunks();
+                StatusFile::updateStatus(nt/(float)nTarget);
                 if (pgb==3) { // printing % after three dots
                     cout << (100*nt)/nTarget << "%" << flush;
                     pgb = 0;
@@ -703,6 +707,8 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
             cout << ".";
         cout << "100%" << endl;
         swpi.stop();
+
+        StatusFile::nextStep(); // each iteration is one step!
     }
 
     // if we manipulated the reference by adding the phased targets, we need to rewind this change at least for the transposed reference

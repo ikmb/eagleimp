@@ -772,10 +772,11 @@ void VCFData::processNextChunk() {
         cout << "Creating Qref: 0%" << flush;
         ss << "Creating Qref";
     } else {
-        cout << "Reading data: " << (100*tgtlinesread/Mglob) << "%" << flush;
+        cout << "Reading data: 0%" << flush;
         ss << "Reading data (Chunk " << (currChunk+1) << "/" << nChunks << ")";
     }
-    StatusFile::updateStatus(createQRef ? 0 : tgtlinesread/(float)Mglob, ss.str());
+//    StatusFile::updateStatus(createQRef ? 0 : tgtlinesread/(float)Mglob, ss.str());
+    StatusFile::updateStatus(0, ss.str());
     int pgb = 0; // for progress bar
 
     int mref_gt = 0; void *ref_gt = NULL; // will be allocated once in bcf_get_genotypes() and then reused for each marker (need void* because of htslib)
@@ -808,7 +809,7 @@ void VCFData::processNextChunk() {
             ref = bcf_sr_get_line(sr, 0); // read one line of reference, if available at current position (otherwise NULL)
             if (ref) {
                 if (createQRef && reflinesread % 16384 == 0) {
-                    StatusFile::updateStatus(reflinesread/(float)Mrefglob);
+                    StatusFile::updateStatus(reflinesread/(float)Mrefglob); // this is ok as long as Qrefs are created in one chunk
                     if (pgb == 3) { // print % after three dots
                         cout << (100*reflinesread/Mrefglob) << "%" << flush;
                         pgb = 0;
@@ -840,9 +841,11 @@ void VCFData::processNextChunk() {
             tgt = bcf_sr_get_line(sr, loadQuickRef ? 0 : 1); // read one line of target, if available at current position (otherwise NULL)
             if (tgt) {
                 if (tgtlinesread % 1024 == 0) {
-                    StatusFile::updateStatus(tgtlinesread/(float)Mglob);
+                    float progress = currChunk == 0 ? (tgtlinesread/(float)endChunkFlankIdx[0]) : ((tgtlinesread - endChunkFlankIdx[currChunk-1])/(float)(endChunkFlankIdx[currChunk]-endChunkFlankIdx[currChunk-1]));
+                    int progresspercent = currChunk == 0 ? (100*tgtlinesread/endChunkFlankIdx[0]) : (100*(tgtlinesread - endChunkFlankIdx[currChunk-1])/(endChunkFlankIdx[currChunk]-endChunkFlankIdx[currChunk-1]));
+                    StatusFile::updateStatus(progress);
                     if (pgb == 3) { // print % after three dots
-                        cout << (100*tgtlinesread/Mglob) << "%" << flush;
+                        cout << progresspercent << "%" << flush;
                         pgb = 0;
                     } else {
                         cout << "." << flush;
@@ -1428,10 +1431,10 @@ void VCFData::processNextChunk() {
 
     if (pgb == 0) // just printed "xx%"
         cout << ".";
-    if (currChunk+1 == nChunks)
-        cout << "100%" << endl;
-    else
-        cout << (100*tgtlinesread/Mglob) << "% (chunk end)" << endl;
+    cout << "100%";
+    if (currChunk+1 != nChunks)
+        cout << " (chunk end)" << endl;
+    cout << endl;
 
     if (!createQRef) { // statistics for normal run
 
@@ -1587,7 +1590,7 @@ void VCFData::processNextChunk() {
     } else { // create QRef
 
 
-        StatusFile::updateStatus(0, "write Qref meta");
+//        StatusFile::updateStatus(0, "write Qref meta");
 
         qrefvarsofs.close();
         qRefWriteMetaAndConcat(); // dump the reference meta data to qref file and concat with variant data to create final qref
@@ -1616,6 +1619,8 @@ void VCFData::processNextChunk() {
                     + " Fraction: " + to_string(lstats.GunphasedRefOnly / (double) Mref / Nref));
         }
     }
+
+    StatusFile::nextStep();
 }
 
 // keep SNP for imputation
@@ -2096,7 +2101,7 @@ inline void VCFData::qRefAppendVariant(const BooleanVector& var) {
 }
 
 inline void VCFData::qRefOpenReadMeta() {
-    StatusFile::updateStatus(0, "Loading Qref metadata");
+//    StatusFile::updateStatus(0, "Loading Qref metadata");
 
     qin.open(refFileName, ios_base::binary);
     if (qin.fail()) {
@@ -3319,7 +3324,7 @@ void VCFData::writeVCFImputedConcat() {
 void VCFData::combineChunks() const {
     if (nChunks > 1) {
         cout << "Combining chunk files..." << endl;
-        StatusFile::updateStatus(0, "Combine chunks");
+//        StatusFile::updateStatus(0, "Combine chunks");
         vector<string> chunkfiles;
         chunkfiles.push_back(outFileNameImp);
         for (int chunk = 1; chunk < nChunks; chunk++)

@@ -42,15 +42,27 @@ public:
         remove(instance.errorfile.c_str());
     }
 
-    static void updateStatus(float value, const string &info = "") {
+    // progress of the current step will be updated to the total progress automatically
+    static void updateStatus(float progress_in_step, const string &info = "") {
         if (instance.statfile.empty())
             return;
-        instance.statvalue = value;
+        instance.updateProgress(progress_in_step);
         if (!info.empty())
             instance.statinfostr.assign(info);
         ofstream ofs(instance.statfile, ofstream::trunc);
         if (!ofs.fail())
             ofs << instance.statvalue << "," << instance.statinfostr << endl;
+    }
+
+    static void updateSteps(unsigned currstep, unsigned totalsteps = 0) {
+        instance.statcurrstep = currstep;
+        if (totalsteps)
+            instance.stattotalsteps = totalsteps;
+    }
+
+    static void nextStep() {
+        instance.statcurrstep++;
+        updateStatus(0);
     }
 
     static void addInfo(const string &info) {
@@ -141,8 +153,14 @@ private:
         return s;
     }
 
+    void updateProgress(float progress) {
+        statvalue = (statcurrstep+progress) / stattotalsteps;
+    }
+
     string statfile;
     string statinfostr;
+    unsigned statcurrstep = 0;
+    unsigned stattotalsteps = 1; // initial default value
     float statvalue = 0.0;
 
     string infofile;

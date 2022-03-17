@@ -268,6 +268,17 @@ int main(int argc, char *argv[]) {
         ncalls.resize(vcfdata.getNTarget(), 0);           // how many variants were phased for each target (for calculating the average confidence)
     }
 
+    // set total number of steps for StatusFile
+    unsigned steps;
+    if (args.createQuickRef)
+        steps = 1;
+    else {
+        steps = args.skipImputation ? 1 : 2; // reading + imputation steps
+        steps += args.iters; // phasing iterations (even if phasing is skipped, we count this step)
+    }
+    steps *= vcfdata.getNChunks(); // all steps repeated for each chunk
+    StatusFile::updateSteps(0,steps);
+
     // process data in chunks
     for (int chunk = 0; chunk < vcfdata.getNChunks(); chunk++) {
 
@@ -305,7 +316,7 @@ int main(int argc, char *argv[]) {
                 Stopwatch swlockp("Wait lock (p)");
                 stringstream ss;
                 ss << "Phasing (Chunk " << chunk+1 << "/" << vcfdata.getNChunks() << "): Waiting";
-                StatusFile::updateStatus(chunk/(float)vcfdata.getNChunks(), ss.str());
+                StatusFile::updateStatus(0, ss.str());
                 cout << "Waiting for CPU lock... " << flush;
                 lockfd = setLock(lockdir, lockfile_plain);
                 cout << "got it." << endl;
@@ -359,8 +370,6 @@ int main(int argc, char *argv[]) {
             if (args.outputPhased) {
                 Stopwatch swwp("Write Phased");
                 cout << "Writing phased targets..." << endl;
-                StatusFile::updateStatus(chunk/(float)vcfdata.getNChunks(), "Write phased");
-
                 vcfdata.writeVCFPhased(phasedTargets);
                 swwp.stop();
             }
@@ -383,14 +392,14 @@ int main(int argc, char *argv[]) {
             int lockfd = 0;
             if (!lockfile_plain.empty()) {
                 Stopwatch swlockimp("Wait lock (i)");
-                StatusFile::updateStatus(chunk/(float)vcfdata.getNChunks(), ss.str() + ": Waiting");
+                StatusFile::updateStatus(0, ss.str() + ": Waiting");
                 cout << "Waiting for CPU lock... " << flush;
                 lockfd = setLock(lockdir, lockfile_plain);
                 cout << "got it." << endl;
                 swlockimp.stop();
             }
 
-            StatusFile::updateStatus(chunk/(float)vcfdata.getNChunks(), ss.str());
+            StatusFile::updateStatus(0, ss.str());
 
             Stopwatch swimp("Imputation+Write");
 
@@ -433,9 +442,9 @@ int main(int argc, char *argv[]) {
                     pgb++;
                 }
                 //cout << "Imputing bunch " << bunch+1 << "/" << nbunches << " ..." << endl;
-                float progress = (bunch/(float)nbunches)/(float)vcfdata.getNChunks();
-                progress += chunk/(float)vcfdata.getNChunks();
-                StatusFile::updateStatus(progress);
+//                float progress = (bunch/(float)nbunches)/(float)vcfdata.getNChunks();
+//                progress += chunk/(float)vcfdata.getNChunks();
+                StatusFile::updateStatus(bunch/(float)nbunches);
 
                 for (unsigned f = 0; f < args.num_files; f++) {
                     Stopwatch swimpb("imputeBunch");
@@ -463,6 +472,7 @@ int main(int argc, char *argv[]) {
 
             swimp.stop();
 
+            StatusFile::nextStep();
 
         } // END imputation block
 
@@ -503,7 +513,7 @@ int main(int argc, char *argv[]) {
     if (!args.createQuickRef)
         vcfdata.printSummary();
 
-    StatusFile::updateStatus(1, "Finished");
+    StatusFile::updateStatus(0, "Finished");
 
     cout << endl;
 
