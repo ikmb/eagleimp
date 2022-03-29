@@ -693,7 +693,6 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
                     cout << "." << flush;
                     pgb++;
                 }
-                //if ( is terminating ) ... exit here!
             }
 
             Target t(phasedTargets[2*nt], phasedTargets[2*nt+1], phasedDosages[2*nt], phasedDosages[2*nt+1],

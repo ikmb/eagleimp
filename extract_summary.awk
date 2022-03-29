@@ -164,10 +164,11 @@ BEGIN {
 }
 END {
 print "<h3>SUMMARY:</h3>"
-printf "<p class='pinfo'>Chromosomes: "
-for (c in chrom) printf chrom[c] " "
-print "</p>"
 print "<table>"
+printf "<tr><td>Chromosomes:</td> <td>"
+printf chrom[1]
+for (c=2; c<=nchrom; c++) printf ", " chrom[c]
+print "</td></tr>"
 printf "<tr><td>Target samples:</td> <td>" ntsamples_min
 if (ntsamples_min != ntsamples_max) printf " - " ntsamples_max
 print "</td></tr>"

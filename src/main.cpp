@@ -27,7 +27,6 @@
 #include <omp.h>
 #include <csignal>
 
-/* Global libraries */
 #include "version.h"
 #include "Args.h"
 #include "FPGAConfigurationEagleImp.h"
@@ -58,9 +57,8 @@ static bool term_wait = false;
  * @brief Signal handler registered for SIGINT reception
  *
  * This function is registered to be called by the operating system if a SIGINT
- * is received (i.e. Ctrl+C). If we didn't catch it here, the program would
- * be terminated without executing the cleanup callbacks that have been registered
- * using atexit.
+ * is received (i.e. Ctrl+C). We need to catch this and do a clean process
+ * termination when using FPGAs.
  *
  * @param signal The actual signal that has been received
  */
