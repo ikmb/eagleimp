@@ -42,8 +42,8 @@
 // only few debug output per target in given range incl. per-site probabilities
 //#define DEBUG_TARGET_LIGHT
 // target range (all including)
-//#define DEBUG_TARGET_START 0
-//#define DEBUG_TARGET_STOP  63
+#define DEBUG_TARGET_START 0
+#define DEBUG_TARGET_STOP  63
 //#define DEBUG_TARGET_START 112
 //#define DEBUG_TARGET_STOP  211
 // additional print-outs if DEBUG_TARGET is defined

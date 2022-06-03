@@ -256,7 +256,7 @@ int main(int argc, char *argv[]) {
         uint64_t avmem = fpgaconfigs[0].getAvailableRAM();
         uint64_t krambytes = divideRounded(min(args.K, vcfdata.getNReferenceHapsMax() + (args.iters > 1 ? vcfdata.getNTarget()*2 : 0)), (size_t)512)*512/8; // number of 512bit PBWT RAM words for one site (either incons or refs!) in bytes
         maxpbwtsites = avmem / (2*krambytes); // number of sites that can be buffered in FPGA RAM (for fwd and bck run)
-        cout << "INFO: For this run the FPGA supports in average up to " << (maxpbwtsites/2)/fpgaconfigs[0].getNumPipelines() << " split sites per target." << endl;
+        cout << "INFO: For this run the FPGA supports in average up to " << (maxpbwtsites/2)/fpgaconfigs[0].getNumPipelines() << " split sites per target chunk." << endl;
     }
 
     vector<fp_type> totconfidences;
@@ -328,12 +328,14 @@ int main(int argc, char *argv[]) {
             Stopwatch swp("Phasing");
 
             if (usefpga) {
-                // check if current M works for FPGA
-                if (fpgaconfigs[0].getMaxSites() < vcfdata.getNSNPs()) {
-                    StatusFile::addError("FPGA does not support M=" + to_string(vcfdata.getNSNPs())
-                            + " sites. Maximum: " + to_string(fpgaconfigs[0].getMaxSites()));
-                    exit(EXIT_FAILURE);
-                }
+                // This commented check is wrong since the current M is NOT the number of split sites!
+                // The limit has already been checked by creating the chunks with an estimated number of split sites of M/3.
+//                // check if current M works for FPGA
+//                if (fpgaconfigs[0].getMaxSites() < vcfdata.getNSNPs()) {
+//                    StatusFile::addError("FPGA does not support M=" + to_string(vcfdata.getNSNPs())
+//                            + " sites. Maximum: " + to_string(fpgaconfigs[0].getMaxSites()));
+//                    exit(EXIT_FAILURE);
+//                }
                 // if not set explicitly numFPGAs+2 buffers are prepared for FPGA<->host communication
                 unsigned buffersFPGA = args.get<unsigned>("buffers-FPGA");
                 size_t buffersizeFPGA = args.get<size_t>("buffer-size-FPGA");
@@ -376,6 +378,11 @@ int main(int argc, char *argv[]) {
             if (chunk == vcfdata.getNChunks()-1 && !args.skipPhasing) {
                 vcfdata.writePhasedConfidences(totconfidences, ncalls);
             }
+
+//#ifndef DISABLE_MYMALLOC
+//            ofstream ofs(args.outPrefix + ".memmap_p" + to_string(chunk));
+//            MyMalloc::print(ofs, string("intermediate after phasing chunk ")+to_string(chunk));
+//#endif
 
         } // END phasing block
 
@@ -477,28 +484,8 @@ int main(int argc, char *argv[]) {
         MyMalloc::free(pdata);
 
 #ifndef DISABLE_MYMALLOC
-        cerr << "\nMemory (intermediate):" << endl;
-        cerr << "allocated:    " << MyMalloc::getAlloced() << " (" << MyMalloc::getAlloced()/(1024*1024) << " MiB)" << endl;
-        cerr << "freed:        " << MyMalloc::getFreed() << " (" << MyMalloc::getFreed()/(1024*1024) << " MiB)" << endl;
-        cerr << "not freed:    " << MyMalloc::getNotFreed() << " (" << MyMalloc::getNotFreed()/(1024*1024) << " MiB)" << endl;
-        cerr << "max. alloced: " << MyMalloc::getMaxAlloced() << " (" << MyMalloc::getMaxAlloced()/(1024*1024) << " MiB)" << endl;
-        const auto &memmap = MyMalloc::getMap();
-        cerr << "Remaining map entries: " << memmap.size() << endl;
-        if (memmap.size()) {
-            auto mapit = memmap.cbegin();
-            for (int i=0; i < 20 && mapit != memmap.cend(); i++, mapit++) {
-                cerr << " " << i << ":\t" << mapit->second.second << "\t" << mapit->second.first/(1024*1024) << endl;
-            }
-            if (mapit != memmap.cend())
-                cerr << " ..." << endl;
-
-            ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
-            ofs << "not freed:    " << MyMalloc::getNotFreed() << " (" << MyMalloc::getNotFreed()/(1024*1024) << " MiB)" << endl;
-            ofs << "max. alloced: " << MyMalloc::getMaxAlloced() << " (" << MyMalloc::getMaxAlloced()/(1024*1024) << " MiB)" << endl;
-            ofs << "Remaining map entries: " << memmap.size() << endl;
-            for (const auto &m : memmap)
-                ofs << m.second.second << "\t" << m.second.first/(1024*1024) << endl;
-        }
+        ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
+        MyMalloc::print(ofs, string("intermediate after chunk ")+to_string(chunk));
 #endif
 
     } // end for all chunks
@@ -521,28 +508,8 @@ int main(int argc, char *argv[]) {
     } // all destructors called
 
 #ifndef DISABLE_MYMALLOC
-    cerr << "\nMemory:" << endl;
-    cerr << "allocated:    " << MyMalloc::getAlloced() << " (" << MyMalloc::getAlloced()/(1024*1024) << " MiB)" << endl;
-    cerr << "freed:        " << MyMalloc::getFreed() << " (" << MyMalloc::getFreed()/(1024*1024) << " MiB)" << endl;
-    cerr << "not freed:    " << MyMalloc::getNotFreed() << " (" << MyMalloc::getNotFreed()/(1024*1024) << " MiB)" << endl;
-    cerr << "max. alloced: " << MyMalloc::getMaxAlloced() << " (" << MyMalloc::getMaxAlloced()/(1024*1024) << " MiB)" << endl;
-    const auto &memmap = MyMalloc::getMap();
-    cerr << "Remaining map entries: " << memmap.size() << endl;
-    if (memmap.size()) {
-        auto mapit = memmap.cbegin();
-        for (int i=0; i < 100 && mapit != memmap.cend(); i++, mapit++) {
-            cerr << " " << i << ":\t" << mapit->second.second << "\t" << mapit->second.first/(1024*1024) << endl;
-        }
-        if (mapit != memmap.cend())
-            cerr << " ..." << endl;
-
-        ofstream ofs(args.outPrefix + ".memmap_end");
-        ofs << "not freed:    " << MyMalloc::getNotFreed() << " (" << MyMalloc::getNotFreed()/(1024*1024) << " MiB)" << endl;
-        ofs << "max. alloced: " << MyMalloc::getMaxAlloced() << " (" << MyMalloc::getMaxAlloced()/(1024*1024) << " MiB)" << endl;
-        ofs << "Remaining map entries: " << memmap.size() << endl;
-        for (const auto &m : memmap)
-            ofs << m.second.second << "\t" << m.second.first/(1024*1024) << endl;
-    }
+    ofstream ofs(args.outPrefix + ".memmap_end");
+    MyMalloc::print(ofs, string("at end"));
 #endif
 
     return EXIT_SUCCESS;

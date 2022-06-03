@@ -58,6 +58,30 @@ public:
     static size_t getNotFreed() { return mm.mem_alloced - mm.mem_freed; }
     static size_t getMaxAlloced() { return mm.mem_maxalloced; }
     static const map<size_t,pair<size_t,string>> &getMap() { return mm.mem_map; };
+
+    static void print(ofstream &ofs, const string &note) {
+        cerr << "\nMemory " << note << ":" << endl;
+        cerr << "allocated:    " << getAlloced() << " (" << MyMalloc::getAlloced()/(1024*1024) << " MiB)" << endl;
+        cerr << "freed:        " << getFreed() << " (" << MyMalloc::getFreed()/(1024*1024) << " MiB)" << endl;
+        cerr << "not freed:    " << getNotFreed() << " (" << MyMalloc::getNotFreed()/(1024*1024) << " MiB)" << endl;
+        cerr << "max. alloced: " << getMaxAlloced() << " (" << MyMalloc::getMaxAlloced()/(1024*1024) << " MiB)" << endl;
+        const auto &memmap = mm.mem_map;
+        cerr << "Remaining map entries (size in MiB): " << memmap.size() << endl;
+        if (memmap.size()) {
+            auto mapit = memmap.cbegin();
+            for (int i=0; i < 20 && mapit != memmap.cend(); i++, mapit++) {
+                cerr << " " << i << ":\t" << mapit->second.second << "\t" << mapit->second.first/(1024*1024) << endl;
+            }
+            if (mapit != memmap.cend())
+                cerr << " ..." << endl;
+            ofs << "not freed:    " << MyMalloc::getNotFreed() << " (" << MyMalloc::getNotFreed()/1024 << " kiB)" << endl;
+            ofs << "max. alloced: " << MyMalloc::getMaxAlloced() << " (" << MyMalloc::getMaxAlloced()/1024 << " kiB)" << endl;
+            ofs << "Remaining map entries (size in kiB): " << memmap.size() << endl;
+            for (const auto &m : memmap)
+                ofs << m.second.second << "\t" << m.second.first/1024 << endl;
+        }
+    }
+
 #endif
 
 private:
@@ -108,12 +132,10 @@ private:
                 cerr << "MyMalloc: Address already in use! Double allocation?! ID: " << id << endl;
             mem_alloced += size;
             mem_map[(size_t)p] = make_pair(size,id);
-            cerr << "MyMalloc: ptr: " << hex << (size_t)p << dec << " added:\t" << size << "\t" << id << "\tin use: " << mem_alloced - mem_freed;
             if (mem_alloced-mem_freed > mem_maxalloced) {
-//                cerr << "\treached max!";
+//                cerr << "MyMalloc: reached max! added:\t" << size << "\t" << id << "\tin use: " << mem_alloced - mem_freed << endl;
                 mem_maxalloced = mem_alloced - mem_freed;
             }
-            cerr << endl;
             mux.unlock();
         }
     }
@@ -122,7 +144,6 @@ private:
         mux.lock();
         size_t sizefreed = mem_map[(size_t)p].first;
         mem_freed += sizefreed;
-        cerr << "MyMalloc: ptr: " << hex << (size_t)p << dec << " freed:\t" << sizefreed << "\t" << mem_map[(size_t)p].second << "\tremaining: " << mem_alloced - mem_freed << endl;
         if (sizefreed == 0)
             cerr << "MyMalloc: freed size is zero. Did you allocate with MyMalloc?" << endl;
         mem_map.erase((size_t)p);

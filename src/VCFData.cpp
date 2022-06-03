@@ -308,7 +308,9 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
     // We also check, if the data can be used with the current FPGA configuration (if available)
     {
         size_t Mrefpre = Mrefglob + Mrefglob/10; // 10% extra for multi-allelic splits
-        size_t reqphasecref = (skipPhasing ? 0 : numThreads) * min(Nrefhapsmax, args.K) * (Mglob/3) / (usefpga ? 2 : 1); // condensed references + PBWTs (estimated, if every third site is a call site, fwd+bck and ref+inc, no cref required when using FPGA)
+        // condensed references + PBWTs (estimated, if every third site is a call site, fwd+bck and ref+inc, no cref required when using FPGA,
+        // but number corresponds to all FPGA pipelines times the capacity of the FPGA processor outqueue, which is fixed to 2)
+        size_t reqphasecref = (skipPhasing ? 0 : (usefpga ? fpgaconfs[0].getNumPipelines() * 2 : numThreads)) * min(Nrefhapsmax, args.K) * (Mglob/3) / (usefpga ? 2 : 1);
         size_t reqphasedos = Ntarget * Mglob * 8; // phased dosages
         size_t reqimpref = doImputation ? (Nrefhaps * Mrefpre) / 8 : 0ull; // required size in bytes for reference haplotypes
         size_t reqimppbwt = doImputation ? Nrefhaps * Mglob : 0ull; // PBWT and refT of common reference (if every tgt site is also found in the reference)
@@ -332,7 +334,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         reqsum_dyn += reqsafety;
 
         if (!createQRef) { // give a short memory summary
-            if (args.debug) {
+//            if (args.debug) {
                 cout << "Roughly estimated maximum memory requirements for this analysis (without region settings, if every 3rd site is a call site):" << endl;
                 cout << "  Crefs + PBWTs         : " << divideRounded(reqphasecref, 1024ul*1024ul) << " MiB" << endl;
                 cout << "  Phased dosages        : " << divideRounded(reqphasedos, 1024ul*1024ul) << " MiB" << endl;
@@ -343,8 +345,8 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
                 cout << "  Imputed haps   (stat.): " << divideRounded(reqimpbunchhaps, 1024ul*1024ul) << " MiB" << endl;
                 cout << "  Outqueue space (stat.): " << divideRounded(reqimpqueue, 1024ul*1024ul) << " MiB" << endl;
                 cout << "  SUM                   : " << divideRounded(reqsum_dyn + reqsum_stat, 1024ul*1024ul) << " MiB" << endl;
-            } else
-                cout << "Roughly estimated maximum memory requirements for this analysis: " << divideRounded(reqsum_dyn + reqsum_stat, 1024ul*1024ul) << " MiB" << endl;
+//            } else
+//                cout << "Roughly estimated maximum memory requirements for this analysis: " << divideRounded(reqsum_dyn + reqsum_stat, 1024ul*1024ul) << " MiB" << endl;
             cout << "Maximum allowed chunk memory: " << divideRounded(maxchunkmem, 1024ul*1024ul) << " MiB" << endl;
         }
 
@@ -419,9 +421,9 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
 
                     // determine number of chunks according to maximum supported sites
                     int nChunks_old = nChunks;
-                    while (fpgaconfs[0].getMaxSites() < ((Mglob/nChunks+2*chunkflanksize)/3) && Mglob/nChunks >= chunkflanksize) { // the maximum number of supported sites is smaller than estimating every third site is a call site in each chunk
+                    while (fpgaconfs[0].getMaxSites() < (Mglob/nChunks+2*chunkflanksize) && Mglob/nChunks >= chunkflanksize) { // the maximum number of supported sites is smaller than the sites in each chunk
                         int nChunks_tmp = nChunks;
-                        nChunks = divideRounded((Mglob+2*nChunks*chunkflanksize)/3, fpgaconfs[0].getMaxSites());
+                        nChunks = divideRounded((Mglob+2*nChunks*chunkflanksize), fpgaconfs[0].getMaxSites());
                         if (nChunks == nChunks_tmp) // to ensure an exit of the while loop
                             nChunks++;
                     }

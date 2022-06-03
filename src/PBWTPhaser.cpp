@@ -123,6 +123,7 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
 //    tbb::concurrent_bounded_queue<condensedRefQueue_type> crefFPGAQueue;
     tbb::concurrent_bounded_queue<cPBWTQueue_type> cPBWTQueue;
     tbb::concurrent_bounded_queue<confidence_type> confidenceQueue; // contains only target ID and corresponding phasing confidence (incl. number of call sites) for result printing
+    cPBWTQueue.set_capacity(2); // if this is larger and the FPGA is faster than the phasing process, we can quickly get out of memory here for large datasets!
     confidenceQueue.set_capacity(nTarget);
 
     stringstream ss;

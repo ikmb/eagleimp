@@ -762,10 +762,7 @@ void Target::phaseExtPBWT(PBWT &pbwt) {
 
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT
         cout << "Missings: " << misscount << " Heterozygous singletons: " << monhetcount << endl;
-        cout << "Average phase confidence for target " << ntarget << ": " << totalconf/ncallsites << " (below 1.0 confidence: #: " << numConfl1;
-        if (numConfl1)
-            cout << " av: " << (totalConfl1/numConfl1);
-        cout << ")" << endl;
+        cout << "Average phase confidence for target " << ntarget << ": " << totalconf/ncallsites << endl;
 #endif
     }
 

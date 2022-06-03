@@ -190,9 +190,11 @@ void FPGAHandler::initTargets(const vector<Target*> &targets, bool lastblock, in
     // 1. initialize global constants
 
     // prepare transmission buffer
+    if (debug)
+        cout << "Provide FPGA " << threadIndex << ": Waiting for buffer." << endl;
     auto buffer = bufferFactoryFPGA.getIfMoreThanXAvailable(1);
     if (debug)
-        cout << "initbuf: " << hex << setw(16) << setfill('0') << (size_t)(buffer->getData()) << dec << endl;
+        cout << "Provide FPGA " << threadIndex << ": Got buffer: " << hex << setw(16) << setfill('0') << (size_t)(buffer->getData()) << dec << endl;
 
     // check if current target block fits into FPGA memory
     size_t accpbwtsites = 0;
@@ -261,8 +263,8 @@ void FPGAHandler::initTargets(const vector<Target*> &targets, bool lastblock, in
     }
 
     if (debug) {
-        cout << "FPGA initialization of targets with constants: " << constrequired_bufsize << " bytes." << endl;
-//#if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT
+        cout << "Provide FPGA " << threadIndex << ": FPGA initialization of targets with constants: " << constrequired_bufsize << " bytes." << endl;
+#if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT
         cout << hex;
         uint32_t* bufptr = constants;
         for (size_t x = 0; x < constrequired_bufsize/4; x++) {
@@ -271,7 +273,7 @@ void FPGAHandler::initTargets(const vector<Target*> &targets, bool lastblock, in
                 cout << endl;
         }
         cout << dec << endl;
-//#endif
+#endif
     }
 
     // NOTE: constants will be transmitted together with first target charge
@@ -280,13 +282,13 @@ void FPGAHandler::initTargets(const vector<Target*> &targets, bool lastblock, in
 
     { // target data
         if (debug) {
-            cout << "Target data: single: " << tgtsize << " total: " << (blocksize*tgtsize) << endl;
+            cout << "Provide FPGA " << threadIndex << ": Target data: single: " << tgtsize << " total: " << (blocksize*tgtsize) << endl;
         }
         for (size_t tidx = 0; tidx < blocksize; tidx++) {
             if (buf_remsize < tgtsize) {
                 // not enough space in buffer for next target -> send to FPGA
                 if (debug)
-                    cout << "(Target) data to FPGA: " << bufferFactoryFPGA.getBufferSize() - buf_remsize << " bytes." << endl;
+                    cout << "Provide FPGA " << threadIndex << ": (Target) data to FPGA: " << bufferFactoryFPGA.getBufferSize() - buf_remsize << " bytes." << endl;
 
                 hysys.getFPGA(threadIndex).writeDMA(*buffer, 0, timeout, bufferFactoryFPGA.getBufferSize() - buf_remsize);
                 // reset buffer pointer
@@ -307,14 +309,14 @@ void FPGAHandler::initTargets(const vector<Target*> &targets, bool lastblock, in
     { // split data
         size_t splitsize = targets[0]->getSplits().getDataSize();
         if (debug) {
-            cout << "Split data: single: " << splitsize << " total: " << (blocksize*splitsize) << endl;
+            cout << "Provide FPGA " << threadIndex << ": Split data: single: " << splitsize << " total: " << (blocksize*splitsize) << endl;
         }
         for (size_t tidx = 0; tidx < blocksize; tidx++) {
             if (buf_remsize < splitsize) {
                 // not enough space in buffer for next target split sites -> send to FPGA
                 // DEBUG
                 if (debug)
-                    cout << "(Split) data to FPGA: " << bufferFactoryFPGA.getBufferSize() - buf_remsize << " bytes." << endl;
+                    cout << "Provide FPGA " << threadIndex << ": (Split) data to FPGA: " << bufferFactoryFPGA.getBufferSize() - buf_remsize << " bytes." << endl;
 
                 hysys.getFPGA(threadIndex).writeDMA(*buffer, 0, timeout, bufferFactoryFPGA.getBufferSize() - buf_remsize);
                 // reset buffer pointer
@@ -337,14 +339,14 @@ void FPGAHandler::initTargets(const vector<Target*> &targets, bool lastblock, in
     { // best haps data
         size_t bhsize = targets[0]->getBestHapsFlags().getDataSize();
         if (debug) {
-            cout << "BH data: single: " << bhsize << " total: " << (blocksize*bhsize) << endl;
+            cout << "Provide FPGA " << threadIndex << ": BH data: single: " << bhsize << " total: " << (blocksize*bhsize) << endl;
         }
         for (size_t tidx = 0; tidx < blocksize; tidx++) {
             if (buf_remsize < bhsize) {
                 // not enough space in buffer for next target split sites -> send to FPGA
                 // DEBUG
                 if (debug)
-                    cout << "(Best haps) data to FPGA: " << bufferFactoryFPGA.getBufferSize() - buf_remsize << " bytes." << endl;
+                    cout << "Provide FPGA " << threadIndex << ": (Best haps) data to FPGA: " << bufferFactoryFPGA.getBufferSize() - buf_remsize << " bytes." << endl;
 
                 hysys.getFPGA(threadIndex).writeDMA(*buffer, 0, timeout, bufferFactoryFPGA.getBufferSize() - buf_remsize);
                 // reset buffer pointer
@@ -380,7 +382,7 @@ void FPGAHandler::initTargets(const vector<Target*> &targets, bool lastblock, in
     // send remaining data in buffer
     // DEBUG
     if (debug)
-        cout << "Remaining const/tgt/split data to FPGA: " << bufferFactoryFPGA.getBufferSize() - buf_remsize << " bytes." << endl;
+        cout << "Provide FPGA " << threadIndex << ": Remaining const/tgt/split data to FPGA: " << bufferFactoryFPGA.getBufferSize() - buf_remsize << " bytes." << endl;
 
 //    if (bufferFactoryFPGA.getBufferSize() - buf_remsize > 0) { // DEBUG: not necessary without debugging, buffer will always contain data then
         FPGA::Result result = hysys.getFPGA(threadIndex).writeDMA(*buffer, 0, timeout, bufferFactoryFPGA.getBufferSize() - buf_remsize);
@@ -410,7 +412,7 @@ void FPGAHandler::provideReferences(
 
     FPGA &fpga = hysys.getFPGA(threadIndex);
 
-    ThreadUtils::setThreadName("heagl prov FPGA");
+    ThreadUtils::setThreadName("eimp prov FPGA");
     if (debug)
         cout << "Launched Provide FPGA " << threadIndex << "." << endl;
 
@@ -422,7 +424,7 @@ void FPGAHandler::provideReferences(
         try {
             // DEBUG
             if (debug)
-                cout << "Provide FPGA " << threadIndex << ": Waiting... rem: " << blocksRem_local << endl;
+                cout << "Provide FPGA " << threadIndex << ": Waiting for block... rem: " << blocksRem_local << endl;
 
             inqueue.pop(block);
             blocksRem_local--;
@@ -450,17 +452,17 @@ void FPGAHandler::provideReferences(
 
         // stream prepared references to the FPGA
         if (debug)
-            cout << "Reference data to FPGA..." << endl;
+            cout << "Provide FPGA " << threadIndex << ": Reference data to FPGA..." << endl;
         for (const auto &rb : refbuffers) {
             FPGA::Result result;
             result = fpga.writeDMA(rb, 0, timeout, rb.getContentLength());
             if (result == FPGA::Result::Timeout) {
                 cout << endl;
-                StatusFile::addError("Ref2FPGA timeout.");
+                StatusFile::addError("Provide FPGA timeout.");
                 exit(EXIT_FAILURE);
             } else if (result == FPGA::Result::Cancelled) {
                 cout << endl;
-                StatusFile::addError("Ref2FPGA cancelled.");
+                StatusFile::addError("Provide FPGA cancelled.");
                 exit(EXIT_FAILURE);
             }
         }
@@ -468,15 +470,17 @@ void FPGAHandler::provideReferences(
         outqueue.push(block);
 
         if (debug) {
-            cout << "Provide " << threadIndex << ": Pushing #" << (totalBlocks - blocksRem_local) << "/" << totalBlocks <<  "." << endl;
+            cout << "Provide FPGA " << threadIndex << ": Pushing #" << (totalBlocks - blocksRem_local) << "/" << totalBlocks <<  "." << endl;
         }
+
+        sleep(2);
     }
 
     if (debug) {
         if (blocksRem_local > 0)
-            cout << "Provide FPGA terminated." << endl;
+            cout << "Provide FPGA " << threadIndex << " terminated." << endl;
         else
-            cout << "Provide FPGA finished." << endl;
+            cout << "Provide FPGA " << threadIndex << " finished." << endl;
     }
 
 }
@@ -490,9 +494,9 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
 
     FPGA &fpga = hysys.getFPGA(threadIndex);
 
-    ThreadUtils::setThreadName("heagl prep FPGA");
+    ThreadUtils::setThreadName("eimp read FPGA");
     if (debug)
-        cout << "Launched Process FPGA " << threadIndex << "." << endl;
+        cout << "Launched Read FPGA " << threadIndex << "." << endl;
 
     const size_t site512words = divideRounded(K, (size_t)512); // how many 512 bit words per site?
     size_t blocks_processed = 0; // not for multiple threads! (use global atomic then!)
@@ -509,17 +513,17 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
         PBWTPhaser::targetQueue_type block;
         try {
             if (debug)
-                cout << "Process FPGA " << threadIndex << ": Waiting... rem: " << (totalBlocks - blocks_processed) << endl;
+                cout << "Read FPGA " << threadIndex << ": Waiting... rem: " << (totalBlocks - blocks_processed) << endl;
 
             inqueue.pop(block);
             blocks_processed++;
 
             if (debug)
-                cout << "Process FPGA " << threadIndex << ": Got #" << blocks_processed << "/" << totalBlocks << "." << endl;
+                cout << "Read FPGA " << threadIndex << ": Got #" << blocks_processed << "/" << totalBlocks << "." << endl;
 
         } catch (tbb::user_abort &e) { // should not occur since the queue should not be allowed to be aborted!!!
             if (debug && blocks_processed < totalBlocks)
-                cerr << "Process FPGA " << threadIndex << ": User abort." << endl;
+                cerr << "Read FPGA " << threadIndex << ": User abort." << endl;
             break;
         }
 
@@ -554,17 +558,20 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
         while (tgt_rem512words > 0) {
 
             if (buffer_rem512words == 0) { // load next buffer from FPGA
+                if (debug)
+                    cout << "Read FPGA " << threadIndex << ": Waiting for buffer..." << endl;
+
                 b = bufferFactoryFPGA.get();
 
                 if (debug)
-                    cout << "Reading from FPGA...(#" << buffersread << ") " << flush;
+                    cout << "Read FPGA " << threadIndex << ": Reading from FPGA...(#" << buffersread << ") " << endl;
                 FPGA::Result result = fpga.readDMA(*b, 1, timeout);
                 buffersread++; // DEBUG
                 switch(result) {
                 case FPGA::Result::Success:
                     {
                         if (debug)
-                            cout << "ok. " << buffer512words << " in buffer." << endl;
+                            cout << "Read FPGA " << threadIndex << ": Received " << buffer512words << " in buffer." << endl;
                         data = reinterpret_cast<const uint32_t*>(b->getData());
                         buffer_rem512words = buffer512words;
                     }
@@ -592,8 +599,8 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
             if(debug) {
                 cout << "Tgt: " << (curr_tgt < block->size() ? to_string(curr_tgt).c_str() : "pad!")
                         << "\nrem: " << (tgt_rem512words+copy512words)
-                        << "\nrem w. pad: " << (tgt_rem512words+copy512words+tgt_rem512words_padding)
-                        << "\ntot rem: " << (total512words - w)
+//                        << "\nrem w. pad: " << (tgt_rem512words+copy512words+tgt_rem512words_padding)
+//                        << "\ntot rem: " << (total512words - w)
                         << "\nbuf: " << buffer_rem512words
                         << "\nnow copying: " << copy512words << " (" << copy512words*8*sizeof(uint64_t) << " bytes from "
                         << hex << setw(16) << setfill('0') << (uint64_t) data << " to "
@@ -635,8 +642,8 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
 #if defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET
                         if (debug) {
                             cout << " Finished target padding. Was last target in block." << endl;
-                            if (curr_tgt < blocksize)
-                                cout << " Last block with padding targets! Padding words: " << tgt_rem512words_padding << endl;
+//                            if (curr_tgt < blocksize)
+//                                cout << " Last block with padding targets! Padding words: " << tgt_rem512words_padding << endl;
                         }
 #endif
 
@@ -652,7 +659,7 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
         // else: received and processed all buffers for this block -> push into outqueue and continue with next block
         if (!termination_request) { // don't need to push the data into outqueue if we received a termination request
             if (debug)
-                cout << "Process " << threadIndex << ": Pushing #" << blocks_processed << "/" << totalBlocks <<  "." << endl;
+                cout << "Read FPGA " << threadIndex << ": Pushing #" << blocks_processed << "/" << totalBlocks <<  "." << endl;
             for (size_t t = 0; t < block->size(); t++) {
                 PBWTPhaser::cPBWTQueue_type tgt;
                 tgt.target = (*block)[t];
@@ -664,9 +671,9 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
 
     if (debug) {
         if (blocks_processed < totalBlocks)
-            cout << "Process FPGA terminated." << endl;
+            cout << "Read FPGA " << threadIndex << " terminated." << endl;
         else
-            cout << "Process FPGA finished." << endl;
+            cout << "Read FPGA " << threadIndex << " finished." << endl;
     }
 
     // release FPGA lock for other processes
@@ -684,25 +691,25 @@ void FPGAHandler::processPBWT(
     int threadIndex
     ) {
 
-        ThreadUtils::setThreadName("eglimp PcR FPGA");
+        ThreadUtils::setThreadName("eimp Phas FPGA");
         if (debug)
-            cout << "Launched PcR FPGA " << threadIndex << "." << endl;
+            cout << "Launched Phase FPGA " << threadIndex << "." << endl;
 
         while (!termination_request && targetsRemaining > 0) {
             PBWTPhaser::cPBWTQueue_type target;
             try {
                 // DEBUG
                 if (debug)
-                    cout << "PcR FPGA " << threadIndex << ": Waiting... rem: " << targetsRemaining << endl;
+                    cout << "Phase FPGA " << threadIndex << ": Waiting... rem: " << targetsRemaining << endl;
 
                 inqueue.pop(target);
 
                 // DEBUG
                 if (debug)
-                    cout << "PcR FPGA " << threadIndex << ": Got #" << (totalTargets-targetsRemaining+1) << "/" << totalTargets << "." << endl;
+                    cout << "Phase FPGA " << threadIndex << ": Got #" << (totalTargets-targetsRemaining+1) << "/" << totalTargets << "." << endl;
             } catch (tbb::user_abort &e) {
                 if (debug && targetsRemaining > 0)
-                    cerr << "PcR FPGA " << threadIndex << ": User abort." << endl;
+                    cerr << "Phase FPGA " << threadIndex << ": User abort." << endl;
                 break;
             }
 
@@ -732,9 +739,9 @@ void FPGAHandler::processPBWT(
 
         if (debug) {
             if (targetsRemaining > 0)
-                cout << "PcR FPGA terminated." << endl;
+                cout << "Phase FPGA " << threadIndex << " terminated." << endl;
             else
-                cout << "PcR FPGA finished." << endl;
+                cout << "Phase FPGA " << threadIndex << " finished." << endl;
         }
 }
 
