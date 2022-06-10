@@ -90,6 +90,11 @@ inline T roundToMultiple(T n, T mult) {
 }
 
 template<typename T>
+inline T reduceToMultiple(T n, T mult) {
+    return n - (n % mult);
+}
+
+template<typename T>
 inline T divideRounded(T a, T b) {
     return (a + b - 1) / b;
 }

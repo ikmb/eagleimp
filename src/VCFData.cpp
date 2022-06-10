@@ -315,18 +315,45 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         size_t reqimpref = doImputation ? (Nrefhaps * Mrefpre) / 8 : 0ull; // required size in bytes for reference haplotypes
         size_t reqimppbwt = doImputation ? Nrefhaps * Mglob : 0ull; // PBWT and refT of common reference (if every tgt site is also found in the reference)
         size_t reqimpabsp = doImputation ? Nrefhaps * Mglob * 4 : 0ull; // absolute permutation arrays for reference PBWT (if every tgt site is also found in the reference)
-        size_t reqimpbunchhaps = doImputation ? Ntarget * args.ibunchsize * 8 : 0ull; // imputation haplotypes in a bunch
+
+        size_t reqimpbunchhaps = 0ull;
         size_t reqimpqueue = 0ull;
+
         if (doImputation) {
-            reqimpqueue = Ntarget * 2*args.ibunchsize * args.num_files; // number of records in output queues x number of target samples per record
+            num_workers = max(1u, args.num_threads - args.num_files);
+            num_files = args.num_files;
+            // bunchsize in number of variants
+            bunchsize = max((size_t)1, (args.ibunchsize*(size_t)1000) / Ntarget); // minimum bunch size is 1
+            bunchsize = roundToMultiple(bunchsize, (size_t)num_workers); // important to have an equal load on all worker threads
+
+            reqimpbunchhaps = Ntarget * bunchsize / 4; // imputation haplotypes (mat+pat) in a bunch (in bytes)
+            reqimpqueue = Ntarget * bunchsize * args.num_files * 2; // number of records in output queues x number of target samples per record
             size_t entrysize = 8; // size of two ints for the haplotypes
             if (writeADosage)
                 entrysize += 8; // size of two floats for the allele dosages
             if (writeGDosage)
-                entrysize += 4; // size of the genotype dosage
+                entrysize += 4; // size of one float for the genotype dosage
             if (writeProbs)
-                entrysize += 12; // size of three floats, each for each genotype probability
+                entrysize += 12; // size of three floats for each genotype probability
             reqimpqueue *= entrysize;
+
+            // check if required static size does not exceed half of the chunk memory, otherwise reduce bunch size
+            if (reqimpbunchhaps + reqimpqueue > maxchunkmem/2) {
+                cerr << "bunchsize old: " << bunchsize << endl;
+                bunchsize /= divideRounded(reqimpbunchhaps + reqimpqueue, maxchunkmem/2);
+                cerr << "bunchsize new: " << bunchsize << endl;
+                if (bunchsize < num_workers) { // we need at least one record per bunch per worker!
+                    StatusFile::addError("Too many samples. Sorry.");
+                    exit(EXIT_FAILURE);
+                }
+                // only set to multiple of num_workers if the memory increase would not be too much!
+                if (bunchsize > 4*num_workers)
+                    bunchsize = roundToMultiple(bunchsize, (size_t)num_workers);
+                cerr << "bunchsize new: " << bunchsize << endl;
+                // recalculate required sizes
+                reqimpbunchhaps = Ntarget * bunchsize / 4; // imputation haplotypes (mat+pat) in a bunch (in bytes)
+                reqimpqueue = Ntarget * bunchsize * args.num_files * 2 * entrysize; // number of records in output queues x number of target samples per record x size of the entry
+            }
         }
         size_t reqsum_dyn = reqphasecref + reqphasedos + reqimpref + reqimppbwt + reqimpabsp;
         size_t reqsum_stat = reqimpbunchhaps + reqimpqueue;
@@ -336,18 +363,20 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         if (!createQRef) { // give a short memory summary
 //            if (args.debug) {
                 cout << "Roughly estimated maximum memory requirements for this analysis (without region settings, if every 3rd site is a call site):" << endl;
-                cout << "  Crefs + PBWTs         : " << divideRounded(reqphasecref, 1024ul*1024ul) << " MiB" << endl;
-                cout << "  Phased dosages        : " << divideRounded(reqphasedos, 1024ul*1024ul) << " MiB" << endl;
-                cout << "  Reference haps        : " << divideRounded(reqimpref, 1024ul*1024ul) << " MiB" << endl;
-                cout << "  RefT + PBWT           : " << divideRounded(reqimppbwt, 1024ul*1024ul) << " MiB" << endl;
-                cout << "  PBWT absPerm          : " << divideRounded(reqimpabsp, 1024ul*1024ul) << " MiB" << endl;
-                cout << "  20% safety            : " << divideRounded(reqsafety, 1024ul*1024ul) << " MiB" << endl;
-                cout << "  Imputed haps   (stat.): " << divideRounded(reqimpbunchhaps, 1024ul*1024ul) << " MiB" << endl;
-                cout << "  Outqueue space (stat.): " << divideRounded(reqimpqueue, 1024ul*1024ul) << " MiB" << endl;
-                cout << "  SUM                   : " << divideRounded(reqsum_dyn + reqsum_stat, 1024ul*1024ul) << " MiB" << endl;
+                cout << "  Chunk memory:" << endl;
+                cout << "    Crefs + PBWTs  : " << divideRounded(reqphasecref, 1024ul*1024ul) << " MiB" << endl;
+                cout << "    Phased dosages : " << divideRounded(reqphasedos, 1024ul*1024ul) << " MiB" << endl;
+                cout << "    Reference haps : " << divideRounded(reqimpref, 1024ul*1024ul) << " MiB" << endl;
+                cout << "    RefT + PBWT    : " << divideRounded(reqimppbwt, 1024ul*1024ul) << " MiB" << endl;
+                cout << "    PBWT absPerm   : " << divideRounded(reqimpabsp, 1024ul*1024ul) << " MiB" << endl;
+                cout << "    20% safety     : " << divideRounded(reqsafety, 1024ul*1024ul) << " MiB" << endl;
+                cout << "  Static (chunk independent) memory:" << endl;
+                cout << "    Imputed haps   : " << divideRounded(reqimpbunchhaps, 1024ul*1024ul) << " MiB" << endl;
+                cout << "    Outqueue space : " << divideRounded(reqimpqueue, 1024ul*1024ul) << " MiB" << endl;
+                cout << "  SUM              : " << divideRounded(reqsum_dyn + reqsum_stat, 1024ul*1024ul) << " MiB" << endl;
 //            } else
 //                cout << "Roughly estimated maximum memory requirements for this analysis: " << divideRounded(reqsum_dyn + reqsum_stat, 1024ul*1024ul) << " MiB" << endl;
-            cout << "Maximum allowed chunk memory: " << divideRounded(maxchunkmem, 1024ul*1024ul) << " MiB" << endl;
+            cout << "Maximum allowed memory: " << divideRounded(maxchunkmem, 1024ul*1024ul) << " MiB" << endl;
         }
 
         // FPGA check:
@@ -2776,13 +2805,7 @@ void VCFData::writeVCFPhased(const vector<BooleanVector> &phasedTargets) {
     hts_close(out);
 }
 
-void VCFData::writeVCFImputedPrepare(
-        unsigned num_workers_,
-        unsigned num_files_,
-        size_t bunchsize) {
-
-    num_workers = num_workers_;
-    num_files = num_files_;
+void VCFData::writeVCFImputedPrepare(size_t local_bunchsize) {
 
     // create output files
     bcfouts.clear();
@@ -2843,7 +2866,7 @@ void VCFData::writeVCFImputedPrepare(
         tgt_gt = MyMalloc::malloc(Ntarget * 2 * sizeof(int), "tgt_gt_writeImputed"); // (need void* because of htslib)
 
     // create output queues, organized for each file
-    size_t qcap = 2 * divideRounded(bunchsize, (size_t)num_workers); // space for two bunches (divided to each worker queue)
+    size_t qcap = 2 * divideRounded(local_bunchsize, (size_t)num_workers); // space for two bunches (distributed to each worker queue)
     recqs.resize(num_files);
     for (unsigned f = 0; f < num_files; f++) {
         recqs[f].resize(num_workers);

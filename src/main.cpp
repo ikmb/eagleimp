@@ -409,10 +409,15 @@ int main(int argc, char *argv[]) {
             Stopwatch swimp("Imputation+Write");
 
             unsigned num_workers = max(1u, args.num_threads - args.num_files);
-            // bunchsize in number of variants
-            size_t bunchsize = max((size_t)256, (args.ibunchsize*(size_t)1000) / vcfdata.getNTarget()); // minimum bunch size is 256
-            bunchsize = min(bunchsize, vcfdata.getNSNPsFullRef()); // don't exceed the total number of variants
-            bunchsize = roundToMultiple(bunchsize, (size_t)num_workers); // important to have an equal load on all worker threads
+            // get bunch size in number of variants
+            size_t bunchsize = vcfdata.getBunchSize();
+            // test if bunch size is appropriate with current chunk
+            if (bunchsize > vcfdata.getNSNPsFullRef()) { // don't exceed the total number of reference variants in current chunk
+                bunchsize = vcfdata.getNSNPsFullRef();
+                // only set to multiple of num_workers if the memory increase would not be too much!
+                if (bunchsize > 4*num_workers)
+                    bunchsize = roundToMultiple(bunchsize, (size_t)num_workers);
+            }
             size_t icapacity = roundToMultiple(bunchsize, UNITWORDS*8*sizeof(BooleanVector::data_type)) / 8;
 
             BooleanVector::data_type *idata = (BooleanVector::data_type*) MyMalloc::malloc(2*vcfdata.getNTarget()*icapacity, string("idata_c")+to_string(chunk)); // pre-initialization below
@@ -431,7 +436,7 @@ int main(int argc, char *argv[]) {
 
             cout << "Using " << num_workers << " threads and " << args.num_files << " temporary files for imputation." << endl;
             imputer.setNumThreads(num_workers); // after finding the set-maximal matches, share available threads with writers
-            vcfdata.writeVCFImputedPrepare(num_workers, args.num_files, bunchsize);
+            vcfdata.writeVCFImputedPrepare(bunchsize);
 
             // alternating imputation and writing of bunches
             size_t nbunches = divideRounded(vcfdata.getNSNPsFullRef(), bunchsize * args.num_files);

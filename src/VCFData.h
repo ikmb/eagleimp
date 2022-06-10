@@ -108,6 +108,7 @@ public:
     size_t getNChrXYHaploidsRef() const { return nChrXYhaploidsRef; }
     // returns the number of haploid samples in the target
     size_t getNChrXYHaploidsTgt() const { return nChrXYhaploidsTgt; }
+    size_t getBunchSize() const { return bunchsize; }
 
     // determines the start phases for the next chunk from the phasing results of the current chunk
     void determineStartPhases(const vector<BooleanVector> &phasedTargets);
@@ -116,10 +117,7 @@ public:
 
     void writePhasedConfidences(const vector<fp_type> &totalconfs, const vector<size_t> &ncalls);
     void writeVCFPhased(const vector<BooleanVector> &phasedTargets);
-    void writeVCFImputedPrepare(
-            unsigned num_workers_,
-            unsigned num_files_,
-            size_t bunchsize);
+    void writeVCFImputedPrepare(size_t bunchsize);
     void writeVCFImputedBunch(
             unsigned block,
             size_t startidx,
@@ -268,6 +266,7 @@ private:
     size_t Mrefglob; // global number of SNPs in reference (before reduction to region)
     size_t MrefMultiAllreg; // number of SNPs in reference that originate from a split multi-allelic variant in selected region -- only set with a Qref!
     size_t MrefMultiAllglob; // global number of SNPs in reference that originate from a split multi-allelic variant (before reduction to region) -- only set with a Qref!
+    size_t bunchsize;
     bool useExclude; // using an exclude file?
 
     size_t currM = 0, currMref = 0, currMOverlap = 0, currMrefOverlap = 0;

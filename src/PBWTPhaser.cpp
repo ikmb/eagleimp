@@ -128,11 +128,10 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
 
     stringstream ss;
     ss << "Phasing (Chunk " << chunk+1 << "/" << vcfdata.getNChunks() << ")";
-    StatusFile::updateStatus(0, ss.str() + ": Waiting");
+    string statusstring = ss.str();
+    StatusFile::updateStatus(0, statusstring);
 
     FPGAHandler fpgahandler(hysys, fpga_timeout, fpgaBufferFactory, gpuBufferFactory, vcfdata, maxpbwtsites, numthreads, !usegpu, debug);
-
-    StatusFile::updateStatus(0, ss.str());
 
     for (uint32_t iter = 1; iter <= iters; iter++) {
 
@@ -208,6 +207,7 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
         if (localK % 2)
             localK--;
         // acquire FPGA lock
+        StatusFile::updateStatus(0, statusstring + ": Waiting");
         fpgahandler.initIteration(localK, iter);
         // if we received a user termination request during waiting for the FPGA lock, we can stop here
         if (terminate) {
@@ -216,6 +216,7 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
             cerr << "User abort." << endl;
             exit(EXIT_FAILURE);
         }
+        StatusFile::updateStatus(0, statusstring);
 
         fpgahandler.prepareReferenceBuffers();
 
