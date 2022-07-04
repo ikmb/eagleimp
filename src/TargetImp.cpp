@@ -280,7 +280,7 @@ size_t TargetImp::processHistorySubTree(HistoryTreeNode* &ltree, HistoryTreeNode
         // There could be other potential matches from other leafs with the same depth as well,
         // or other leafs at the same depth may be extendable.
         // So if this match will be reported as set-maximal must be decided by the caller.
-        if (ltree->depth == treedepth) // (!ltree->left && !ltree->right)
+        if (ltree->depth == treedepth && treedepth > 0) // special case at the beginning could report an empty match if there were no matches at all at the first site, which requires the test if treedepth > 0
             matches.emplace_back(m-ltree->depth, m, ltree->interval.getLeft(), ltree->interval.getRight());
     }
 
@@ -437,6 +437,7 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
                 if (score > sum/2) // only set 1-alleles. if score is even and we have a 50/50, the allele would be 0. That's ok.
                     imputedTargetBunch.setWithPreInit(nbunch, true);
                 imputedDosageBunch[nbunch] = (float)(((double) score) / ((double) sum)); // Why double precision first? -> sum and score can get very large!
+
             }
         }
 
