@@ -174,6 +174,12 @@ However, if K is greater than the number of haplotypes in the specified referenc
 ##### \-\-maxChunkMemory
 Since EagleImp performs automatic chunking of your data depending on memory requirements, you should provide the size of your system's RAM here. However, the default is set to 16 GB, and if the target data or the reference does not get too large, most imputations can be performed with much less memory needed.
 
+##### \-\-skipPhasing
+If the input data already contains phase information you can skip the phasing part with this switch to perform imputation only.
+
+##### \-\-skipImputation
+You can skip the imputation part with this switch to do a phasing of the input data only.
+
 ### Output files
 
 ##### \*.imputed.vcf.gz\/.bcf
