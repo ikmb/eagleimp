@@ -39,7 +39,7 @@ using namespace std;
 using namespace placeholders;
 using namespace hybridsys;
 
-/* static */ atomic<bool> PBWTPhaser::terminate = false;
+/* static */ atomic<bool> PBWTPhaser::terminate(false);
 
 PBWTPhaser::PBWTPhaser(Hybridsys &hysys_, VCFData &vcfdata_, unsigned numthreads_, size_t Karg_, uint32_t iters_,
         fp_type expectIBDcM_, fp_type hist_, fp_type pErr_, fp_type pLimit_, bool impMissing_, bool doPrePhasing_, bool noRevPhasing_, bool skipPhasing_, bool debug_)
@@ -65,8 +65,8 @@ PBWTPhaser::PBWTPhaser(Hybridsys &hysys_, VCFData &vcfdata_, unsigned numthreads
 
 void PBWTPhaser::phase(vector<BooleanVector> &phasedTargets, vector<vector<float>> &phasedDosages, vector<fp_type> &totconfidences, vector<size_t> &ncalls, int chunk) {
 
-    atomic<int> missings = 0;
-    atomic<int> monhets = 0;
+    atomic<int> missings(0);
+    atomic<int> monhets(0);
 
     // do the phasing
 
