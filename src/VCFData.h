@@ -397,6 +397,8 @@ private:
     };
     VCFStats globalstats;
 
+    bool yaml = false;
+
     static const int QREFV_MAJ = 1;
     static const int QREFV_MIN = 0;
 

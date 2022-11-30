@@ -30,11 +30,17 @@ using namespace std;
 
 class StatusFile {
 public:
-    static void updateFile(const string &statfile_) {
+    static void updateFile(const string &statfile_, bool yaml) {
         instance.statfile.assign(statfile_);
         instance.infofile.assign(statfile_+".info");
         instance.warningfile.assign(statfile_+".warning");
         instance.errorfile.assign(statfile_+".error");
+        instance.yaml = yaml;
+        if (yaml) {
+            instance.infofile.append(".yaml");
+            instance.warningfile.append(".yaml");
+            instance.errorfile.append(".yaml");
+        }
         // clear files, if they already exist:
         // silent failure if the files do not exist or are not removable
         remove(instance.infofile.c_str());
@@ -64,14 +70,31 @@ public:
         instance.statcurrstep++;
         updateStatus(0);
     }
+    
+    static void addInfoYAML(const string &key, const string &value) {
+        stringstream s;
+        if (instance.infoempty)
+            s << "---\n"; // add YAML "header"
+        s << "- " << key << ": " << value;
+        if (!addToFile(instance.infofile, s.str()))
+            addWarning("Could not write to info file.");
+        else
+            instance.infoempty = false;
+    }
 
-    static void addInfo(const string &info) {
+    static void addInfo(const string &info, bool yamlmessage) {
         cout << filterHTML(info) << endl;
-        if (instance.statfile.empty())
+        if ((instance.yaml && !yamlmessage ) || instance.statfile.empty())
             return;
 
         stringstream s;
-        s << info << endl;
+        if (instance.infoempty && instance.yaml && yamlmessage)
+            s << "---\n"; // add YAML "header"
+        if (instance.yaml) {
+            if (yamlmessage)
+                addYAMLMessage(filterHTML(info), s);
+        } else
+            s << info << endl;
         if (!addToFile(instance.infofile, s.str()))
             addWarning("Could not write to info file.");
         else
@@ -84,20 +107,29 @@ public:
             return;
 
         stringstream s;
-        if (instance.warningempty)
-            s << "<h3>WARNING:</h3>\n";
-        s << "<ul><li>" << warning << "</li></ul>" << endl;
+        if (instance.warningempty) {
+            if (instance.yaml)
+                s << "---\n"; // add YAML "header"
+            else
+                s << "<h3>WARNING:</h3>\n";
+        }
+        if (instance.yaml)
+            addYAMLMessage(filterHTML(warning), s);
+        else
+            s << "<ul><li>" << warning << "</li></ul>" << endl;
         if (!addToFile(instance.warningfile, s.str()))
             cerr << "WARNING: Could not write to warning file." << endl;
         else
             instance.warningempty = false;
 
-        stringstream si;
-        si << "<b>WARNING:</b> " << warning << "<br>" << endl;
-        if (!addToFile(instance.infofile, si.str()))
-            cerr << "WARNING: Could not write to info file." << endl;
-        else
-            instance.infoempty = false;
+        if (!instance.yaml) { // warning messages will not appear in YAML info file
+            stringstream si;
+            si << "<b>WARNING:</b> " << warning << "<br>" << endl;
+            if (!addToFile(instance.infofile, si.str()))
+                cerr << "WARNING: Could not write to info file." << endl;
+            else
+                instance.infoempty = false;
+        }
     }
 
     static void addError(const string &error) {
@@ -106,20 +138,29 @@ public:
             return;
 
         stringstream s;
-        if (instance.errorempty)
-            s << "<h3>ERROR:</h3>\n";
-        s << "<ul><li>" << error << "</li></ul>" << endl;
+        if (instance.errorempty) {
+            if (instance.yaml)
+                s << "---\n"; // add YAML "header"
+            else
+                s << "<h3>ERROR:</h3>\n";
+        }
+        if (instance.yaml)
+            addYAMLMessage(filterHTML(error), s);
+        else
+            s << "<ul><li>" << error << "</li></ul>" << endl;
         if (!addToFile(instance.errorfile, s.str()))
             addWarning("Could not write to error file.");
         else
             instance.errorempty = false;
 
-        stringstream si;
-        si << "<b>ERROR:</b> " << error << "<br>" << endl;
-        if (!addToFile(instance.infofile, si.str()))
-            addWarning("Could not write to info file.");
-        else
-            instance.infoempty = false;
+        if (!instance.yaml) { // error messages will not appear in YAML info file
+            stringstream si;
+            si << "<b>ERROR:</b> " << error << "<br>" << endl;
+            if (!addToFile(instance.infofile, si.str()))
+                addWarning("Could not write to info file.");
+            else
+                instance.infoempty = false;
+        }
 
         // Automatically set status to "Failed" with current progress value + string
         updateStatus(instance.statvalue, "Failed: " + instance.statinfostr);
@@ -153,6 +194,23 @@ private:
         return s;
     }
 
+    static void addYAMLMessage(const string &message, stringstream &s) {
+        const string ind("  "); // indentation
+        s << "- message:\n"; // message key
+        // find newline characters and insert indentation for each one
+        size_t start = 0, pos = 0;
+        while(pos != string::npos) {
+            pos = message.find('\n', start);
+            size_t spos = message.find_first_not_of(" \t", start); // find position after leading whitespace
+            if (spos == string::npos)
+                break;
+            string m = message.substr(spos, pos - spos);
+            if (!m.empty()) // only print non-empty messages
+                s << ind << m << "\n";
+            start = pos+1; // character after newline
+        }
+    }
+
     void updateProgress(float progress) {
         statvalue = (statcurrstep+progress) / stattotalsteps;
     }
@@ -170,6 +228,8 @@ private:
     bool infoempty = true;
     bool warningempty = true;
     bool errorempty = true;
+
+    bool yaml = false;
 
     static StatusFile instance;
 };

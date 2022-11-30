@@ -156,6 +156,7 @@ public:
     int overrideChunks;
     bool deterministic = false;
     bool debug = false;
+    bool yaml = false;
 
     unsigned long timeout;
 

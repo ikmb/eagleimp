@@ -212,7 +212,7 @@ Args::Args(int argc, char *argv[]) :
     ("ref", value<string>(&ref), "tabix-indexed compressed VCF/BCF file or Qref file for reference haplotypes")
     ("target", value<string>(&vcfTarget), "tabix-indexed compressed VCF/BCF file for target genotypes")
     ("vcfExclude", value<string>(&vcfExclude), "tabix-indexed compressed VCF/BCF file containing variants to exclude from phasing")
-    ("vcfOutFormat", value<string>(&vcfOutFormat)->default_value("z"), "b|u|z|v: compressed BCF (b), uncomp BCF (u), compressed VCF (z), uncomp VCF (v)")
+    ("vcfOutFormat,O", value<string>(&vcfOutFormat)->default_value("z"), "b|u|z|v: compressed BCF (b), uncomp BCF (u), compressed VCF (z), uncomp VCF (v)")
     ("excludeMultiAllRef", "exclude multi-allelic reference markers for phasing as well as for imputation")
     ("allowRefAltSwap", "allow swapping of REF/ALT in target vs. reference VCF (the output will match reference alleles)")
     ("allowStrandFlip", "allow strand flips, i.e. A/T and C/G swaps in target vs. reference (precedence for allowRefAltSwap on A/T and C/G variants!) (the output will match reference alleles)")
@@ -287,6 +287,7 @@ Args::Args(int argc, char *argv[]) :
     ("skipHeader", "skip writing of VCF header for output files")
     ("deterministic", "disable random generator such that the output is deterministic for each run")
     ("debug", "produce lots of debug output")
+    ("yaml", "produce info/warning/error files in YAML format")
     ;
 
 #ifdef USE_CUDA_GPU
@@ -327,6 +328,12 @@ void Args::parse(int argc, char *argv[]) {
 
 void Args::parseVars() {
 
+    if (vars.count("debug"))
+        debug = true;
+
+    if (vars.count("yaml"))
+        yaml = true;
+
     if (!statfile.empty()) {
         bool ok = true;
         size_t pos = statfile.rfind(".vcf.gz");
@@ -346,7 +353,7 @@ void Args::parseVars() {
             cerr << "ERROR: Status file must not end with .vcf.gz/.vcf/.bcf/.qref" << endl;
             exit(EXIT_FAILURE);
         }
-        StatusFile::updateFile(statfile);
+        StatusFile::updateFile(statfile, yaml);
     }
 
     // set bools
@@ -413,10 +420,6 @@ void Args::parseVars() {
     if (vars.count("deterministic"))
         deterministic = true;
 
-    // debug
-    if (vars.count("debug"))
-        debug = true;
-
 }
 
 // compare filename arguments to be unique
@@ -476,8 +479,11 @@ inline void Args::checkFilenames() {
             pos = lockfile.rfind(".error");
             if (pos == lockfile.size()-6)
                 ok = false;
+            pos = lockfile.rfind(".yaml");
+            if (pos == lockfile.size()-5)
+                ok = false;
             if(!ok) {
-                StatusFile::addError("Lock file must not end with .vcf.gz/.vcf/.bcf/.qref/.varinfo/.info/.warning/.error");
+                StatusFile::addError("Lock file must not end with .vcf.gz/.vcf/.bcf/.qref/.varinfo/.info/.warning/.error/.yaml");
                 exit(EXIT_FAILURE);
             }
         }
