@@ -10,10 +10,10 @@ EagleImp also adds support for FPGA-based accelerated phasing if you have an Alp
 
 ### Prerequisites
 EagleImp has been tested on an Ubuntu 22.04 Linux system, but should also work on similar (especially later) distributions.
-Compilation depends on the *development* files of several system libraries, in particular **OpenMP**, **zlib**, **BOOST** (filesystem and program_options), **TBB** and others.
+Compilation depends on the *development* files of several system libraries, in particular **OpenMP**, **zlib**, **BOOST** (filesystem and program_options), **TBB2** and others.
 On Ubuntu, most dependencies can already be resolved by the following installation:
 ```
-$ sudo apt install zlib1g-dev libboost-dev libboost-filesystem-dev libboost-program-options-dev libtbb-dev
+$ sudo apt install zlib1g-dev libboost-dev libboost-filesystem-dev libboost-program-options-dev libtbb2-dev
 ```
 It also depends on the installation of **HTSlib** to read and write VCF files (<https://github.com/samtools/htslib>). Please follow the instructions listed in the file **INSTALL** there to install **HTSlib**.
 
