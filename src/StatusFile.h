@@ -195,7 +195,7 @@ private:
     }
 
     static void addYAMLMessage(const string &message, stringstream &s) {
-        const string ind("  "); // indentation
+        const string ind("    "); // indentation
         s << "- message:\n"; // message key
         // find newline characters and insert indentation for each one
         size_t start = 0, pos = 0;

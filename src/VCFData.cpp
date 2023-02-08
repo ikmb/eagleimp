@@ -289,7 +289,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
     s << "</td></tr>";
     StatusFile::addInfo(s.str(), !yaml);
 
-    yamlinfo << "  Chromosome: ";
+    yamlinfo << "    Chromosome: ";
     if (tmplitX) {
         if (chrom == CHRX)
             yamlinfo << "X";
@@ -302,20 +302,20 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
     if (!createQRef) {
         StatusFile::addInfo("<tr><td>Target samples:     </td><td>" + to_string(Ntarget) + "</td></tr>", !yaml);
         StatusFile::addInfo("<tr><td>Target variants:    </td><td>" + to_string(Mglob) + "</td></tr>", !yaml);
-        yamlinfo << "  Target samples: " << Ntarget << "\n";
-        yamlinfo << "  Target variants: " << Mglob << "\n";
+        yamlinfo << "    Target samples: " << Ntarget << "\n";
+        yamlinfo << "    Target variants: " << Mglob << "\n";
     }
     StatusFile::addInfo("<tr><td>Reference samples:  </td><td>" + to_string(Nref) + "</td></tr>", !yaml);
-    yamlinfo << "  Reference samples: " << Nref << "\n";
+    yamlinfo << "    Reference samples: " << Nref << "\n";
 
     if (Mrefreg == Mrefglob || !loadQuickRef) {
         StatusFile::addInfo("<tr><td>Reference variants: </td><td>" + to_string(Mrefglob) + "</td></tr>", !yaml);
-        yamlinfo << "  Reference variants: " << Mrefglob << "\n";
+        yamlinfo << "    Reference variants: " << Mrefglob << "\n";
     } else {
         StatusFile::addInfo("<tr><td>Reference variants (global): </td><td>" + to_string(Mrefglob) + "</td></tr>", !yaml);
         StatusFile::addInfo("<tr><td>Reference variants (region): </td><td>" + to_string(Mrefreg) + "</td></tr>", !yaml);
-        yamlinfo << "  Reference variants (global): " << Mrefglob << "\n";
-        yamlinfo << "  Reference variants (region): " << Mrefreg << "\n";
+        yamlinfo << "    Reference variants (global): " << Mrefglob << "\n";
+        yamlinfo << "    Reference variants (region): " << Mrefreg << "\n";
     }
     StatusFile::addInfo("</table>", !yaml);
     if (yaml)
@@ -1519,17 +1519,17 @@ void VCFData::processNextChunk() {
 
         // for YAML messages, placed only if yaml is set
         stringstream yamlinfo;
-        yamlinfo << (currChunk+1) << "\n";
-        yamlinfo << "  Common variants: " << M << "\n";
+        yamlinfo << "    Index: " << (currChunk+1) << "\n";
+        yamlinfo << "    Common variants: " << M << "\n";
         if (currChunk+1 < nChunks)
-            yamlinfo << "    in overlap: " << currMOverlap << "\n";
+            yamlinfo << "    Common variants in overlap: " << currMOverlap << "\n";
         if (doImputation) {
-            yamlinfo << "  Exclusive reference variants: " << (Mreftmp - M) << "\n";
+            yamlinfo << "    Exclusive reference variants: " << (Mreftmp - M) << "\n";
             if (currChunk+1 < nChunks)
-                yamlinfo << "    in overlap: " << (currMrefOverlap - currMOverlap) << "\n";
-            yamlinfo << "  Imputation output variants: " << Mreftmp << "\n";
+                yamlinfo << "    Exclusive reference variants in overlap: " << (currMrefOverlap - currMOverlap) << "\n";
+            yamlinfo << "    Imputation output variants: " << Mreftmp << "\n";
             if (currChunk+1 < nChunks)
-                yamlinfo << "    in overlap: " << currMrefOverlap << "\n";
+                yamlinfo << "    Imputation output variants in overlap: " << currMrefOverlap << "\n";
         }
 
         // determine SNP rate (only if we do phasing)
@@ -1545,27 +1545,27 @@ void VCFData::processNextChunk() {
             StatusFile::addInfo("<tr><td>Genetic distance range:         </td><td>" + to_string(cMrange) + " cM</td></tr>", !yaml);
             StatusFile::addInfo("<tr><td>Average #SNPs per cM in target: </td><td>" + to_string((int)(M/cMrange + 0.5)) + "</td></tr></table>", !yaml);
 
-            yamlinfo << "  Physical distance range: " << physRange << " bp\n";
-            yamlinfo << "  Genetic distance range: " << cMrange << " cM\n";
-            yamlinfo << "  Average SNPs per cM in target: " << (int)(M/cMrange + 0.5) << "\n";
+            yamlinfo << "    Physical distance range: " << physRange << " bp\n";
+            yamlinfo << "    Genetic distance range: " << cMrange << " cM\n";
+            yamlinfo << "    Average SNPs per cM in target: " << (int)(M/cMrange + 0.5) << "\n";
         }
 
         StatusFile::addInfo("<p class='pinfo'>", !yaml);
         if (lstats.numRefAltSwapAndStrandFlip) {
             StatusFile::addInfo("  REF/ALT were swapped AND strands were flipped in " + to_string(lstats.numRefAltSwapAndStrandFlip) + " variants.<br>", !yaml);
-            yamlinfo << "  REF ALT swap strand flips: " << lstats.numRefAltSwapAndStrandFlip << "\n";
+            yamlinfo << "    REF ALT swap strand flips: " << lstats.numRefAltSwapAndStrandFlip << "\n";
         }
         if (lstats.numRefAltSwaps) {
             StatusFile::addInfo("  REF/ALT were swapped in " + to_string(lstats.numRefAltSwaps) + " variants.<br>", !yaml);
-            yamlinfo << "  REF ALT swaps: " << lstats.numRefAltSwaps << "\n";
+            yamlinfo << "    REF ALT swaps: " << lstats.numRefAltSwaps << "\n";
         }
         if (lstats.numStrandFlips) {
             StatusFile::addInfo("  Strands were flipped in " + to_string(lstats.numStrandFlips) + " variants.<br>", !yaml);
-            yamlinfo << "  Strand flips: " << lstats.numStrandFlips << "\n";
+            yamlinfo << "    Strand flips: " << lstats.numStrandFlips << "\n";
         }
 
         StatusFile::addInfo("  Dropped " + to_string(lstats.MtargetOnly) + " variants not found in reference.<br>", !yaml);
-        yamlinfo << "  Dropped target only variants: " << lstats.MtargetOnly << "\n";
+        yamlinfo << "    Dropped target only variants: " << lstats.MtargetOnly << "\n";
         if (lstats.MtargetOnly > M) {
             StatusFile::addWarning("More than 50% of the target variants not found in reference! Wrong genome built?");
         } else if (lstats.MtargetOnly > (M+lstats.MtargetOnly) / 10) {
@@ -1577,63 +1577,65 @@ void VCFData::processNextChunk() {
         }
         if (lstats.MmultiAllelicTgt) {
             StatusFile::addInfo("  Dropped " + to_string(lstats.MmultiAllelicTgt) + " multi-allelic variants in target.<br>", !yaml);
-            yamlinfo << "  Dropped multi-allelic target variants: " << lstats.MmultiAllelicTgt << "\n";
+            yamlinfo << "    Dropped multi-allelic target variants: " << lstats.MmultiAllelicTgt << "\n";
         }
         if (lstats.MmultiAllelicRefTgt) {
             if (excludeMultiAllRef) {
                 StatusFile::addInfo("  Dropped " + to_string(lstats.MmultiAllelicRefTgt) + " variants bi-allelic in target but multi-allelic in reference.<br>", !yaml);
-                yamlinfo << "  Dropped multi-allelic reference variants: " << lstats.MmultiAllelicRefTgt << "\n";
+                yamlinfo << "    Dropped multi-allelic reference variants: " << lstats.MmultiAllelicRefTgt << "\n";
             } else {
                 if (!loadQuickRef){
                     StatusFile::addInfo("  Split " + to_string(lstats.MmultiAllelicRefTgt) + " variants bi-allelic in target but multi-allelic in reference into " + to_string(lstats.MmultiSplittedTgt)
                             + " bi-allelic reference variants,<br>\n"
                             + "  "  + to_string(lstats.GmultiFilledTgt) + " haplotypes filled with reference alleles.<br>", !yaml);
-                    yamlinfo << "  Common multi-allelic reference variants before split: " << lstats.MmultiAllelicRefTgt << "\n";
-                    yamlinfo << "    Resulting bi-allelic reference variants: " << lstats.MmultiSplittedTgt << "\n";
-                    yamlinfo << "    Haplotypes filled with reference alleles: " << lstats.GmultiFilledTgt << "\n";
+                    yamlinfo << "    Multi-allelic splits in common variants:\n";
+                    yamlinfo << "      Common multi-allelic reference variants before split: " << lstats.MmultiAllelicRefTgt << "\n";
+                    yamlinfo << "      Resulting bi-allelic reference variants: " << lstats.MmultiSplittedTgt << "\n";
+                    yamlinfo << "      Haplotypes filled with reference alleles: " << lstats.GmultiFilledTgt << "\n";
                 } else {
                     StatusFile::addInfo("  " + to_string(lstats.MmultiAllelicRefTgt) + " variants bi-allelic in target were multi-allelic in reference.<br>", !yaml);
-                    yamlinfo << "  Common reference variants from multi-allelic splits: " << lstats.MmultiAllelicRefTgt << "\n";
+                    yamlinfo << "    Common reference variants from multi-allelic splits: " << lstats.MmultiAllelicRefTgt << "\n";
                 }
             }
         }
         if (lstats.MmonomorphicRefTgt) {
             StatusFile::addInfo("  Dropped " + to_string(lstats.MmonomorphicRefTgt) + " variants bi-allelic in target but monomorphic in reference.<br>", !yaml);
-            yamlinfo << "  Dropped target variants monomorphic in reference: " << lstats.MmonomorphicRefTgt << "\n";
+            yamlinfo << "    Dropped target variants monomorphic in reference: " << lstats.MmonomorphicRefTgt << "\n";
         }
         if (lstats.MrefAltError) {
             StatusFile::addInfo("  Dropped " + to_string(lstats.MrefAltError) + " variants with allele mismatches.<br>", !yaml);
-            yamlinfo << "  Dropped allele mismatched variants: " << lstats.MrefAltError << "\n";
+            yamlinfo << "    Dropped allele mismatched variants: " << lstats.MrefAltError << "\n";
         }
         if (useExclude) {
             StatusFile::addInfo("  Dropped " + to_string(lstats.Mexclude) + " variants from target based on --vcfExclude.<br>", !yaml);
-            yamlinfo << "  User excluded variants: " << lstats.Mexclude << "\n";
+            yamlinfo << "    User excluded variants: " << lstats.Mexclude << "\n";
         }
 
         if (lstats.Munphased) {
             StatusFile::addInfo("  Unphased variants in phasing output: " + to_string(lstats.Munphased) + "<br>", !yaml);
-            yamlinfo << "  Unphased variants after phasing: " << lstats.Munphased << "\n";
+            yamlinfo << "    Unphased variants after phasing: " << lstats.Munphased << "\n";
         }
 
         StatusFile::addInfo("</p><p class='pinfo'>", !yaml);
         size_t mrefonly = loadQuickRef ? (Mref-M) : lstats.MrefOnly;
         StatusFile::addInfo("  " + to_string(mrefonly) + " variants in reference but not in target.<br>", !yaml);
-        yamlinfo << "  Reference-only variants: " << mrefonly << "\n";
+        yamlinfo << "    Reference-only variants: " << mrefonly << "\n";
         if (doImputation) {
             if (excludeMultiAllRef) {
                 StatusFile::addInfo("  Excluding " + to_string(lstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants from imputation.<br>", !yaml);
-                yamlinfo << "  Excluded reference-only multi-allelic variants: " << lstats.MmultiAllelicRefOnly << "\n";
+                yamlinfo << "    Excluded reference-only multi-allelic variants: " << lstats.MmultiAllelicRefOnly << "\n";
             } else if (lstats.MmultiAllelicRefOnly) {
                 if (!loadQuickRef){
                     StatusFile::addInfo("  Split " + to_string(lstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants into "
                             + to_string(lstats.MmultiSplittedRefOnly) + " bi-allelic reference variants,<br>\n"
                             + "    " + to_string(lstats.GmultiFilledRefOnly) + " haplotypes filled with reference alleles.<br>", !yaml);
-                    yamlinfo << "  Reference-only multi-allelic variants before split: " << lstats.MmultiAllelicRefOnly << "\n";
-                    yamlinfo << "    Resulting bi-allelic reference variants: " << lstats.MmultiSplittedRefOnly << "\n";
-                    yamlinfo << "    Haplotypes filled with reference alleles: " << lstats.GmultiFilledRefOnly << "\n";
+                    yamlinfo << "    Multi-allelic splits in reference-only variants:\n";
+                    yamlinfo << "      Reference-only multi-allelic variants before split: " << lstats.MmultiAllelicRefOnly << "\n";
+                    yamlinfo << "      Resulting bi-allelic reference variants: " << lstats.MmultiSplittedRefOnly << "\n";
+                    yamlinfo << "      Haplotypes filled with reference alleles: " << lstats.GmultiFilledRefOnly << "\n";
                 } else {
                     StatusFile::addInfo("  " + to_string(lstats.MmultiAllelicRefOnly) + " bi-allelic variants in reference only that originate from multi-allelic splits.<br>", !yaml);
-                    yamlinfo << "  Reference-only bi-allelic variants from multi-allelic splits: " << lstats.MmultiAllelicRefOnly << "\n";
+                    yamlinfo << "    Reference-only bi-allelic variants from multi-allelic splits: " << lstats.MmultiAllelicRefOnly << "\n";
                 }
             } else {
                 StatusFile::addInfo("  No multi-allelic reference-only variants.<br>", !yaml);
@@ -1645,7 +1647,7 @@ void VCFData::processNextChunk() {
             StatusFile::addWarning("<b>Analysis skipped:</b> Target and ref have too few matching variants. (M = " + to_string(M) + ")");
             StatusFile::updateStatus(1, "Skipped");
             if (yaml)
-                StatusFile::addInfoYAML("Chunk", yamlinfo.str());
+                StatusFile::addInfoYAML("Chunk\n", yamlinfo.str());
             // TODO This is not good! Instead, we should continue with the next chunk somehow, but what to do with the (reference) data covered by this chunk?
             exit(EXIT_SUCCESS);
         }
@@ -1654,10 +1656,11 @@ void VCFData::processNextChunk() {
 
         if (lstats.MwithMissingRef) {
             StatusFile::addInfo("  Missing genotypes in phasing reference: " + to_string(lstats.GmissingRef) + " in " + to_string(lstats.MwithMissingRef) + " variants.<br>", !yaml);
-            yamlinfo << "  Missing genotypes in phasing reference: " << lstats.GmissingRef << "\n";
-            yamlinfo << "    Fraction: " << ((lstats.GmissingRef / (double) M) / Nref) << "\n";
-            yamlinfo << "    Affected variants: " << lstats.MwithMissingRef << "\n";
-            yamlinfo << "      Fraction: " << (lstats.MwithMissingRef / (double) M) << "\n";
+            yamlinfo << "    Missing genotypes in phasing reference:\n";
+            yamlinfo << "      Number:" << lstats.GmissingRef << "\n";
+            yamlinfo << "      Fraction: " << ((lstats.GmissingRef / (double) M) / Nref) << "\n";
+            yamlinfo << "      Affected variants: " << lstats.MwithMissingRef << "\n";
+            yamlinfo << "      Affected variants fraction: " << (lstats.MwithMissingRef / (double) M) << "\n";
             StatusFile::addWarning("Reference for phasing contains missing genotypes (set randomly according to allele frequency).<br>\n"
                     "   Variants with missing data: " + to_string(lstats.MwithMissingRef)
                     + " Fraction: " + to_string(lstats.MwithMissingRef / (double) M) + "<br>\n"
@@ -1666,10 +1669,11 @@ void VCFData::processNextChunk() {
         }
         if (lstats.MwithUnphasedRef) {
             StatusFile::addInfo("  Unphased genotypes in phasing reference: " + to_string(lstats.GunphasedRef) + " in " + to_string(lstats.MwithUnphasedRef) + " variants.<br>", !yaml);
-            yamlinfo << "  Unphased genotypes in phasing reference: " << lstats.GunphasedRef << "\n";
-            yamlinfo << "    Fraction: " << ((lstats.GunphasedRef / (double) M) / Nref) << "\n";
-            yamlinfo << "    Affected variants: " << lstats.MwithUnphasedRef << "\n";
-            yamlinfo << "      Fraction: " << (lstats.MwithUnphasedRef / (double) M) << "\n";
+            yamlinfo << "    Unphased genotypes in phasing reference:\n";
+            yamlinfo << "      Number: " << lstats.GunphasedRef << "\n";
+            yamlinfo << "      Fraction: " << ((lstats.GunphasedRef / (double) M) / Nref) << "\n";
+            yamlinfo << "      Affected variants: " << lstats.MwithUnphasedRef << "\n";
+            yamlinfo << "      Affected variants fraction: " << (lstats.MwithUnphasedRef / (double) M) << "\n";
             StatusFile::addWarning("Reference for phasing contains unphased genotypes (set to random phase).<br>\n"
                     "   Variants with unphased data: " + to_string(lstats.MwithUnphasedRef)
                     + " Fraction: " + to_string(lstats.MwithUnphasedRef / (double) M) + "<br>\n"
@@ -1680,10 +1684,11 @@ void VCFData::processNextChunk() {
         if (doImputation) {
             if (lstats.MmissingRefOnly) {
                 StatusFile::addInfo("  Missing genotypes in imputation reference: " + to_string(lstats.GmissingRefOnly) + " in " + to_string(lstats.MmissingRefOnly) + " variants.<br>", !yaml);
-                yamlinfo << "  Missing genotypes in imputation reference: " << lstats.GmissingRefOnly << "\n";
-                yamlinfo << "    Fraction: " << ((lstats.GmissingRefOnly / (double) Mref) / Nref) << "\n";
-                yamlinfo << "    Affected variants: " << lstats.MmissingRefOnly << "\n";
-                yamlinfo << "      Fraction: " << (lstats.MmissingRefOnly / (double) Mref) << "\n";
+                yamlinfo << "    Missing genotypes in imputation reference:\n";
+                yamlinfo << "      Number: " << lstats.GmissingRefOnly << "\n";
+                yamlinfo << "      Fraction: " << ((lstats.GmissingRefOnly / (double) Mref) / Nref) << "\n";
+                yamlinfo << "      Affected variants: " << lstats.MmissingRefOnly << "\n";
+                yamlinfo << "      Affected variants fraction: " << (lstats.MmissingRefOnly / (double) Mref) << "\n";
                 StatusFile::addWarning("Reference for imputation contains missing genotypes (set randomly according to allele frequency).<br>\n"
                         "   Variants with missing data: " + to_string(lstats.MmissingRefOnly)
                         + " Fraction: " + to_string(lstats.MmissingRefOnly / (double) Mref) + "<br>\n"
@@ -1692,10 +1697,11 @@ void VCFData::processNextChunk() {
             }
             if (lstats.MunphasedRefOnly) {
                 StatusFile::addInfo("  Unphased genotypes in imputation reference: " + to_string(lstats.GunphasedRefOnly) + " in " + to_string(lstats.MunphasedRefOnly) + " variants.<br>", !yaml);
-                yamlinfo << "  Unphased genotypes in imputation reference: " << lstats.GunphasedRefOnly << "\n";
-                yamlinfo << "    Fraction: " << ((lstats.GunphasedRefOnly / (double) Mref) / Nref) << "\n";
-                yamlinfo << "    Affected variants: " << lstats.MunphasedRefOnly << "\n";
-                yamlinfo << "      Fraction: " << (lstats.MunphasedRefOnly / (double) Mref) << "\n";
+                yamlinfo << "    Unphased genotypes in imputation reference:\n";
+                yamlinfo << "      Number: " << lstats.GunphasedRefOnly << "\n";
+                yamlinfo << "      Fraction: " << ((lstats.GunphasedRefOnly / (double) Mref) / Nref) << "\n";
+                yamlinfo << "      Affected variants: " << lstats.MunphasedRefOnly << "\n";
+                yamlinfo << "      Affected variants fraction: " << (lstats.MunphasedRefOnly / (double) Mref) << "\n";
                 StatusFile::addWarning("Reference for imputation contains unphased genotypes (set to random phase).<br>\n"
                         "   Variants with unphased data: " + to_string(lstats.MunphasedRefOnly)
                         + " Fraction: " + to_string(lstats.MunphasedRefOnly / (double) Mref) + "<br>\n"
@@ -1706,7 +1712,7 @@ void VCFData::processNextChunk() {
 
         double missingrate = (lstats.GmissingTarget / (double) M) / Ntarget;
         StatusFile::addInfo("Av. missing rate in target genotypes: " + to_string(missingrate) + "</p>", !yaml);
-        yamlinfo << "  Missing rate in target genotypes: " << missingrate << "\n";
+        yamlinfo << "    Missing rate in target genotypes: " << missingrate << "\n";
         if (missingrate > 0.1)
             StatusFile::addWarning("Missing rate in target genotypes is >10%.");
 
@@ -3630,10 +3636,10 @@ void VCFData::printSummary() const {
     // for YAML messages, placed only if yaml is set
     stringstream yamlinfo;
     yamlinfo << "\n";
-    yamlinfo << "  Common variants: " << globalstats.M << "\n";
+    yamlinfo << "    Common variants: " << globalstats.M << "\n";
     if (doImputation) {
-        yamlinfo << "  Exclusive reference variants: " << (Mreftmp - globalstats.M) << "\n";
-        yamlinfo << "  Imputation output variants: " << Mreftmp << "\n";
+        yamlinfo << "    Exclusive reference variants: " << (Mreftmp - globalstats.M) << "\n";
+        yamlinfo << "    Imputation output variants: " << Mreftmp << "\n";
     }
 
     // determine SNP rate (only if we do phasing)
@@ -3646,86 +3652,88 @@ void VCFData::printSummary() const {
         StatusFile::addInfo("<tr><td>Genetic distance range:         </td><td>" + to_string(cMrange) + " cM</td></tr>", !yaml);
         StatusFile::addInfo("<tr><td>Average #SNPs per cM in target: </td><td>" + to_string((int)(globalstats.M/cMrange + 0.5)) + "</td></tr></table>", !yaml);
 
-        yamlinfo << "  Physical distance range: " << physRange << " bp\n";
-        yamlinfo << "  Genetic distance range: " << cMrange << " cM\n";
-        yamlinfo << "  Average SNPs per cM in target: " << (int)(globalstats.M/cMrange + 0.5) << "\n";
+        yamlinfo << "    Physical distance range: " << physRange << " bp\n";
+        yamlinfo << "    Genetic distance range: " << cMrange << " cM\n";
+        yamlinfo << "    Average SNPs per cM in target: " << (int)(globalstats.M/cMrange + 0.5) << "\n";
     }
 
     StatusFile::addInfo("<p class='pinfo'>", !yaml);
     if (globalstats.numRefAltSwapAndStrandFlip) {
         StatusFile::addInfo("  REF/ALT were swapped AND strands were flipped in " + to_string(globalstats.numRefAltSwapAndStrandFlip) + " variants.<br>", !yaml);
-        yamlinfo << "  REF ALT swap strand flips: " << globalstats.numRefAltSwapAndStrandFlip << "\n";
+        yamlinfo << "    REF ALT swap strand flips: " << globalstats.numRefAltSwapAndStrandFlip << "\n";
     }
     if (globalstats.numRefAltSwaps) {
         StatusFile::addInfo("  REF/ALT were swapped in " + to_string(globalstats.numRefAltSwaps) + " variants.<br>", !yaml);
-        yamlinfo << "  REF ALT swaps: " << globalstats.numRefAltSwaps << "\n";
+        yamlinfo << "    REF ALT swaps: " << globalstats.numRefAltSwaps << "\n";
     }
     if (globalstats.numStrandFlips) {
         StatusFile::addInfo("  Strands were flipped in " + to_string(globalstats.numStrandFlips) + " variants.<br>", !yaml);
-        yamlinfo << "  Strand flips: " << globalstats.numStrandFlips << "\n";
+        yamlinfo << "    Strand flips: " << globalstats.numStrandFlips << "\n";
     }
 
     StatusFile::addInfo("  Dropped " + to_string(globalstats.MtargetOnly) + " variants not found in reference.<br>", !yaml);
-    yamlinfo << "  Dropped target only variants: " << globalstats.MtargetOnly << "\n";
+    yamlinfo << "    Dropped target only variants: " << globalstats.MtargetOnly << "\n";
     if (globalstats.MmultiAllelicTgt) {
         StatusFile::addInfo("  Dropped " + to_string(globalstats.MmultiAllelicTgt) + " multi-allelic variants in target.<br>", !yaml);
-        yamlinfo << "  Dropped multi-allelic target variants: " << globalstats.MmultiAllelicTgt << "\n";
+        yamlinfo << "    Dropped multi-allelic target variants: " << globalstats.MmultiAllelicTgt << "\n";
     }
     if (globalstats.MmultiAllelicRefTgt) {
         if (excludeMultiAllRef) {
             StatusFile::addInfo("  Dropped " + to_string(globalstats.MmultiAllelicRefTgt) + " variants bi-allelic in target but multi-allelic in reference.<br>", !yaml);
-            yamlinfo << "  Dropped multi-allelic reference variants: " << globalstats.MmultiAllelicRefTgt << "\n";
+            yamlinfo << "    Dropped multi-allelic reference variants: " << globalstats.MmultiAllelicRefTgt << "\n";
         } else {
             if (!loadQuickRef){
                 StatusFile::addInfo("  Split " + to_string(globalstats.MmultiAllelicRefTgt) + " variants bi-allelic in target but multi-allelic in reference into " + to_string(globalstats.MmultiSplittedTgt)
                         + " bi-allelic reference variants,<br>\n"
                         + "  "  + to_string(globalstats.GmultiFilledTgt) + " haplotypes filled with reference alleles.<br>", !yaml);
-                yamlinfo << "  Common multi-allelic reference variants before split: " << globalstats.MmultiAllelicRefTgt << "\n";
-                yamlinfo << "    Resulting bi-allelic reference variants: " << globalstats.MmultiSplittedTgt << "\n";
-                yamlinfo << "    Haplotypes filled with reference alleles: " << globalstats.GmultiFilledTgt << "\n";
+                yamlinfo << "    Multi-allelic splits in common variants:\n";
+                yamlinfo << "      Common multi-allelic reference variants before split: " << globalstats.MmultiAllelicRefTgt << "\n";
+                yamlinfo << "      Resulting bi-allelic reference variants: " << globalstats.MmultiSplittedTgt << "\n";
+                yamlinfo << "      Haplotypes filled with reference alleles: " << globalstats.GmultiFilledTgt << "\n";
             } else {
                 StatusFile::addInfo("  " + to_string(globalstats.MmultiAllelicRefTgt) + " variants bi-allelic in target were multi-allelic in reference.<br>", !yaml);
-                yamlinfo << "  Common reference variants from multi-allelic splits: " << globalstats.MmultiAllelicRefTgt << "\n";
+                yamlinfo << "    Common reference variants from multi-allelic splits: " << globalstats.MmultiAllelicRefTgt << "\n";
             }
         }
     }
     if (globalstats.MmonomorphicRefTgt) {
         StatusFile::addInfo("  Dropped " + to_string(globalstats.MmonomorphicRefTgt) + " variants bi-allelic in target but monomorphic in reference.<br>", !yaml);
-        yamlinfo << "  Dropped target variants monomorphic in reference: " << globalstats.MmonomorphicRefTgt << "\n";
+        yamlinfo << "    Dropped target variants monomorphic in reference: " << globalstats.MmonomorphicRefTgt << "\n";
     }
     if (globalstats.MrefAltError) {
         StatusFile::addInfo("  Dropped " + to_string(globalstats.MrefAltError) + " variants with allele mismatches.<br>", !yaml);
-        yamlinfo << "  Dropped allele mismatched variants: " << globalstats.MrefAltError << "\n";
+        yamlinfo << "    Dropped allele mismatched variants: " << globalstats.MrefAltError << "\n";
     }
     if (useExclude) {
         StatusFile::addInfo("  Dropped " + to_string(globalstats.Mexclude) + " variants from target based on --vcfExclude.<br>", !yaml);
-        yamlinfo << "  User excluded variants: " << globalstats.Mexclude << "\n";
+        yamlinfo << "    User excluded variants: " << globalstats.Mexclude << "\n";
     }
 
     if (globalstats.Munphased) {
         StatusFile::addInfo("  Total unphased variants in phasing output: " + to_string(globalstats.Munphased) + "<br>", !yaml);
-        yamlinfo << "  Unphased variants after phasing: " << globalstats.Munphased << "\n";
+        yamlinfo << "    Unphased variants after phasing: " << globalstats.Munphased << "\n";
     }
 
     StatusFile::addInfo("</p><p class='pinfo'>", !yaml);
     size_t mrefonly = loadQuickRef ? (globalstats.Mref-globalstats.M) : globalstats.MrefOnly;
     StatusFile::addInfo("  " + to_string(mrefonly) + " variants in reference but not in target.<br>", !yaml);
-    yamlinfo << "  Reference-only variants: " << mrefonly << "\n";
+    yamlinfo << "    Reference-only variants: " << mrefonly << "\n";
     if (doImputation) {
         if (excludeMultiAllRef) {
             StatusFile::addInfo("  Excluded " + to_string(globalstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants from imputation.<br>", !yaml);
-            yamlinfo << "  Excluded reference-only multi-allelic variants: " << globalstats.MmultiAllelicRefOnly << "\n";
+            yamlinfo << "    Excluded reference-only multi-allelic variants: " << globalstats.MmultiAllelicRefOnly << "\n";
         } else if (globalstats.MmultiAllelicRefOnly) {
             if (!loadQuickRef){
                 StatusFile::addInfo("  Split " + to_string(globalstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants into "
                         + to_string(globalstats.MmultiSplittedRefOnly) + " bi-allelic reference variants,<br>\n"
                         + "    " + to_string(globalstats.GmultiFilledRefOnly) + " haplotypes filled with reference alleles.<br>", !yaml);
-                yamlinfo << "  Reference-only multi-allelic variants before split: " << globalstats.MmultiAllelicRefOnly << "\n";
-                yamlinfo << "    Resulting bi-allelic reference variants: " << globalstats.MmultiSplittedRefOnly << "\n";
-                yamlinfo << "    Haplotypes filled with reference alleles: " << globalstats.GmultiFilledRefOnly << "\n";
+                yamlinfo << "    Multi-allelic splits in reference-only variants:\n";
+                yamlinfo << "      Reference-only multi-allelic variants before split: " << globalstats.MmultiAllelicRefOnly << "\n";
+                yamlinfo << "      Resulting bi-allelic reference variants: " << globalstats.MmultiSplittedRefOnly << "\n";
+                yamlinfo << "      Haplotypes filled with reference alleles: " << globalstats.GmultiFilledRefOnly << "\n";
             } else {
                 StatusFile::addInfo("  " + to_string(globalstats.MmultiAllelicRefOnly) + " bi-allelic variants in reference only that originate from multi-allelic splits.<br>", !yaml);
-                yamlinfo << "  Reference-only bi-allelic variants from multi-allelic splits: " << globalstats.MmultiAllelicRefOnly << "\n";
+                yamlinfo << "    Reference-only bi-allelic variants from multi-allelic splits: " << globalstats.MmultiAllelicRefOnly << "\n";
             }
         } else {
             StatusFile::addInfo("  No multi-allelic reference-only variants.<br>", !yaml);
@@ -3734,14 +3742,13 @@ void VCFData::printSummary() const {
     }
     StatusFile::addInfo("</p><p class='pinfo'>", !yaml);
 
-// --------------------------
-
     if (globalstats.MwithMissingRef) {
         StatusFile::addInfo("  Missing genotypes in phasing reference: " + to_string(globalstats.GmissingRef) + " in " + to_string(globalstats.MwithMissingRef) + " variants.<br>", !yaml);
-        yamlinfo << "  Missing genotypes in phasing reference: " << globalstats.GmissingRef << "\n";
-        yamlinfo << "    Fraction: " << ((globalstats.GmissingRef / (double) globalstats.M) / Nref) << "\n";
-        yamlinfo << "    Affected variants: " << globalstats.MwithMissingRef << "\n";
-        yamlinfo << "      Fraction: " << (globalstats.MwithMissingRef / (double) globalstats.M) << "\n";
+        yamlinfo << "    Missing genotypes in phasing reference:\n";
+        yamlinfo << "      Number: " << globalstats.GmissingRef << "\n";
+        yamlinfo << "      Fraction: " << ((globalstats.GmissingRef / (double) globalstats.M) / Nref) << "\n";
+        yamlinfo << "      Affected variants: " << globalstats.MwithMissingRef << "\n";
+        yamlinfo << "      Affected variants fraction: " << (globalstats.MwithMissingRef / (double) globalstats.M) << "\n";
         StatusFile::addWarning("Reference for phasing contains missing genotypes (set randomly according to allele frequency).<br>\n"
                 "   Variants with missing data: " + to_string(globalstats.MwithMissingRef)
                 + " Fraction: " + to_string(globalstats.MwithMissingRef / (double) globalstats.M) + "<br>\n"
@@ -3750,10 +3757,11 @@ void VCFData::printSummary() const {
     }
     if (globalstats.MwithUnphasedRef) {
         StatusFile::addInfo("  Unphased genotypes in phasing reference: " + to_string(globalstats.GunphasedRef) + " in " + to_string(globalstats.MwithUnphasedRef) + " variants.<br>", !yaml);
-        yamlinfo << "  Unphased genotypes in phasing reference: " << globalstats.GunphasedRef << "\n";
-        yamlinfo << "    Fraction: " << ((globalstats.GunphasedRef / (double) globalstats.M) / Nref) << "\n";
-        yamlinfo << "    Affected variants: " << globalstats.MwithUnphasedRef << "\n";
-        yamlinfo << "      Fraction: " << (globalstats.MwithUnphasedRef / (double) globalstats.M) << "\n";
+        yamlinfo << "    Unphased genotypes in phasing reference:\n";
+        yamlinfo << "      Number: " << globalstats.GunphasedRef << "\n";
+        yamlinfo << "      Fraction: " << ((globalstats.GunphasedRef / (double) globalstats.M) / Nref) << "\n";
+        yamlinfo << "      Affected variants: " << globalstats.MwithUnphasedRef << "\n";
+        yamlinfo << "      Affected variants fraction: " << (globalstats.MwithUnphasedRef / (double) globalstats.M) << "\n";
         StatusFile::addWarning("Reference for phasing contains unphased genotypes (set to random phase).<br>\n"
                 "   Variants with unphased data: " + to_string(globalstats.MwithUnphasedRef)
                 + " Fraction: " + to_string(globalstats.MwithUnphasedRef / (double) globalstats.M) + "<br>\n"
@@ -3764,10 +3772,11 @@ void VCFData::printSummary() const {
     if (doImputation) {
         if (globalstats.MmissingRefOnly) {
             StatusFile::addInfo("  Missing genotypes in imputation reference: " + to_string(globalstats.GmissingRefOnly) + " in " + to_string(globalstats.MmissingRefOnly) + " variants.<br>", !yaml);
-            yamlinfo << "  Missing genotypes in imputation reference: " << globalstats.GmissingRefOnly << "\n";
-            yamlinfo << "    Fraction: " << ((globalstats.GmissingRefOnly / (double) globalstats.Mref) / Nref) << "\n";
-            yamlinfo << "    Affected variants: " << globalstats.MmissingRefOnly << "\n";
-            yamlinfo << "      Fraction: " << (globalstats.MmissingRefOnly / (double) globalstats.Mref) << "\n";
+            yamlinfo << "    Missing genotypes in imputation reference:\n";
+            yamlinfo << "      Number: " << globalstats.GmissingRefOnly << "\n";
+            yamlinfo << "      Fraction: " << ((globalstats.GmissingRefOnly / (double) globalstats.Mref) / Nref) << "\n";
+            yamlinfo << "      Affected variants: " << globalstats.MmissingRefOnly << "\n";
+            yamlinfo << "      Affected variants fraction: " << (globalstats.MmissingRefOnly / (double) globalstats.Mref) << "\n";
             StatusFile::addWarning("Reference for imputation contains missing genotypes (set randomly according to allele frequency).<br>\n"
                     "   Variants with missing data: " + to_string(globalstats.MmissingRefOnly)
                     + " Fraction: " + to_string(globalstats.MmissingRefOnly / (double) globalstats.Mref) + "<br>\n"
@@ -3776,10 +3785,11 @@ void VCFData::printSummary() const {
         }
         if (globalstats.MunphasedRefOnly) {
             StatusFile::addInfo("  Unphased genotypes in imputation reference: " + to_string(globalstats.GunphasedRefOnly) + " in " + to_string(globalstats.MunphasedRefOnly) + " variants.<br>", !yaml);
-            yamlinfo << "  Unphased genotypes in imputation reference: " << globalstats.GunphasedRefOnly << "\n";
-            yamlinfo << "    Fraction: " << ((globalstats.GunphasedRefOnly / (double) globalstats.Mref) / Nref) << "\n";
-            yamlinfo << "    Affected variants: " << globalstats.MunphasedRefOnly << "\n";
-            yamlinfo << "      Fraction: " << (globalstats.MunphasedRefOnly / (double) globalstats.Mref) << "\n";
+            yamlinfo << "    Unphased genotypes in imputation reference:\n";
+            yamlinfo << "      Number: " << globalstats.GunphasedRefOnly << "\n";
+            yamlinfo << "      Fraction: " << ((globalstats.GunphasedRefOnly / (double) globalstats.Mref) / Nref) << "\n";
+            yamlinfo << "      Affected variants: " << globalstats.MunphasedRefOnly << "\n";
+            yamlinfo << "      Affected variants fraction: " << (globalstats.MunphasedRefOnly / (double) globalstats.Mref) << "\n";
             StatusFile::addWarning("Reference for imputation contains unphased genotypes (set to random phase).<br>\n"
                     "   Variants with unphased data: " + to_string(globalstats.MunphasedRefOnly)
                     + " Fraction: " + to_string(globalstats.MunphasedRefOnly / (double) globalstats.Mref) + "<br>\n"
@@ -3790,7 +3800,7 @@ void VCFData::printSummary() const {
 
     double missingrate = (globalstats.GmissingTarget / (double) globalstats.M) / Ntarget;
     StatusFile::addInfo("Av. missing rate in target genotypes: " + to_string(missingrate) + "</p>", !yaml);
-    yamlinfo << "  Missing rate in target genotypes: " << missingrate << "\n";
+    yamlinfo << "    Missing rate in target genotypes: " << missingrate << "\n";
 
     if (doImputation) {
         double conflictrate = 0.0;
@@ -3801,7 +3811,7 @@ void VCFData::printSummary() const {
         } else {
             StatusFile::addInfo("<p class='pinfo'>No imputation conflicts.</p>", !yaml);
         }
-        yamlinfo << "  Imputation conflict rate: " << conflictrate << "\n";
+        yamlinfo << "    Imputation conflict rate: " << conflictrate << "\n";
 
         if (improveCalls) {
             cout << "\nResults from using --improveCalls:" << endl;
