@@ -2,8 +2,8 @@
 ## _A combined genotype phasing and imputation tool (with optional FPGA acceleration)_
 EagleImp combines genotype phasing and imputation in a single tool. The algorithms are based on 'Eagle2' by Po-Ru Loh et al. _(Nature Genetics, 2016, https://pubmed.ncbi.nlm.nih.gov/27694958/)_ and 'PBWT' by Richard Durbin _(Bioinformatics, 2014, https://pubmed.ncbi.nlm.nih.gov/24413527/)_. For EagleImp, we have put a lot of effort in modifying the methods and implementation to achieve higher efficiency and faster processing. This includes the use of multi-processing features (especially in the imputation process), which makes the tool well suited for workstations or high-performance computers with many cores and lots of RAM, but common desktop computers or laptops also benefit from faster execution times.
 
-The EagleImp paper is accepted in *Bioinformatics* and available online at 
-https://academic.oup.com/bioinformatics/advance-article-abstract/doi/10.1093/bioinformatics/btac637/6706779
+The EagleImp paper is published in *Bioinformatics* and available online at 
+https://academic.oup.com/bioinformatics/article/38/22/4999/6706779
 . 
 
 EagleImp also adds support for FPGA-based accelerated phasing if you have an Alpha Data ADM-PCIE-8K5 FPGA accelerator card available. The release of the FPGA part is in preparation. Please contact us if you want to use EagleImp with FPGA acceleration.
@@ -73,7 +73,7 @@ $ cd example
 $ eagleimp --geneticMap genetic_map_hg19_chr22.txt --ref 22.example.ref.vcf.gz --target 22.example.vcf.gz
 ```
 However, the provided data is only exemplary. For a real analysis you need the following:
-1. To use EagleImp you need a **genetic map** that can be found, e.g. at our server
+1. To use EagleImp you need a **genetic map**. For human genome builds GRCh37 and GRCh38 they can be found e.g. at our server
 <https://hybridcomputing.ikmb.uni-kiel.de/downloads>.
 The map is split by chromosomes which is recommended for a faster runtime, but a single file for the whole genome would also do.<br>
 **NOTE:** If your genetic map file contains a chromosome identifier column, this column **must not** contain any literals, such as "chr" or "X". Please use the corresponding numerical value instead, e.g. "23".
@@ -83,7 +83,7 @@ The map is split by chromosomes which is recommended for a faster runtime, but a
 Reference files can be either in _.vcf.gz_, _.bcf_ or in our own _.qref_ format. A reference file must not contain data from more than one chromosome. So, ideally, you should have one reference file ready per chromosome.
 If you are using a _.vcf.gz_ or _.bcf_ reference file, the file must be **indexed** using either _tabix_ or _bcftools_.<br>
 **NOTE:** EagleImp requires the reference file be named after the chromosome it contains at the beginning of its filename, i.e. the **filename must start with the chromosome number** (or chromosome name in case of X and Y, although 23 and 24 is also allowed). A preceding "chr" is also allowed.<br>
-**NOTE:** If you use a VCF reference file, the chromosome encodings in your target and the reference must be the same. This is a restriction imposed by the HTSlib reader (that also applies to the original Eagle2). We recommend using a Qref that eliminates this restriction (see _Qref format_ below). We have prepared the 1000 Genomes GRCh37/hg19 release in _.qref_ format available for download at <https://hybridcomputing.ikmb.uni-kiel.de/downloads>.
+**NOTE:** If you use a VCF/BCF reference file, the chromosome encodings in your target and the reference must be the same. This is a restriction imposed by the HTSlib reader (that also applies to the original Eagle2). We recommend using a Qref that eliminates this restriction (see _Qref format_ below). We have prepared the 1000 Genomes GRCh37/hg19 release in _.qref_ format available for download at <https://hybridcomputing.ikmb.uni-kiel.de/downloads>.
 
 3. Finally, you need your target data in an **indexed** _.vcf(.gz)_ or _.bcf_ file. 
 Again, a target file must not contain data from more than one chromosome. Please note the special instructions for chromosomes X and Y below if you want to impute data from these chromosomes.
