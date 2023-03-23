@@ -100,14 +100,14 @@ public:
     float getAlleleFreqFullRefRegion(size_t fullrefsnpindex) const { return alleleFreqsFullRefRegion[fullrefsnpindex]; }
     float getAlleleFreqCommon(size_t tgtsnpindex) const { return alleleFreqsCommon[tgtsnpindex]; }
     // returns a vector of flags for each sample in the reference if it is haploid (true) or not (false)
-    const vector<bool> &getChrXYHaploidsRef() const { return chrXYhaploidsRef; }
-    const vector<bool> &getChrXYHaploidsTgt() const { return chrXYhaploidsTgt; }
-    const vector<size_t> &getChrXYHaploidsRefMap() const { return chrXYhaploidsRefMap; }
-    const vector<size_t> &getChrXYHaploidsTgtMap() const { return chrXYhaploidsTgtMap; }
+    const vector<bool> &getHaploidsRef() const { return haploidsRef; }
+    const vector<bool> &getHaploidsTgt() const { return haploidsTgt; }
+    const vector<size_t> &getHaploidsRefMap() const { return haploidsRefMap; }
+    const vector<size_t> &getHaploidsTgtMap() const { return haploidsTgtMap; }
     // returns the number of haploid samples in the reference (without targets)
-    size_t getNChrXYHaploidsRef() const { return nChrXYhaploidsRef; }
+    size_t getNHaploidsRef() const { return nHaploidsRef; }
     // returns the number of haploid samples in the target
-    size_t getNChrXYHaploidsTgt() const { return nChrXYhaploidsTgt; }
+    size_t getNHaploidsTgt() const { return nHaploidsTgt; }
     size_t getBunchSize() const { return bunchsize; }
 
     // determines the start phases for the next chunk from the phasing results of the current chunk
@@ -132,7 +132,7 @@ public:
 
     void printSummary() const;
 
-    static int chrNameToNumber(const string &name, bool *chrprefixed = NULL, bool *literallyX = NULL);
+    static int chrNameToNumber(const string &name, string &chrlit, bool *literally = NULL);
 
 private:
     // reads metadata and determines the number of chunks, called in constructor
@@ -149,9 +149,9 @@ private:
     inline void addToInfoFileIncluded(size_t pos, const string& tgtID, const string& tref, const string& talt, const string& refID, const string& refall, const string& altall, const string& explanation);
 
     inline void processReferenceOnlySNP(bcf1_t *ref, void **ref_gt, int *mref_gt, int &numMissing, int &numUnphased, bool inOverlap, bool multiallelic);
-    inline void processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, int *mref_gt, bool allowHaploid, bool inOverlap,
+    inline void processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, int *mref_gt, bool inOverlap,
             int &numMissing, int &numUnphased, float &af, bool addForPhasing);
-    inline void processTargetSNP(int nsmpl, int ngt, const int32_t *gt, bool allowHaploid, bool refAltSwap, bool inOverlap, int &numMissing, size_t tgtvariantpos);
+    inline void processTargetSNP(int nsmpl, int ngt, const int32_t *gt, bool refAltSwap, bool inOverlap, int &numMissing, size_t tgtvariantpos);
     inline void processMap(const MapInterpolater &mapInterpolater);
     inline void qRefAppendVariant(const BooleanVector& var);
     inline void qRefWriteMetaAndConcat();
@@ -220,14 +220,14 @@ private:
     vector<string> targetIDs; // identifier strings for target samples
     vector<bool> isPhased; // size corresponds to the number of SNPs which will be written to phased output file in curr chunk (M if "!outputUnphased") and indicates if the entry is/will be phased or not
     vector<bool> isPhasedOverlap; // same for overlap region
-    vector<bool> chrXYhaploidsTgt; // flag for all samples in target that are haploid (only allowed (and used) for X and Y chromosome)
-    vector<bool> chrXYhaploidsTgt_initialized; // flag for all samples if the information in chrXYhaploidsTgt is valid, usually set after first target SNP (just in the case if the first genotype is missing, it will be set later)
-    vector<size_t> chrXYhaploidsTgtMap; // map index of any haplotype vector (indexed from where haploids are encoded as haploids) to index in target haps where haploids are encoded as homozygous diploid
-    size_t       nChrXYhaploidsTgt = 0;
-    vector<bool> chrXYhaploidsRef; // flag for all samples in reference that are haploid (only allowed (and used) for X and Y chromosome)
-    vector<bool> chrXYhaploidsRef_initialized; // flag for all samples if the information in chrXYhaploidsRef is valid, usually set after first reference SNP (just in the case if the first genotype is missing, it will be set later)
-    vector<size_t> chrXYhaploidsRefMap; // map index of any haplotype vector (indexed from where haploids are encoded as haploids) to index in reference where haploids are encoded as homozygous diploid
-    size_t       nChrXYhaploidsRef = 0;
+    vector<bool> haploidsTgt; // flag for all samples in target that are haploid
+    vector<bool> haploidsTgt_initialized; // flag for all samples if the information in haploidsTgt is valid, usually set after first target SNP (just in the case if the first genotype is missing, it will be set later)
+    vector<size_t> haploidsTgtMap; // map index of any haplotype vector (indexed from where haploids are encoded as haploids) to index in target haps where haploids are encoded as homozygous diploid
+    size_t       nHaploidsTgt = 0; // number of haploid target samples
+    vector<bool> haploidsRef; // flag for all samples in reference that are haploid (only allowed (and used) for X and Y chromosome)
+    vector<bool> haploidsRef_initialized; // flag for all samples if the information in haploidsRef is valid, usually set after first reference SNP (just in the case if the first genotype is missing, it will be set later)
+    vector<size_t> haploidsRefMap; // map index of any haplotype vector (indexed from where haploids are encoded as haploids) to index in reference where haploids are encoded as homozygous diploid
+    size_t       nHaploidsRef = 0; // number of haploid reference samples
     vector<float> alleleFreqsCommon; // size corresponds to phased sites, contains the allele frequencies of each variant (-1.0 if unknown)
     vector<float> alleleFreqsCommonOverlap; // for overlap
     vector<bcf1_t*> bcf_pout; // all records w/o genotypes for phased output; if "outputUnphased" is set, this vector keeps the records of the unphased SNPs including genotypes as well; ensure to add copies only!
@@ -275,8 +275,10 @@ private:
     bool allowStrandFlip;
     bool excludeMultiAllRef;
     int chrom;
-    bool chrprefixed;
-    bool literallyX;
+    string chromlit;
+    bool chrliterally;
+    bool setChrom = false;
+    bool checkedChrom = false;
     // global region (end inclusive!)
     int64_t startRegionBp, endRegionBp;
     int64_t startFlankRegionBp, endFlankRegionBp; // including flanks
@@ -400,9 +402,12 @@ private:
     bool yaml = false;
 
     static const int QREFV_MAJ = 1;
-    static const int QREFV_MIN = 0;
+    static const int QREFV_MIN = 1;
 
     static const int TMPBUFSIZE = 128;
+
+    static const int CHRX = 23; // mapping chromosome X to number 23
+    static const int CHRY = 24; // mapping chromosome Y to number 24
 
 };
 

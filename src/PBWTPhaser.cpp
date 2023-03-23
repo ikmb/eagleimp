@@ -149,7 +149,7 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
                     localNrefhapsCorr--; // reduce one hap for each haploid target in debug range
             }
 #else
-            localNrefhapsCorr = localNrefhapsAD - vcfdata.getNChrXYHaploidsRef() - vcfdata.getNChrXYHaploidsTgt() -2; // NOTE: from the available haps we need to remove the one diploid target (since it does not use it's own phasing result as reference in further iterations)
+            localNrefhapsCorr = localNrefhapsAD - vcfdata.getNHaploidsRef() - vcfdata.getNHaploidsTgt() -2; // NOTE: from the available haps we need to remove the one diploid target (since it does not use it's own phasing result as reference in further iterations)
 #endif
 
             // add transposition of phased targets to transposed reference for upcoming iteration
@@ -200,7 +200,7 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
 
         } else { // iter == 0
             localNrefhapsAD = vcfdata.getNReferenceHaps();
-            localNrefhapsCorr = localNrefhapsAD - vcfdata.getNChrXYHaploidsRef();
+            localNrefhapsCorr = localNrefhapsAD - vcfdata.getNHaploidsRef();
         }
         localK = min(localNrefhapsCorr, Karg);
         // FPGA supports only even K
@@ -615,7 +615,7 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
                     localNrefhapsCorr--; // reduce one hap for each haploid target in debug range
             }
 #else
-            localNrefhapsCorr = localNrefhapsAD - vcfdata.getNChrXYHaploidsRef() - vcfdata.getNChrXYHaploidsTgt() -2; // NOTE: from the available haps we need to remove the one diploid target (since it does not use it's own phasing result as reference in further iterations)
+            localNrefhapsCorr = localNrefhapsAD - vcfdata.getNHaploidsRef() - vcfdata.getNHaploidsTgt() -2; // NOTE: from the available haps we need to remove the one diploid target (since it does not use it's own phasing result as reference in further iterations)
 #endif
 
             // add transposition of phased targets to transposed reference for upcoming iteration
@@ -666,7 +666,7 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
 
         } else { // iter == 0
             localNrefhapsAD = vcfdata.getNReferenceHaps();
-            localNrefhapsCorr = localNrefhapsAD - vcfdata.getNChrXYHaploidsRef();
+            localNrefhapsCorr = localNrefhapsAD - vcfdata.getNHaploidsRef();
         }
         localK = min(localNrefhapsCorr, Karg);
 

@@ -28,9 +28,6 @@
 
 using namespace std;
 
-static const int CHRX = 23; // mapping chromosome X to number 23
-static const int CHRY = 24; // mapping chromosome Y to number 24
-
 class MapInterpolater {
 
 public:

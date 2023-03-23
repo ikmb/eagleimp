@@ -30,8 +30,8 @@
 
 PBWTImputer::PBWTImputer(const VCFData& vcfdata_, const string &statfile_, unsigned num_threads_, unsigned num_blocks_, int setmaxerrors_, bool imputeCalls_, bool debug_) :
     vcfdata(vcfdata_),
-    nTargetHap(vcfdata_.getNTarget()*2-vcfdata_.getNChrXYHaploidsTgt()),
-    K(vcfdata_.getNReferenceHaps()-vcfdata_.getNChrXYHaploidsRef()),
+    nTargetHap(vcfdata_.getNTarget()*2-vcfdata_.getNHaploidsTgt()),
+    K(vcfdata_.getNReferenceHaps()-vcfdata_.getNHaploidsRef()),
     M(vcfdata_.getNSNPs()),
     statfile(statfile_),
     num_threads(num_threads_),
@@ -45,7 +45,7 @@ void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets) 
 
     // create transposed reference (reduced to target sites):
     // (only required when haploids are present)
-    if (vcfdata.getNChrXYHaploidsRef()) {
+    if (vcfdata.getNHaploidsRef()) {
 
         // allocate memory and create vector structure for transposed reference
         size_t capacity = roundToMultiple(K, UNITWORDS * sizeof(BooleanVector::data_type) * 8) / 8;
@@ -70,7 +70,7 @@ void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets) 
         for (size_t m = 0; m < M; m++) { // vertical
             auto &rT = refT[m];
             for (size_t n = 0, nr = 0; nr < Nref; nr++) { // horizontal write
-                if (vcfdata.getChrXYHaploidsRef()[nr]) { // haploid
+                if (vcfdata.getHaploidsRef()[nr]) { // haploid
                     rT.setWithPreInit(n, crefT[m][2*nr]);
                     n++;
                 } else {
@@ -107,7 +107,7 @@ void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets) 
     Stopwatch swfindsetmax("findSetMax");
     targets.reserve(nTargetHap);
     for (size_t nhap = 0; nhap < nTargetHap; nhap++)
-        targets.emplace_back(nhap, vcfdata, *pbwt, phasedTargets[vcfdata.getChrXYHaploidsTgtMap()[nhap]], num_blocks, setmaxerrors, imputeCalls, debug);
+        targets.emplace_back(nhap, vcfdata, *pbwt, phasedTargets[vcfdata.getHaploidsTgtMap()[nhap]], num_blocks, setmaxerrors, imputeCalls, debug);
 
     cout << "Using " <<
     #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT //|| defined STOPWATCH
@@ -171,7 +171,7 @@ void PBWTImputer::imputeBunch(unsigned block, size_t bsize, vector<BooleanVector
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT// || defined DEBUG_TARGET_SILENT
         cout << "Target: " << nhap/2 << "." << nhap%2 << endl;
 #endif
-        targets[nhap].imputeBunch(block, bsize, imputedTargets[vcfdata.getChrXYHaploidsTgtMap()[nhap]], imputedDosages[vcfdata.getChrXYHaploidsTgtMap()[nhap]]);
+        targets[nhap].imputeBunch(block, bsize, imputedTargets[vcfdata.getHaploidsTgtMap()[nhap]], imputedDosages[vcfdata.getHaploidsTgtMap()[nhap]]);
     }
 }
 

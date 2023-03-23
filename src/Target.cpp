@@ -163,7 +163,7 @@ void Target::phase() {
 
     // shortcut if target is haploid
     // NOTE: phasedTargetPat and phasedDosagePat are not required
-    if (vcfdata.getChrXYHaploidsTgt()[ntarget]) {
+    if (vcfdata.getHaploidsTgt()[ntarget]) {
     // copy target data to phasedTarget
         phasedDosageMat.clear();
         phasedDosageMat.resize(vcfdata.getNSNPs(), 0.0);
@@ -796,7 +796,7 @@ void Target::findBestHaps() {
             for (size_t n = 0, nr = 0; nr < NrefhapsAllDiploid/2; nr++) {
                 if (nr != ignoreidx) {
                     bestHaps[n++] = 2*nr;
-                    if (!vcfdata.getChrXYHaploidsRef()[nr])
+                    if (!vcfdata.getHaploidsRef()[nr])
                         bestHaps[n++] = 2*nr+1;
                 }
             }
@@ -828,7 +828,7 @@ void Target::findBestHaps() {
             {
                 size_t nerr = targetFull.compare_withPreInit(referenceFull[2*nr]);
                 errors.push_back(make_pair(nerr, 2*nr));
-                if (!vcfdata.getChrXYHaploidsRef()[nr]) {
+                if (!vcfdata.getHaploidsRef()[nr]) {
                     nerr = targetFull.compare_withPreInit(referenceFull[2*nr+1]);
                     errors.push_back(make_pair(nerr, 2*nr+1));
                 }

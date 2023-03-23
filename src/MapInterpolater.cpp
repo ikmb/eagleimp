@@ -38,7 +38,7 @@ const string MapInterpolater::MAP_FILE_HEADER2 =
         "position COMBINED_rate(cM/Mb) Genetic_Map(cM)";
 
 MapInterpolater::MapInterpolater(const string &geneticMapFile, int pick_chr_) : pick_chr(pick_chr_) {
-    cout << "Reading genetic map coordinates of chromosome " << pick_chr << "." << endl;
+    cout << "Reading genetic map coordinates." << endl;
     chrBpToRateGen[0] = make_pair(0.0, 0.0); // sentinel at beginning
 
     int bp0 = 0;
@@ -46,73 +46,71 @@ MapInterpolater::MapInterpolater(const string &geneticMapFile, int pick_chr_) : 
     int bp;
     double rate, gen;
 
-    // normal case (not chrY)
-    if (pick_chr != CHRY) {
+	string line;
+	ifstream fin;
+	fin.open(geneticMapFile);
+	if (!fin.good()) {
+		StatusFile::addError("Failed reading genetic map.");
+		exit(EXIT_FAILURE);
+	}
+	getline(fin, line);
+	if (line != MAP_FILE_HEADER1 && line != MAP_FILE_HEADER2) {
+		StatusFile::addError("Wrong format of genetic map.\n"
+		"       Expecting header either: " + MAP_FILE_HEADER1 + "\n"
+		"                            or: " + MAP_FILE_HEADER2);
+		exit(EXIT_FAILURE);
+	}
+	if (line == MAP_FILE_HEADER1) { // map contains chromosome column
+		int chr;
+		bool reachedpick = false;
+		// Note that the chromosome has to be an integer value here! No literals are allowed. (yet -> TODO) If
+		// If the chromosome only has a literal identifier, please use a genetic map file without the chr column or set chr to 0.
+		while (fin >> chr >> bp >> rate >> gen) {
+			if (reachedpick) {
+				if (chr == pick_chr) {
+					if (gen < gen0 || bp < bp0) {
+						StatusFile::addError("Genetic map contains out-of-order row.");
+						exit(EXIT_FAILURE);
+					}
+					if (bp <= 0) {
+						StatusFile::addError("Genetic map positions must be positive.");
+						exit(EXIT_FAILURE);
+					}
+					if (bp == bp0) {
+						StatusFile::addError("Genetic map contains duplicate position.");
+						exit(EXIT_FAILURE);
+					}
+					chrBpToRateGen[bp] = make_pair((gen - gen0) / (1e-6 * (bp - bp0)), gen);
+				} else // all of the chromosome was consumed, we can stop here
+					break;
+			} else {
+				if (chr == pick_chr)
+					reachedpick = true;
+			}
+			bp0 = bp;
+			gen0 = gen;
+		}
+	} else { // no chromosome column in map -> we expect everything to be on the right chromosome!
+		while (fin >> bp >> rate >> gen) {
+			if (gen < gen0 || bp < bp0) {
+				StatusFile::addError("Genetic map contains out-of-order row.");
+				exit(EXIT_FAILURE);
+			}
+			if (bp <= 0) {
+				StatusFile::addError("Genetic map positions must be positive.");
+				exit(EXIT_FAILURE);
+			}
+			if (bp == bp0) {
+				StatusFile::addError("Genetic map contains duplicate position.");
+				exit(EXIT_FAILURE);
+			}
+			chrBpToRateGen[bp] = make_pair((gen - gen0) / (1e-6 * (bp - bp0)), gen);
+			bp0 = bp;
+			gen0 = gen;
+		}
+	}
 
-        string line;
-        ifstream fin;
-        fin.open(geneticMapFile);
-        if (!fin.good()) {
-            StatusFile::addError("Failed reading genetic map.");
-            exit(EXIT_FAILURE);
-        }
-        getline(fin, line);
-        if (line != MAP_FILE_HEADER1 && line != MAP_FILE_HEADER2) {
-            StatusFile::addError("Wrong format of genetic map.\n"
-            "       Expecting header either: " + MAP_FILE_HEADER1 + "\n"
-            "                            or: " + MAP_FILE_HEADER2);
-            exit(EXIT_FAILURE);
-        }
-        if (line == MAP_FILE_HEADER1) { // map contains chromosome column
-            int chr;
-            bool reachedpick = false;
-            while (fin >> chr >> bp >> rate >> gen) {
-                if (reachedpick) {
-                    if (chr == pick_chr) {
-                        if (gen < gen0 || bp < bp0) {
-                            StatusFile::addError("Genetic map contains out-of-order row.");
-                            exit(EXIT_FAILURE);
-                        }
-                        if (bp <= 0) {
-                            StatusFile::addError("Genetic map positions must be positive.");
-                            exit(EXIT_FAILURE);
-                        }
-                        if (bp == bp0) {
-                            StatusFile::addError("Genetic map contains duplicate position.");
-                            exit(EXIT_FAILURE);
-                        }
-                        chrBpToRateGen[bp] = make_pair((gen - gen0) / (1e-6 * (bp - bp0)), gen);
-                    } else // all of the chromosome was consumed, we can stop here
-                        break;
-                } else {
-                    if (chr == pick_chr)
-                        reachedpick = true;
-                }
-                bp0 = bp;
-                gen0 = gen;
-            }
-        } else { // no chromosome column in map -> we expect everything to be on the right chromosome!
-            while (fin >> bp >> rate >> gen) {
-                if (gen < gen0 || bp < bp0) {
-                    StatusFile::addError("Genetic map contains out-of-order row.");
-                    exit(EXIT_FAILURE);
-                }
-                if (bp <= 0) {
-                    StatusFile::addError("Genetic map positions must be positive.");
-                    exit(EXIT_FAILURE);
-                }
-                if (bp == bp0) {
-                    StatusFile::addError("Genetic map contains duplicate position.");
-                    exit(EXIT_FAILURE);
-                }
-                chrBpToRateGen[bp] = make_pair((gen - gen0) / (1e-6 * (bp - bp0)), gen);
-                bp0 = bp;
-                gen0 = gen;
-            }
-        }
-
-    }
-    chrBpToRateGen[bp0 + 1e9] = make_pair(1.0, gen0 + 1e3); // sentinel at end -> this also generates equidistant positions with 1cM/Mbp for special case with chrY (where no phasing is required)
+    chrBpToRateGen[bp0 + 1e9] = make_pair(1.0, gen0 + 1e3); // sentinel at end -> this also generates equidistant positions with 1cM/Mbp if file is empty (besides the header)
 }
 
 // returns interpolated genetic position in cM (centi morgans)

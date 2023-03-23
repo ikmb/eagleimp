@@ -104,11 +104,12 @@ VCFData::VCFData(const Args& args, int argc, char** argv, const vector<FPGAConfi
 
         // read genetic map (and test for errors)
         if (!skipPhasing) {
-            if (chrom != CHRY && args.genMapFile.empty()) {
+//            if (chrom != CHRY && args.genMapFile.empty()) {
+            if (args.genMapFile.empty()) { // if you provide a haploid file, either specify a genetic map (although not needed) or explicit state --skipPhasing
                 StatusFile::addError("No genetic map file specified. Try --help.");
                 exit(EXIT_FAILURE);
             }
-            mapint = MapInterpolater(args.genMapFile, chrom);
+            mapint = MapInterpolater(args.genMapFile, chrom); // chromosomes with literal-only identifiers need a genetic map without "chr" column or 0 as integer identifier
         }
     } else { // createQRef
         // qref filename
@@ -123,7 +124,6 @@ VCFData::VCFData(const Args& args, int argc, char** argv, const vector<FPGAConfi
     }
 }
 
-// fills in chrom if chrom==0
 inline void VCFData::processMeta(const string &refFile, const string &vcfTarget, const string &vcfExclude, const Args &args, const vector<FPGAConfigurationEagleImp> &fpgaconfs) {
 
     M = 0;
@@ -154,13 +154,22 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         chrBpsReg.reserve(Mglob);
     }
 
-    // We learn the chromosome from the reference file name per convention, i.e. it has to start with the number or with "chr" followed by the number.
-    bool tmplitX;
-    string chrname(refFile);
-    size_t p = refFile.rfind('/');
-    if (p != string::npos) // need to cut off the path
-        chrname = refFile.substr(p+1);
-    chrom = chrNameToNumber(chrname, NULL, &tmplitX);
+    // We learn the chromosome from the reference file name per convention, i.e. it has to start with the number or with "chr" followed by the number,
+    // and the identifier stops with a '.' or '_'. Completely literal names are also allowed now and will be referred to as number 0.
+    // TODO probably we do not need this convention in the future?
+    {
+		string chrname(refFile);
+		size_t p = refFile.rfind('/');
+		if (p != string::npos) // need to cut off the path
+			chrname = refFile.substr(p+1);
+		p = chrname.find_first_of("._"); // find the stop character
+		chrname = chrname.substr(0, p);
+		chrom = chrNameToNumber(chrname, chromlit, &chrliterally);
+		// if we load a Qref, the number and literal name is fixed here.
+		// with a VCF reference, the name and number are checked to be consistent with the filename,
+		// but the actual contents are taken later from inside the file
+		setChrom = loadQuickRef;
+    }
 
     // initialize VCF reader
     sr = bcf_sr_init();
@@ -172,15 +181,20 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
     {
         // set the region (including flanks)
         stringstream s;
-        s << chrom << ":" << startFlankRegionBp << "-" << endFlankRegionBp;
-        s << ",chr" << chrom << ":" << startFlankRegionBp << "-" << endFlankRegionBp;
-        if (chrom == CHRX) { // we literally add X as well
-            s << ",X:" << startFlankRegionBp << "-" << endFlankRegionBp;
-            s << ",chrX:" << startFlankRegionBp << "-" << endFlankRegionBp;
-        }
-        if (chrom == CHRY) { // or Y...
-            s << ",Y:" << startFlankRegionBp << "-" << endFlankRegionBp;
-            s << ",chrY:" << startFlankRegionBp << "-" << endFlankRegionBp;
+        if (chrom > 0) { // we have a valid chromosome number (otherwise, we only have a literal identifier)
+			s << chrom << ":" << startFlankRegionBp << "-" << endFlankRegionBp;
+			s << ",chr" << chrom << ":" << startFlankRegionBp << "-" << endFlankRegionBp;
+			if (chrom == CHRX) { // we literally add X as well
+				s << ",X:" << startFlankRegionBp << "-" << endFlankRegionBp;
+				s << ",chrX:" << startFlankRegionBp << "-" << endFlankRegionBp;
+			}
+			if (chrom == CHRY) { // or Y...
+				s << ",Y:" << startFlankRegionBp << "-" << endFlankRegionBp;
+				s << ",chrY:" << startFlankRegionBp << "-" << endFlankRegionBp;
+			}
+        } else { // only literal identifier
+        	s << chromlit << ":" << startFlankRegionBp << "-" << endFlankRegionBp;
+        	s << ",chr" << chromlit << ":" << startFlankRegionBp << "-" << endFlankRegionBp;
         }
         if (bcf_sr_set_regions(sr, s.str().c_str(), 0) != 0) {
             StatusFile::addError("Failed to initialize the region: " + s.str());
@@ -214,12 +228,12 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         appendVersionToBCFHeader(tgt_hdr_cpy);
         Ntarget = bcf_hdr_nsamples(tgt_hdr);
 
-        chrXYhaploidsTgt.clear();
-        chrXYhaploidsTgt.resize(Ntarget, false); // initialized with all females
-        chrXYhaploidsTgt_initialized.clear();
-        chrXYhaploidsTgt_initialized.resize(Ntarget, chrom != CHRX && chrom != CHRY); // initialized if we're on a diploid chromosome
-        chrXYhaploidsTgtMap.clear();
-        chrXYhaploidsTgtMap.reserve(2*Ntarget);
+        haploidsTgt.clear();
+        haploidsTgt.resize(Ntarget, false); // initialized with all diploid
+        haploidsTgt_initialized.clear();
+        haploidsTgt_initialized.resize(Ntarget, false); // not initialized yet
+        haploidsTgtMap.clear();
+        haploidsTgtMap.reserve(2*Ntarget);
 
         // Read target sample IDs
         targetIDs.reserve(Ntarget);
@@ -256,12 +270,12 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
 #endif
         hapcapacity = roundToMultiple<size_t>(Nrefhaps, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8; // space for 2*Nref haps
 
-        chrXYhaploidsRef.clear();
-        chrXYhaploidsRef.resize(Nrefhapsmax/2, false); // initialized with all females
-        chrXYhaploidsRef_initialized.clear();
-        chrXYhaploidsRef_initialized.resize(Nref, chrom != CHRX && chrom != CHRY); // initialized if we're on a diploid chromosome (btw, no need for additional targets)
-        chrXYhaploidsRefMap.clear();
-        chrXYhaploidsRefMap.reserve(Nrefhapsmax);
+        haploidsRef.clear();
+        haploidsRef.resize(Nrefhapsmax/2, false); // initialized with all diploid
+        haploidsRef_initialized.clear();
+        haploidsRef_initialized.resize(Nref, false); // not initialized yet
+        haploidsRefMap.clear();
+        haploidsRefMap.reserve(Nrefhapsmax);
 
         // determine number of SNPs in input file by reading the index
         Mrefglob = getNumVariantsFromIndex(refFile);
@@ -278,26 +292,9 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
     }
 
     stringstream s;
-    s << "<table><tr><td>Chromosome:         </td><td>";
-    if (tmplitX) {
-        if (chrom == CHRX)
-            s << "X";
-        else
-            s << "Y";
-    } else
-        s << chrom;
-    s << "</td></tr>";
+    s << "<table><tr><td>Chromosome:         </td><td>" << chromlit << "</td></tr>";
     StatusFile::addInfo(s.str(), !yaml);
-
-    yamlinfo << "    Chromosome: ";
-    if (tmplitX) {
-        if (chrom == CHRX)
-            yamlinfo << "X";
-        else
-            yamlinfo << "Y";
-    } else
-        yamlinfo << chrom;
-    yamlinfo << "\n";
+    yamlinfo << "    Chromosome: " << chromlit << "\n";
 
     if (!createQRef) {
         StatusFile::addInfo("<tr><td>Target samples:     </td><td>" + to_string(Ntarget) + "</td></tr>", !yaml);
@@ -567,14 +564,7 @@ inline void VCFData::initImpHeader() {
         // add the (required) chromosome info to the header
         // since we only impute chromosome-wise, the rid field in each bcf record (later) will always be 0 independent of the chromosome number
         stringstream contig;
-        contig << "##contig=<ID=" << (chrprefixed ? "chr" : "");
-        if (literallyX) {
-            if (chrom == CHRX)
-                contig << "X";
-            else
-                contig << "Y";
-        } else
-            contig << chrom;
+        contig << "##contig=<ID=" << chromlit;
         // only known in advance if we loaded a Qref; TODO try to add this info (and the following) to the header at the end just before writing it
         contig << ",length=" << (loadQuickRef ? positionsFullRefRegion.back()+1 : MAX_CSI_COOR-1) << ">";
         bcf_hdr_append(imp_hdr, contig.str().c_str());
@@ -622,7 +612,7 @@ inline void VCFData::initInfoFile() {
 // add excluded variant to info file
 inline void VCFData::addToInfoFileExcluded(bcf1_t* tgt, const string& explanation) {
     bcf_unpack(tgt, BCF_UN_STR); // for the ID and alleles
-    infofile << chrom << "\t" << tgt->pos+1 << "\t" << tgt->d.id << "\t" << tgt->d.allele[0] << "\t";
+    infofile << chromlit << "\t" << tgt->pos+1 << "\t" << tgt->d.id << "\t" << tgt->d.allele[0] << "\t";
     if (tgt->n_allele > 1)
         infofile << tgt->d.allele[1];
     for (uint32_t i=2; i < tgt->n_allele; i++)
@@ -630,16 +620,16 @@ inline void VCFData::addToInfoFileExcluded(bcf1_t* tgt, const string& explanatio
     infofile << "\tEXCLUDED\t\t\t\t" << explanation << endl;
 }
 inline void VCFData::addToInfoFileExcluded(size_t pos, const string& tgtID, const string& tref, const string& talt, const string& explanation) {
-    infofile << chrom << "\t" << pos+1 << "\t" << tgtID << "\t" << tref << "\t" << talt << "\tEXCLUDED\t\t\t\t" << explanation << endl;
+    infofile << chromlit << "\t" << pos+1 << "\t" << tgtID << "\t" << tref << "\t" << talt << "\tEXCLUDED\t\t\t\t" << explanation << endl;
 }
 
 // add included variant to info file
 inline void VCFData::addToInfoFileIncluded(size_t pos, const string& tgtID, const string& tref, const string& talt, const string& refID, const string& rref, const string& ralt, const string& explanation) {
-    infofile << chrom << "\t" << pos+1 << "\t" << tgtID << "\t" << tref << "\t" << talt << "\tINCLUDED\t";
+    infofile << chromlit << "\t" << pos+1 << "\t" << tgtID << "\t" << tref << "\t" << talt << "\tINCLUDED\t";
     if (!noMissingIDs || refID.compare("."))
         infofile << refID;
     else // the problem is, that the correction for the imputation will be done later, so we do it here again...
-        infofile << chrom << ":" << pos+1 << ":" << rref << ":" << ralt;
+        infofile << chromlit << ":" << pos+1 << ":" << rref << ":" << ralt;
     infofile << "\t" << rref << "\t" << ralt << "\t" << explanation << endl;
 }
 
@@ -843,8 +833,6 @@ void VCFData::processNextChunk() {
 
     size_t qridx = qrefcurridxreg; // quick reference index set to where the last chunk stopped
 
-    bool setChrom = loadQuickRef; // chromosome number is always set according to ref file name, just need to set "chrprefixed" und "literallyX" according to first target line if we loaded a qref, otherwise it's taken from the reference
-    bool checkedChrom = false; // the first valid target line is checked to fit the set chromosome
     bool inOverlap = false;
 
     // take over the values from the overlap from last chunk
@@ -882,12 +870,14 @@ void VCFData::processNextChunk() {
                 if (!setChrom) {
                     setChrom = true;
                     string chromname(bcf_hdr_id2name(ref_hdr, ref->rid)); // get the chromosome name, as written in the reference file
-                    int chromtmp = chrNameToNumber(chromname, &chrprefixed, &literallyX); // get the number and store information on how to write out the name in imputation
-                    if (chromtmp != chrom) {
+                    string chromlittmp;
+                    int chromtmp = chrNameToNumber(chromname, chromlittmp, &chrliterally); // get the chromosome number
+                    if ((chrom > 0 && chrom != chromtmp) || (chrom == 0 && chromlit.compare(chromlittmp))) {
                         cout << endl;
                         StatusFile::addError("Chromosome mismatch between reference filename and content.");
                         exit(EXIT_FAILURE);
                     }
+                    chromlit = chromlittmp; // just to be sure to take the notation from inside the reference file (the only allowed difference is the preceding "chr")
                     if (currChunk == 0) {
                         initInfoFile();
                         if (doImputation)
@@ -920,15 +910,19 @@ void VCFData::processNextChunk() {
                 if (!checkedChrom) {
                     checkedChrom = true;
                     string chromname(bcf_hdr_id2name(tgt_hdr, tgt->rid)); // get the chromosome name, as written in the target file
-                    int chromtmp = chrNameToNumber(chromname, &chrprefixed, &literallyX); // get the number and store information on how to write out the name in imputation
-                    if (chromtmp != chrom) {
+                    string chromlittmp;
+                    bool chrliterally_tmp;
+                    int chromtmp = chrNameToNumber(chromname, chromlittmp, &chrliterally_tmp); // get the chromosome number
+                    if ((chrom > 0 && chrom != chromtmp) || (chrom == 0 && chromlit.compare(chromlittmp))) {
                         cout << endl;
                         StatusFile::addError("Chromosome mismatch between reference and target.");
                         exit(EXIT_FAILURE);
                     }
                     // we need to init the imputation header here only if we load a Qref or if the first line is a tgt line
                     if (!setChrom || loadQuickRef) {
-                        setChrom = true; // this still set to false only happens if the first line is a target line. we take the style of the target file then
+                        setChrom = true; // if not loading a Qref, we take the style of the target file only in the rare case if the first line is from the target
+                        chromlit = chromlittmp; // just to be sure to take the notation from inside the target file
+                        chrliterally = chrliterally_tmp;
                         if (currChunk == 0) {
                             initInfoFile();
                             if (doImputation)
@@ -1340,7 +1334,7 @@ void VCFData::processNextChunk() {
                 }
             }
         } else { // !loadQuickRef
-            processReferenceSNP(Nref, ref, &ref_gt, &mref_gt, chrom == CHRX || chrom == CHRY, inOverlap, numMissing, numUnphased, af, true);
+            processReferenceSNP(Nref, ref, &ref_gt, &mref_gt, inOverlap, numMissing, numUnphased, af, true);
 
             if (numMissing)
                 lstats.MwithMissingRef++;
@@ -1351,7 +1345,7 @@ void VCFData::processNextChunk() {
         }
 
         // process target genotypes: append Ntarget entries (0/1/2/9) to genosTarget[]
-        processTargetSNP(Ntarget, ntgt_gt, reinterpret_cast<int*>(tgt_gt), chrom == CHRX || chrom == CHRY, refaltswap, inOverlap, numMissing, tgt->pos);
+        processTargetSNP(Ntarget, ntgt_gt, reinterpret_cast<int*>(tgt_gt), refaltswap, inOverlap, numMissing, tgt->pos);
         lstats.GmissingTarget += numMissing;
 
         // keep the record's information
@@ -1419,7 +1413,7 @@ void VCFData::processNextChunk() {
         for (bcf1_t* s : masplits)
             bcf_destroy(s);
 
-    } // while
+    } // END while (reading chunk)
 
     // allocated by HTSlib
     free(ref_gt);
@@ -1450,28 +1444,28 @@ void VCFData::processNextChunk() {
     if (currChunk == 0 && !createQRef) {
         // reference
         if (!loadQuickRef) { // otherwise already set
-            if (chrom == CHRX || chrom == CHRY) { // go through the flags if we are on X or Y
+//            if (chrom == CHRX || chrom == CHRY) { // go through the flags if we are on X or Y
                 for (size_t i = 0; i < Nrefhapsmax/2; i++) {
-                    chrXYhaploidsRefMap.push_back(2*i);
-                    if (!chrXYhaploidsRef[i]) // diploid
-                        chrXYhaploidsRefMap.push_back(2*i+1);
+                    haploidsRefMap.push_back(2*i);
+                    if (!haploidsRef[i]) // diploid
+                        haploidsRefMap.push_back(2*i+1);
                 }
-            } else { // diploid chromosome: identity
-                for (size_t i = 0; i < Nrefhapsmax; i++)
-                    chrXYhaploidsRefMap.push_back(i);
-            }
+//            } else { // diploid chromosome: identity
+//                for (size_t i = 0; i < Nrefhapsmax; i++)
+//                    chrXYhaploidsRefMap.push_back(i);
+//            }
         }
         // target
-        if (chrom == CHRX || chrom == CHRY) { // go through the flags if we are on X or Y
+//        if (chrom == CHRX || chrom == CHRY) { // go through the flags if we are on X or Y
             for (size_t i = 0; i < Ntarget; i++) {
-                chrXYhaploidsTgtMap.push_back(2*i);
-                if (!chrXYhaploidsTgt[i]) // diploid
-                    chrXYhaploidsTgtMap.push_back(2*i+1);
+                haploidsTgtMap.push_back(2*i);
+                if (!haploidsTgt[i]) // diploid
+                    haploidsTgtMap.push_back(2*i+1);
             }
-        } else { // diploid chromosome: identity
-            for (size_t i = 0; i < 2*Ntarget; i++)
-                chrXYhaploidsTgtMap.push_back(i);
-        }
+//        } else { // diploid chromosome: identity
+//            for (size_t i = 0; i < 2*Ntarget; i++)
+//                chrXYhaploidsTgtMap.push_back(i);
+//        }
     }
 
     // convert variant IDs to chr:pos:ref:alt if missing
@@ -1479,9 +1473,7 @@ void VCFData::processNextChunk() {
         for (size_t i = 0; i < variantIDsFullRefRegion.size(); i++) {
             // variant IDs starting with '.' are considered missing
             if (variantIDsFullRefRegion[i][0] == '.') { // empty variant IDs are not allowed
-                variantIDsFullRefRegion[i] = to_string(chrom) + ":" + to_string(positionsFullRefRegion[i]+1) + ":" + allelesFullRefRegion[2*i] + ":" + allelesFullRefRegion[2*i+1];
-                if (chrprefixed)
-                    variantIDsFullRefRegion[i] = "chr" + variantIDsFullRefRegion[i];
+                variantIDsFullRefRegion[i] = chromlit + ":" + to_string(positionsFullRefRegion[i]+1) + ":" + allelesFullRefRegion[2*i] + ":" + allelesFullRefRegion[2*i+1];
             }
         }
     }
@@ -1533,7 +1525,7 @@ void VCFData::processNextChunk() {
         }
 
         // determine SNP rate (only if we do phasing)
-        if (!skipPhasing && chrom != CHRY) {
+        if (!skipPhasing && nHaploidsTgt != Ntarget) {
             size_t physRange = M <= 1 ? 0 : chrBpsReg.back()-chrBpsReg[chrBpsReg.size()-cMs.size()];
             fp_type cMrange = M <= 1 ? 0 : cMs.back() - cMs[0];
             // store first cM value for summary statistics
@@ -1766,7 +1758,7 @@ void VCFData::processNextChunk() {
 inline void VCFData::processReferenceOnlySNP(bcf1_t *ref, void **ref_gt, int *mref_gt, int &numMissing, int &numUnphased, bool inOverlap, bool multiallelic) {
     float af;
 //    int nref_gt = bcf_get_genotypes(ref_hdr, ref, ref_gt, mref_gt);
-    processReferenceSNP(Nref, ref, ref_gt, mref_gt, chrom == CHRX || chrom == CHRY, inOverlap, numMissing, numUnphased, af, false);
+    processReferenceSNP(Nref, ref, ref_gt, mref_gt, inOverlap, numMissing, numUnphased, af, false);
 //    cout << "SNP: " << Mref << " Nref: " << Nref << " nref_gt: " << nref_gt << " nMiss: " << numMissing << " nUnph: " << numUnphased << endl;
     alleleFreqsFullRefRegion.push_back(af);
     // store position information of variant
@@ -1792,8 +1784,8 @@ inline void VCFData::processReferenceOnlySNP(bcf1_t *ref, void **ref_gt, int *mr
     }
 }
 
-inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, int *mref_gt, bool allowHaploid,
-        bool inOverlap, int &numMissing, int &numUnphased, float &af, bool addForPhasing) {
+inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, int *mref_gt,
+		bool inOverlap, int &numMissing, int &numUnphased, float &af, bool addForPhasing) {
     numMissing = numUnphased = 0;
 
     // reserve space for haplotype data
@@ -1815,10 +1807,10 @@ inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, 
     // fetch haplotypes
     int ngt = bcf_get_genotypes(ref_hdr, ref, ref_gt, mref_gt);
     const int32_t *gt = reinterpret_cast<const int32_t*>(*ref_gt);
-    if (ngt != 2 * nsmpl && !(ngt == nsmpl && allowHaploid)) {
+    if (ngt != 2 * nsmpl && ngt != nsmpl) {
         cout << endl;
         stringstream ss;
-        ss << "Reference ploidy != 2 (ngt != 2*nsmpl): ngt="
+        ss << "Unallowed encoding. Reference encoding ploidy != 2 (ngt != 2*nsmpl) and != 1 (ngt != nsmpl): ngt="
            << ngt << ", nsmpl=" << nsmpl;
         StatusFile::addError(ss.str());
         exit(EXIT_FAILURE);
@@ -1877,53 +1869,56 @@ inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, 
                     haps[1] = refaf <= 0.5 ? Haplotype::Ref : Haplotype::Alt;
                 else
                     haps[1] = randDist(randGen) > refaf ? Haplotype::Ref : Haplotype::Alt;
+                // count allele
+                if (haps[1] == Haplotype::Alt)
+					ac1++;
+                an++;
             } else if (*(ptr+1) == bcf_int32_vector_end) {
-                // haploid?! ok if on chrX/Y or if the first allele was missing
-                if (allowHaploid || bcf_gt_is_missing(*ptr)) {
+                // haploid or missing
+//                if (allowHaploid || bcf_gt_is_missing(*ptr)) {
                     // simply encode as homozygous diploid
                     haps[1] = haps[0];
                     if (!bcf_gt_is_missing(*ptr)) { // not missing -> haploid sample
-                        if (chrXYhaploidsRef_initialized[i]) {
-                            if (!chrXYhaploidsRef[i]) { // already initialized as diploid
+                        if (haploidsRef_initialized[i]) {
+                            if (!haploidsRef[i]) { // already initialized as diploid
                                 cout << endl;
                                 StatusFile::addError("Reference sample " + to_string(i) + " was diploid and is haploid now! Incorrect PAR regions?");
                                 exit(EXIT_FAILURE);
                             }
                         } else { // not initialized yet
-                            chrXYhaploidsRef_initialized[i] = true;
-                            chrXYhaploidsRef[i] = true;
-                            nChrXYhaploidsRef++;
+                            haploidsRef_initialized[i] = true;
+                            haploidsRef[i] = true;
+                            nHaploidsRef++;
                         }
                     }
-                } else {
-                    cout << endl;
-                    StatusFile::addError("Reference contains haploid sample.");
-                    exit(EXIT_FAILURE);
-                }
+//                } else {
+//                    cout << endl;
+//                    StatusFile::addError("Reference contains haploid sample.");
+//                    exit(EXIT_FAILURE);
+//                }
             } else { // not missing and not haploid -> diploid
                 haps[1] = (bcf_gt_allele(*(ptr+1)) >= 1) ? Haplotype::Alt : Haplotype::Ref; // encode REF allele -> 0, ALT allele(s) -> 1
                 if (!bcf_gt_is_phased(*(ptr+1)))
                     unphased = true;
-                if (allowHaploid) {
-                    if (chrXYhaploidsRef_initialized[i]) {
-                        if (chrXYhaploidsRef[i]) {
+//                if (allowHaploid) {
+                    if (haploidsRef_initialized[i]) {
+                        if (haploidsRef[i]) {
                             cout << endl;
                             StatusFile::addError("Reference sample " + to_string(i) + " was haploid and is diploid now! Incorrect PAR regions?");
                             exit(EXIT_FAILURE);
                         }
                     } else {
-                        // already pre-initialized as female... chrXYhaploidsRef[i] = false; // female
-                        chrXYhaploidsRef_initialized[i] = true;
+                        // already pre-initialized as diploid... haploidsRef[i] = false; // diploid
+                        haploidsRef_initialized[i] = true;
                     }
-                }
-            }
-            if (!allowHaploid || *(ptr+1) != bcf_int32_vector_end || (chrXYhaploidsRef_initialized[i] && !chrXYhaploidsRef[i])) { // only count if not haploid!
-                if (haps[1] == Haplotype::Alt)
-                    ac1++;
-                an++;
+//                }
+				// count allele
+				if (haps[1] == Haplotype::Alt)
+					ac1++;
+				an++;
             }
 
-        } else { // ploidy == 1 only if "allowHaploid" is set, i.e. for chrX or Y (otherwise would have exited above)
+        } else { // ploidy == 1
             if (bcf_gt_is_missing(*ptr)) { // missing allele
                 // get the allele frequency directly from the reference (if not already done before)
                 if (!refafvalid) {
@@ -1948,16 +1943,16 @@ inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, 
                 numMissing++;
             } else {
                 haps[0] = haps[1] = (bcf_gt_allele(*ptr) >= 1) ? Haplotype::Alt : Haplotype::Ref; // encode as diploid homozygous
-                if (chrXYhaploidsRef_initialized[i]) {
-                    if (!chrXYhaploidsRef[i]) {
+                if (haploidsRef_initialized[i]) {
+                    if (!haploidsRef[i]) {
                         cout << endl;
                         StatusFile::addError("Reference sample " + to_string(i) + " was diploid and is haploid now! Incorrect PAR regions?");
                         exit(EXIT_FAILURE);
                     }
                 } else {
-                    chrXYhaploidsRef[i] = true; // male
-                    chrXYhaploidsRef_initialized[i] = true;
-                    nChrXYhaploidsRef++;
+                    haploidsRef[i] = true; // haploid
+                    haploidsRef_initialized[i] = true;
+                    nHaploidsRef++;
                 }
             }
             // count allele
@@ -2001,12 +1996,12 @@ inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, 
     }
 }
 
-inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, bool allowHaploid, bool refAltSwap, bool inOverlap, int &numMissing, size_t tgtvariantpos) {
+inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, bool refAltSwap, bool inOverlap, int &numMissing, size_t tgtvariantpos) {
     numMissing = 0;
-    if (ngt != 2 * nsmpl && !(ngt == nsmpl && allowHaploid)) {
+    if (ngt != 2 * nsmpl && ngt != nsmpl) {
         cout << endl;
         stringstream ss;
-        ss << "Target ploidy != 2 (ngt != 2*nsmpl): ngt="
+        ss << "Unallowed encoding. Target encoding ploidy != 2 (ngt != 2*nsmpl) and != 1 (ngt != nsmpl): ngt="
            << ngt << ", nsmpl=" << nsmpl;
         StatusFile::addError(ss.str());
         exit(EXIT_FAILURE);
@@ -2032,11 +2027,11 @@ inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, boo
                 }
                 numMissing++;
             } else if (*(ptr+1) == bcf_int32_vector_end) { // haploid sample!
-                if (allowHaploid) { // on chrX/Y: encode as homozygous diploid and mark as male
+//                if (allowHaploid) { // on chrX/Y: encode as homozygous diploid and mark as male
                     g = bcf_gt_allele(*ptr) >= 1 ? Genotype::HomAlt : Genotype::HomRef;
-                    // mark as male
-                    if (chrXYhaploidsTgt_initialized[i]) {
-                        if (!chrXYhaploidsTgt[i]) {
+                    // mark as haploid
+                    if (haploidsTgt_initialized[i]) {
+                        if (!haploidsTgt[i]) {
                             cout << endl;
                             stringstream ss;
                             ss << "Target sample " << i << " (" << targetIDs[i] << " at " << tgtvariantpos+1 << ") was diploid and is haploid now! Incorrect PAR regions?";
@@ -2044,23 +2039,23 @@ inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, boo
                             exit(EXIT_FAILURE);
                         }
                     } else {
-                        chrXYhaploidsTgt[i] = true; // male
-                        chrXYhaploidsTgt_initialized[i] = true;
-                        nChrXYhaploidsTgt++;
+                        haploidsTgt[i] = true; // haploid
+                        haploidsTgt_initialized[i] = true;
+                        nHaploidsTgt++;
                         if (iters > 1) {
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT
                             if (i >= DEBUG_TARGET_START && i <= DEBUG_TARGET_STOP)
-                                chrXYhaploidsRef[Nref+i-DEBUG_TARGET_START] = true; // this target will be ref in a phasing iteration > 1
+                                haploidsRef[Nref+i-DEBUG_TARGET_START] = true; // this target will be ref in a phasing iteration > 1
 #else
-                            chrXYhaploidsRef[Nref+i] = true; // this target will be ref in a phasing iteration > 1
+                            haploidsRef[Nref+i] = true; // this target will be ref in a phasing iteration > 1
 #endif
                         }
                     }
-                } else {
-                    cout << endl;
-                    StatusFile::addError("Target contains haploid sample.");
-                    exit(EXIT_FAILURE);
-                }
+//                } else {
+//                    cout << endl;
+//                    StatusFile::addError("Target contains haploid sample.");
+//                    exit(EXIT_FAILURE);
+//                }
             } else { // diploid
                 int idx =  bcf_gt_allele(*ptr) + bcf_gt_allele(*(ptr+1));
                 switch (idx) {
@@ -2074,9 +2069,9 @@ inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, boo
                 default: // no other possibility (multi-allelic cases have been filtered before)
                     g = Genotype::HomAlt;
                 }
-                if (allowHaploid) {
-                    if (chrXYhaploidsTgt_initialized[i]) {
-                        if (chrXYhaploidsTgt[i]) {
+//                if (allowHaploid) {
+                    if (haploidsTgt_initialized[i]) {
+                        if (haploidsTgt[i]) {
                             cout << endl;
                             stringstream ss;
                             ss << "Target sample " << i << " (" << targetIDs[i] << " at " << tgtvariantpos+1 << ") was diploid and is haploid now! Incorrect PAR regions?";
@@ -2084,12 +2079,12 @@ inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, boo
                             exit(EXIT_FAILURE);
                         }
                     } else {
-                        // already pre-initialized as female... chrXYhaploidsTgt[i] = false; // female
-                        chrXYhaploidsTgt_initialized[i] = true;
+                        // already pre-initialized as diploid... haploidsTgt[i] = false; // diploid
+                        haploidsTgt_initialized[i] = true;
                     }
-                }
+//                }
             }
-        } else { // ploidy == 1 only if "allowHaploid" is set, i.e. for chrX or Y (otherwise would have exited above)
+        } else { // ploidy == 1
             if (bcf_gt_is_missing(*ptr)) { // missing allele
                 g = Genotype::Miss;
                 if (noImpMissing) { // will only be required if we are not going to impute missings during phasing
@@ -2098,10 +2093,10 @@ inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, boo
                         tgtmissOverlap[i].push_back(targetsOverlap[i].size());
                 }
                 numMissing++;
-            } else { // encode as homozygous diploid and mark as male
+            } else { // encode as homozygous diploid and mark as haploid
                 g = bcf_gt_allele(*ptr) >= 1 ? Genotype::HomAlt : Genotype::HomRef;
-                if (chrXYhaploidsTgt_initialized[i]) {
-                    if (!chrXYhaploidsTgt[i]) {
+                if (haploidsTgt_initialized[i]) {
+                    if (!haploidsTgt[i]) {
                         cout << endl;
                         stringstream ss;
                         ss << "Target sample " << i << " (" << targetIDs[i] << " at " << tgtvariantpos+1 << ") was diploid and is haploid now! Incorrect PAR regions?";
@@ -2109,9 +2104,9 @@ inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, boo
                         exit(EXIT_FAILURE);
                     }
                 } else {
-                    chrXYhaploidsTgt[i] = true; // male
-                    chrXYhaploidsTgt_initialized[i] = true;
-                    nChrXYhaploidsTgt++;
+                    haploidsTgt[i] = true; // haploid
+                    haploidsTgt_initialized[i] = true;
+                    nHaploidsTgt++;
                 }
             }
         }
@@ -2153,15 +2148,17 @@ inline void VCFData::qRefWriteMetaAndConcat() {
     tmp[3] = (char) chrom; // chromosome
     qout.write(tmp,4);
     qout.write((char*)&Nref, sizeof(size_t));
-    qout.write((char*)&nChrXYhaploidsRef, sizeof(size_t));
+    qout.write((char*)&nHaploidsRef, sizeof(size_t));
     qout.write((char*)&Mref, sizeof(size_t));
     qout.write((char*)&MrefMultiAllreg, sizeof(size_t));
     qout << flush;
 
     // if this is chrX, dump the information on haploid reference samples (for Y we know that all samples are haploid)
-    if (chrom == CHRX) {
+    // Note, this is kept to be backward compatible.
+    // In general, if there is at least one haploid sample, we dump the flags, with the only exception if ALL samples are haploid (e.g. for chrY).
+    if ((nHaploidsRef > 0 && nHaploidsRef != Nref) || chrom == CHRX) {
         // we spend one byte per flag... TODO could be compacted!
-        for (bool flag : chrXYhaploidsRef) {
+        for (bool flag : haploidsRef) {
             qout << (char)(flag ? -1 : 0);
         }
         if (qout.fail()) {
@@ -2255,17 +2252,17 @@ inline void VCFData::qRefOpenReadMeta() {
         StatusFile::addError("Not a valid Qref file.");
         exit(EXIT_FAILURE);
     }
-    if (head[4] != (char) QREFV_MAJ || head[5] != (char) QREFV_MIN) {
-        StatusFile::addError("Wrong Qref version.");
+    if (head[4] != (char) QREFV_MAJ || head[5] > (char) QREFV_MIN) { // major version must be equal, minor must not be newer!
+        StatusFile::addError(string("Wrong Qref version. Expected v") + to_string(QREFV_MAJ) + "." + to_string(QREFV_MIN) + ".");
         exit(EXIT_FAILURE);
     }
 
     // now we believe this is a valid qref file
 
     // chromosome, number of samples, number of SNPs
-    chrom = (int) head[7];
+    chrom = (int) head[7]; // TODO Note: chromlit is taken from the filename yet... change this here?
     qin.read((char*)&Nref, sizeof(size_t));
-    qin.read((char*)&nChrXYhaploidsRef, sizeof(size_t));
+    qin.read((char*)&nHaploidsRef, sizeof(size_t));
     qin.read((char*)&Mrefglob, sizeof(size_t));
     qin.read((char*)&MrefMultiAllglob, sizeof(size_t));
     Nrefhaps = 2*Nref;
@@ -2280,13 +2277,15 @@ inline void VCFData::qRefOpenReadMeta() {
         return;
 
     // if this is chrX, load the information on haploid reference samples (for Y and others we know that all samples are haploid/diploid)
-    chrXYhaploidsRef.clear();
-    chrXYhaploidsRef.resize(Nrefhapsmax/2, chrom == CHRY); // initialized with all females if not chrY
-    chrXYhaploidsRef_initialized.clear();
-    chrXYhaploidsRef_initialized.resize(Nref, true); // all initialized, since we are loading them from Qref (btw, no need for extra targets)
-    chrXYhaploidsRefMap.clear();
-    chrXYhaploidsRefMap.reserve(Nrefhapsmax);
-    if (chrom == CHRX) {
+    // Note, we only load this information per default from chrX to be backward compatible. Otherwise, we load this if at least one sample
+    // is haploid with the exception if we know that ALL samples are haploid.
+    haploidsRef.clear();
+    haploidsRef.resize(Nrefhapsmax/2, nHaploidsRef != Nref); // initialized with all diploid if not all samples are haploid
+    haploidsRef_initialized.clear();
+    haploidsRef_initialized.resize(Nref, true); // all initialized, since we are loading them from Qref
+    haploidsRefMap.clear();
+    haploidsRefMap.reserve(Nrefhapsmax);
+    if ((nHaploidsRef > 0 && nHaploidsRef != Nref) || chrom == CHRX) {
         for (size_t i = 0; i < Nref; i++) {
             char flag;
             qin >> flag;
@@ -2294,19 +2293,19 @@ inline void VCFData::qRefOpenReadMeta() {
                 StatusFile::addError("Failed reading haploid flags from reference.");
                 exit(EXIT_FAILURE);
             }
-            chrXYhaploidsRef[i] = flag != 0;
-            chrXYhaploidsRefMap.push_back(2*i);
+            haploidsRef[i] = flag != 0;
+            haploidsRefMap.push_back(2*i);
             if (flag == 0) // add another index only if not haploid
-                chrXYhaploidsRefMap.push_back(2*i+1);
+                haploidsRefMap.push_back(2*i+1);
         }
         // NOTE: the missing flags (Nrefhaps to Nrefhapsmax) are created during reading of target!
-    } else if (chrom == CHRY) {
+    } else if (nHaploidsRef == Nref) {
         // all haploid: map to every second index
         for (size_t i = 0; i < Nrefhapsmax/2; i++)
-            chrXYhaploidsRefMap.push_back(2*i);
-    } else { // diploid chromosome: does not require map, but for consistency we create the identity
+            haploidsRefMap.push_back(2*i);
+    } else { // all diploid chromosome: identity
         for (size_t i = 0; i < Nrefhapsmax; i++)
-            chrXYhaploidsRefMap.push_back(i);
+            haploidsRefMap.push_back(i);
     }
 
     // load variant positions -> determine indices to load to fulfill region requests
@@ -2799,7 +2798,7 @@ void VCFData::writePhasedConfidences(const vector<fp_type> &totalconfs, const ve
 #endif
     {
         ofs << targetIDs[nt] << "\t";
-        if (chrXYhaploidsTgt[nt])
+        if (haploidsTgt[nt])
             ofs << "haploid" << endl;
         else
             ofs << totalconfs[nt]/ncalls[nt] << endl;
@@ -2847,7 +2846,7 @@ void VCFData::writeVCFPhased(const vector<BooleanVector> &phasedTargets) {
                     bool missing = targets[i][psite] == Genotype::Miss; // will be slow... sh...
                     // if (missing) only checks if the genotype was missing in the original! Check noImpMissing if the genotype was imputed or if we have to write "missing" again.
 
-                    if ((chrom != CHRX && chrom != CHRY) || !chrXYhaploidsTgt[i]) { // diploid sample
+                    if (!haploidsTgt[i]) { // diploid sample
                         // We had a lot of filters before, especially filtering multi-allelic markers.
                         // So, for each phased marker '0' represents the reference allele and '1' represents
                         // the alternative allele. We don't need to search for the maximum and minimum index as before...
@@ -2871,7 +2870,7 @@ void VCFData::writeVCFPhased(const vector<BooleanVector> &phasedTargets) {
                             *(ptr+1) = bcf_gt_phased(hap1 ? 1 : 0); // convert allele index to bcf value (phased)
                         }
 
-                    } else { // (chrom == CHRX || chrom == CHRY) && chrXYhaploids[i]  ->  haploid sample
+                    } else { // haploid sample
 
                         *(ptr+1) = bcf_int32_vector_end; // only first field carries the information, second is always "vector end"
 
@@ -3067,7 +3066,7 @@ void VCFData::writeVCFImputedBunch(
 #endif
                 {
                     int *ptr = tgt_gt_int + 2*i;
-                    if ((chrom != CHRX && chrom != CHRY) || !chrXYhaploidsTgt[i]) { // diploid sample
+                    if (!haploidsTgt[i]) { // diploid sample
 
                         size_t nTargetHap = 2*i;
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT
@@ -3124,7 +3123,7 @@ void VCFData::writeVCFImputedBunch(
                         *ptr = bcf_gt_unphased(hap0 ? 1 : 0); // convert allele index to bcf value (phased/unphased does not matter here, but unphased is a bit faster)
                         *(ptr+1) = bcf_gt_phased(hap1 ? 1 : 0); // convert allele index to bcf value (phased)
 
-                    } else { // (chrom == CHRX || chrom == CHRY) && chrXYhaploids[i]  ->  haploid sample
+                    } else { // haploid sample
 
                         size_t nTargetHap = 2*i;
                         bool hap = imputedTargets[nTargetHap][isite]; // stored as homozygous diploid anyway
@@ -3177,7 +3176,7 @@ void VCFData::writeVCFImputedBunch(
                     bool missing = targets[i][psite] == Genotype::Miss; // will be slow... sh...
                     // if (missing) only checks if the genotype was missing in the original! Check noImpMissing if the genotype was imputed or if we have to write "missing" again.
 
-                    if ((chrom != CHRX && chrom != CHRY) || !chrXYhaploidsTgt[i]) { // diploid sample
+                    if (!haploidsTgt[i]) { // diploid sample
                         // We had a lot of filters before, especially filtering multi-allelic markers.
                         // So, for each phased marker '0' represents the reference allele and '1' represents
                         // the alternative allele. We don't need to search for the maximum and minimum index as before...
@@ -3314,7 +3313,7 @@ void VCFData::writeVCFImputedBunch(
                         *ptr = bcf_gt_unphased(hap0 ? 1 : 0); // convert allele index to bcf value (phased/unphased does not matter here, but unphased is a bit faster)
                         *(ptr+1) = bcf_gt_phased(hap1 ? 1 : 0); // convert allele index to bcf value (phased)
 
-                    } else { // (chrom == CHRX || chrom == CHRY) && chrXYhaploids[i]  ->  haploid sample
+                    } else { // haploid sample
 
                         size_t nTargetHap = 2*i;
                         bool hap;
@@ -3562,24 +3561,37 @@ inline size_t VCFData::getNumVariantsFromIndex(const string &vcffilename) {
     return numvars;
 }
 
-/*static*/ int VCFData::chrNameToNumber(const string &name, bool *chrprefixed, bool *literallyX) {
-    if (chrprefixed) *chrprefixed = false;
-    if (literallyX) *literallyX = false;
+/*static*/ int VCFData::chrNameToNumber(const string &name, string &chrlit, bool *literally) {
+    if (literally) *literally = false;
+	chrlit.assign(name); // simply copy the literal name
     size_t start = 0;
     if (!name.substr(0,3).compare("chr")) {
-        start = 3;
-        if (chrprefixed) *chrprefixed = true;
+        // if you named your chromosome "chr"... well, your choice... else, we assume that you prefixed your chromosome name with "chr".
+        if (name.size() > 3) {
+			start = 3;
+        } // else: the name of the chromosome is "chr"
     }
-    if (name.size() > start && (name[start] == 'X' || name[start] == 'x' || name[start] == 'Y' || name[start] == 'y')) {
-        if (literallyX) *literallyX = true;
-        return name[start] == 'X' || name[start] == 'x' ? CHRX : CHRY;
+    // we map X/Y to 23,24; other literal forms are kept and mapped to chromosome number 0
+    if (start < name.size() && (name[start] < '0' || name[start] > '9')) { // not a number
+        if (literally) *literally = true;
+        if (start+1 == name.size() && (name[start] == 'X' || name[start] == 'x' || name[start] == 'Y' || name[start] == 'y'))
+        	return name[start] == 'X' || name[start] == 'x' ? CHRX : CHRY;
+        else
+        	return 0; // neither X nor Y, so some other literal. Internally, this is handled with the chromosome number 0.
     }
+    // if the name starts with a digit, we map the name to the represented number. if literals follow, we set the literally flag again
     int tmp = 0;
-    if (start < name.size() && name[start] >= '1' && name[start] <= '9')
-        tmp = stoi(name.substr(start));
-    if (tmp < 1 || tmp > 24) {
-        StatusFile::addError("Invalid chromosome! Valid chromosomes are 1-24 or X,Y, preliminary \"chr\" is allowed.");
-        exit(EXIT_FAILURE);
+    if (start < name.size() && name[start] >= '0' && name[start] <= '9') {
+    	size_t litstart;
+        tmp = stoi(name.substr(start), &litstart);
+        if (litstart+start < name.size()) { // there is something following the number
+        	if (literally) *literally = true;
+        }
+    // we allow any kind of chromosome now
+//    if (tmp < 1 || tmp > 24) {
+//        StatusFile::addError("Invalid chromosome! Valid chromosomes are 1-24 or X,Y, preliminary \"chr\" is allowed.");
+//        exit(EXIT_FAILURE);
+//    }
     }
     return tmp;
 }
@@ -3643,7 +3655,7 @@ void VCFData::printSummary() const {
     }
 
     // determine SNP rate (only if we do phasing)
-    if (!skipPhasing && chrom != CHRY) {
+    if (!skipPhasing && nHaploidsTgt != Ntarget) {
         size_t physRange = chrBpsReg.back()-chrBpsReg[0];
         fp_type cMrange = cMs.back() - cM0;
 
@@ -3805,7 +3817,7 @@ void VCFData::printSummary() const {
     if (doImputation) {
         double conflictrate = 0.0;
         if (conflictcnt) {
-            conflictrate = conflictcnt/(double)site_offsets.back()/(double)(getNTarget()-getNChrXYHaploidsTgt())/2;
+            conflictrate = conflictcnt/(double)site_offsets.back()/(double)(getNTarget()-getNHaploidsTgt())/2;
             StatusFile::addInfo("<p class='pinfo'>Imputation conflict rate (relation of haplotypes with no overlap and dosage set to allele frequency to total haplotypes): "
                     + to_string(conflictrate) + "</p>", !yaml);
         } else {

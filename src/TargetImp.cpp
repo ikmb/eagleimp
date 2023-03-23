@@ -425,7 +425,7 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
                     for (size_t ref = sm_matches[idx].refstart; ref <= sm_matches[idx].refend; ref++) {
                         sum += single;
                         size_t absref = pbwt.getSortOrder(sm_matches[idx].end)[ref]; // find the corresponding absolute index in the reference
-                        if (vcfdata.getReferenceFullT()[mrefs[block]][vcfdata.getChrXYHaploidsRefMap()[absref]]) { // is the corresponding haplotype == 1?
+                        if (vcfdata.getReferenceFullT()[mrefs[block]][vcfdata.getHaploidsRefMap()[absref]]) { // is the corresponding haplotype == 1?
                             score += single;
                         }
                     }
