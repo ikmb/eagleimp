@@ -71,11 +71,27 @@ public:
         updateStatus(0);
     }
     
+    static void setContext(const string &context_) {
+    	instance.context.assign(context_);
+    	instance.infocontextnew = true;
+    	instance.warningcontextnew = true;
+    	instance.errorcontextnew = true;
+    }
+
+    static void clearContext() {
+    	instance.context.clear();
+    	instance.infocontextnew = false;
+    	instance.warningcontextnew = false;
+    	instance.errorcontextnew = false;
+    }
+
     static void addInfoYAML(const string &key, const string &value) {
         stringstream s;
         if (instance.infoempty)
             s << "---\n"; // add YAML "header"
         s << "- " << key << ": " << value;
+        if (value.back() != '\n')
+        	s << "\n";
         if (!addToFile(instance.infofile, s.str()))
             addWarning("Could not write to info file.");
         else
@@ -91,10 +107,19 @@ public:
         if (instance.infoempty && instance.yaml && yamlmessage)
             s << "---\n"; // add YAML "header"
         if (instance.yaml) {
-            if (yamlmessage)
-                addYAMLMessage(filterHTML(info), s);
-        } else
+            if (yamlmessage) {
+            	stringstream tmp;
+            	if (!instance.context.empty())
+            		tmp << filterHTML(instance.context) << " ";
+            	tmp << filterHTML(info);
+                addYAMLMessage(tmp.str(), s);
+            }
+        } else {
+        	if (instance.infocontextnew)
+        		s << instance.context << endl;
             s << info << endl;
+            instance.infocontextnew = false;
+        }
         if (!addToFile(instance.infofile, s.str()))
             addWarning("Could not write to info file.");
         else
@@ -113,10 +138,18 @@ public:
             else
                 s << "<h3>WARNING:</h3>\n";
         }
-        if (instance.yaml)
-            addYAMLMessage(filterHTML(warning), s);
-        else
+        if (instance.yaml) {
+        	stringstream tmp;
+			if (!instance.context.empty())
+				tmp << filterHTML(instance.context) << " ";
+			tmp << filterHTML(warning);
+			addYAMLMessage(tmp.str(), s);
+        } else {
+        	if (instance.warningcontextnew)
+        		s << instance.context << endl;
             s << "<ul><li>" << warning << "</li></ul>" << endl;
+            instance.warningcontextnew = false;
+        }
         if (!addToFile(instance.warningfile, s.str()))
             cerr << "WARNING: Could not write to warning file." << endl;
         else
@@ -144,10 +177,18 @@ public:
             else
                 s << "<h3>ERROR:</h3>\n";
         }
-        if (instance.yaml)
-            addYAMLMessage(filterHTML(error), s);
-        else
+        if (instance.yaml) {
+        	stringstream tmp;
+			if (!instance.context.empty())
+				tmp << filterHTML(instance.context) << " ";
+			tmp << filterHTML(error);
+			addYAMLMessage(tmp.str(), s);
+        } else {
+        	if (instance.errorcontextnew)
+        		s << instance.context << endl;
             s << "<ul><li>" << error << "</li></ul>" << endl;
+            instance.errorcontextnew = false;
+        }
         if (!addToFile(instance.errorfile, s.str()))
             addWarning("Could not write to error file.");
         else
@@ -228,6 +269,12 @@ private:
     bool infoempty = true;
     bool warningempty = true;
     bool errorempty = true;
+
+    bool infocontextnew = false;
+    bool warningcontextnew = false;
+    bool errorcontextnew = false;
+
+    string context;
 
     bool yaml = false;
 

@@ -538,7 +538,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         if (!createQRef) {
             StatusFile::addInfo("<p class='pinfo'>Data will be processed in " + to_string(nChunks) + " chunks" + (nChunks > 1 ? "." : " (no splitting required).</p>"), false);
             if (yaml) {
-                StatusFile::addInfoYAML("Chunks", to_string(nChunks)+"\n");
+                StatusFile::addInfoYAML("Chunks", to_string(nChunks));
             }
 //            // DEBUG
 //            cout << "Chunks: " << endl;
@@ -650,8 +650,9 @@ void VCFData::processNextChunk() {
     if (!createQRef) {
         cout << "\n----------------------------------------------------------------\n--- ";
         stringstream s;
-        s << "<h3>Chunk " << currChunk+1 << "/" << nChunks << ":</h3>";
-        StatusFile::addInfo(s.str(), false);
+        s << "<h4>Chunk " << currChunk+1 << "/" << nChunks << ":</h4>";
+        StatusFile::setContext(s.str());
+        cout << "Chunk " << currChunk+1 << "/" << nChunks << ":" << endl;
         cout << "----------------------------------------------------------------" << endl;
 
 
@@ -1452,7 +1453,7 @@ void VCFData::processNextChunk() {
                 }
 //            } else { // diploid chromosome: identity
 //                for (size_t i = 0; i < Nrefhapsmax; i++)
-//                    chrXYhaploidsRefMap.push_back(i);
+//                    haploidsRefMap.push_back(i);
 //            }
         }
         // target
@@ -1464,7 +1465,7 @@ void VCFData::processNextChunk() {
             }
 //        } else { // diploid chromosome: identity
 //            for (size_t i = 0; i < 2*Ntarget; i++)
-//                chrXYhaploidsTgtMap.push_back(i);
+//                haploidsTgtMap.push_back(i);
 //        }
     }
 
@@ -1511,6 +1512,7 @@ void VCFData::processNextChunk() {
 
         // for YAML messages, placed only if yaml is set
         stringstream yamlinfo;
+        yamlinfo << "\n";
         yamlinfo << "    Index: " << (currChunk+1) << "\n";
         yamlinfo << "    Common variants: " << M << "\n";
         if (currChunk+1 < nChunks)
@@ -1639,7 +1641,7 @@ void VCFData::processNextChunk() {
             StatusFile::addWarning("<b>Analysis skipped:</b> Target and ref have too few matching variants. (M = " + to_string(M) + ")");
             StatusFile::updateStatus(1, "Skipped");
             if (yaml)
-                StatusFile::addInfoYAML("Chunk\n", yamlinfo.str());
+                StatusFile::addInfoYAML("Chunk", yamlinfo.str());
             // TODO This is not good! Instead, we should continue with the next chunk somehow, but what to do with the (reference) data covered by this chunk?
             exit(EXIT_SUCCESS);
         }
@@ -3627,7 +3629,10 @@ void VCFData::writeBCFRecords(vector<tbb::concurrent_bounded_queue<bcf1_t*>> &re
 
 void VCFData::printSummary() const {
     cout << "\n----------------------------------------------------------------\n--- ";
-    StatusFile::addInfo("<h3>SUMMARY:</h3>", false);
+    stringstream s;
+	s << "<h4>Summary:</h4>";
+	StatusFile::setContext(s.str());
+	cout << "Summary:" << endl;
     cout << "----------------------------------------------------------------" << endl;
 
     StatusFile::addInfo("<p class='pinfo'><b>" + to_string(globalstats.M) + " variants in both target and reference were used for phasing.</b></p>", false);
@@ -3843,4 +3848,6 @@ void VCFData::printSummary() const {
     // write YAML
     if (yaml)
         StatusFile::addInfoYAML("Summary", yamlinfo.str());
+
+    StatusFile::clearContext();
 }

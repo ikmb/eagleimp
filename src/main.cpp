@@ -494,6 +494,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     } // end for all chunks
+    StatusFile::clearContext();
 
     // combine output files
     if (!args.skipImputation)
