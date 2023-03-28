@@ -2280,7 +2280,7 @@ inline void VCFData::qRefOpenReadMeta() {
     // Note, we only load this information per default from chrX to be backward compatible. Otherwise, we load this if at least one sample
     // is haploid with the exception if we know that ALL samples are haploid.
     haploidsRef.clear();
-    haploidsRef.resize(Nrefhapsmax/2, nHaploidsRef != Nref); // initialized with all diploid if not all samples are haploid
+    haploidsRef.resize(Nrefhapsmax/2, nHaploidsRef == Nref); // initialized with all diploid if not all samples are haploid
     haploidsRef_initialized.clear();
     haploidsRef_initialized.resize(Nref, true); // all initialized, since we are loading them from Qref
     haploidsRefMap.clear();
