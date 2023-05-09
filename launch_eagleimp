@@ -95,6 +95,7 @@ fi
 
 # awk script for summary extraction
 SUMMARYAWK="${REPOPATH%/}/extract_summary.awk"
+SUMMARYAWKYAML="${REPOPATH%/}/extract_summary_yaml.awk"
 
 # determine according to system specifications:
 # NPAR: number of parallel running analyses dividing up the CPU ressources
@@ -420,6 +421,19 @@ done
 # generate summary only if at least one file was successfully analyzed
 if [[ ${#SUMMARYFILES[@]} -gt 0 ]]; then
     $GAWK -f $SUMMARYAWK ${SUMMARYFILES[@]} > $STATPATH/summary.info
+fi
+
+# the same for a potential summary.info.yaml
+unset SUMMARYFILESYAML
+for FILE in $(ls -v "$STATPATH"/*.info.yaml)
+do
+    if [[ ! -f ${FILE%.info}.error.yaml ]]; then
+        SUMMARYFILESYAML+=("$FILE")
+    fi
+done
+# generate summary only if at least one file was successfully analyzed
+if [[ ${#SUMMARYFILESYAML[@]} -gt 0 ]]; then
+    $GAWK -f $SUMMARYAWKYAML ${SUMMARYFILESYAML[@]} > $STATPATH/summary.info.yaml
 fi
 
 # if we had to split chromosome X, we are merging the results back now
