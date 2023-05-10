@@ -61,7 +61,7 @@ BEGIN {
   split(FILENAME,fnfields,"/")
   split(fnfields[length(fnfields)],fnfieldsx,".")
   chr=fnfieldsx[1]
-  gsub("chr","",chr)
+  #gsub("chr","",chr)
   chrom[nchrom]=chr
 }
 /Target samples/{
@@ -153,14 +153,18 @@ BEGIN {
 # /Reference-only bi-allelic variants from multi-allelic splits/ not in webservice
 # missing/unphased genotypes in phasing/imputation references are ignored here
 /Missing rate in target genotypes/{
-  mrate=$6
-  if (missrate_min>mrate) missrate_min=mrate
-  if (missrate_max<mrate) missrate_max=mrate
+  if (summaryline > 0) {
+    mrate=$6
+    if (missrate_min>mrate) missrate_min=mrate
+    if (missrate_max<mrate) missrate_max=mrate
+  }
 }
 /Imputation conflict rate/{
-  crate=$4
-  if (impconfl_min>crate) impconfl_min=crate
-  if (impconfl_max<crate) impconfl_max=crate
+  if (summaryline > 0) {
+    crate=$4
+    if (impconfl_min>crate) impconfl_min=crate
+    if (impconfl_max<crate) impconfl_max=crate
+  }
 }
 END {
 print "---"
