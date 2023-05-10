@@ -93,9 +93,10 @@ else
   STATPATH="${OUTPUTPATH%/}/$STATDIR"
 fi
 
-# awk script for summary extraction
+# awk scripts for summary extraction
 SUMMARYAWK="${REPOPATH%/}/extract_summary.awk"
 SUMMARYAWKYAML="${REPOPATH%/}/extract_summary_yaml.awk"
+MERGEAWKYAML="${REPOPATH%/}/mergeX_info_yaml.awk"
 
 # determine according to system specifications:
 # NPAR: number of parallel running analyses dividing up the CPU ressources
@@ -409,30 +410,32 @@ else
 fi
 
 # build summary.info:
+shopt -s nullglob # to remove non-matching '*'
+
 # we add only those files to the summary that have not failed with an error
 # (i.e. where no error file is present)
 unset SUMMARYFILES
-for FILE in $(ls -v "$STATPATH"/*.info)
+for FILE in "$STATPATH"/*.info
 do
     if [[ ! -f ${FILE%.info}.error ]]; then
         SUMMARYFILES+=("$FILE")
     fi
 done
 # generate summary only if at least one file was successfully analyzed
-if [[ ${#SUMMARYFILES[@]} -gt 0 ]]; then
+if (( ${#SUMMARYFILES[@]} > 0 )); then
     $GAWK -f $SUMMARYAWK ${SUMMARYFILES[@]} > $STATPATH/summary.info
 fi
 
 # the same for a potential summary.info.yaml
 unset SUMMARYFILESYAML
-for FILE in $(ls -v "$STATPATH"/*.info.yaml)
+for FILE in "$STATPATH"/*.info.yaml
 do
     if [[ ! -f ${FILE%.info}.error.yaml ]]; then
         SUMMARYFILESYAML+=("$FILE")
     fi
 done
 # generate summary only if at least one file was successfully analyzed
-if [[ ${#SUMMARYFILESYAML[@]} -gt 0 ]]; then
+if (( ${#SUMMARYFILESYAML[@]} > 0 )); then
     $GAWK -f $SUMMARYAWKYAML ${SUMMARYFILESYAML[@]} > $STATPATH/summary.info.yaml
 fi
 
@@ -527,9 +530,28 @@ if [[ -n "$SPLITX" ]]; then
                 if [[ $IWE == "error" ]]; then
                     ERRCNT=$(( $ERRCNT + 1 ))
                 fi
-                rm "$TMP"
+                #rm "$TMP"
             fi
         done
+    done
+
+    # merge stat.{info/warning/error}.yaml files
+#    for IWE in info warning error; do   TODO!!! WORKS ONLY FOR INFO YET!!!
+    for IWE in info; do
+        rm -rf $STAT.$IWE.yaml
+        unset XSTATFILES
+        for PART in PAR1 nonPAR PAR2; do
+            TMP="$STATPATH/$CHR"_"$PART$STUB$SUFF".stat.$IWE.yaml
+            if [[ -f $TMP ]]; then
+                XSTATFILES+=("$TMP")
+            fi
+        done
+        if (( ${#XSTATFILES[@]} > 0 )); then
+          $GAWK -f $MERGEAWKYAML ${XSTATFILES[@]} > $STAT.$IWE.yaml
+          #for TMP in ${XSTATFILES[@]}; do
+          #  rm $TMP
+          #done
+        fi
     done
 
     # merge imputation and phasing results
