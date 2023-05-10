@@ -30,6 +30,8 @@ BEGIN {
   nphased=0
   nimputed=0
   nimpout=0
+  physrange=0
+  genrange=0
   refaltsflip=0
   refalt=0
   sflip=0
@@ -91,6 +93,16 @@ BEGIN {
 /Imputation output variants/{
   if (summaryline>0) {
     nimpout+=$4
+  }
+}
+/Physical distance range/{
+  if (summaryline>0) {
+    physrange+=$4
+  }
+}
+/Genetic distance range/{
+  if (summaryline>0) {
+    genrange+=$4
   }
 }
 /REF ALT swap strand flips/{
@@ -182,6 +194,9 @@ print "    Reference variants: " nrvars
 print "    Common variants: " nphased
 if (nimputed>0) print "    Exclusive reference variants: " nimputed
 if (nimpout>0)  print "    Imputation output variants: " nimpout
+print "    Total physical distance range: " physrange " bp"
+print "    Total genetic distance range: " genrange " cM"
+printf "    Average SNPs per cM in target: %.0f\n", (nphased/genrange)+0.5
 if (refaltsflip>0) print "    REF ALT swap strand flips: " refaltsflip
 if (refalt>0)      print "    REF ALT swaps: " refalt
 if (sflip>0) print "    Strand flips: " sflip
