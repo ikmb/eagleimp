@@ -650,7 +650,7 @@ void VCFData::processNextChunk() {
     if (!createQRef) {
         cout << "\n----------------------------------------------------------------\n--- ";
         stringstream s;
-        s << "<h4>Chunk " << currChunk+1 << "/" << nChunks << ":</h4>";
+        s << "<h4>Chunk " << currChunk+1 << "</h4>";
         StatusFile::setContext(s.str());
         cout << "Chunk " << currChunk+1 << "/" << nChunks << ":" << endl;
         cout << "----------------------------------------------------------------" << endl;
@@ -3630,7 +3630,7 @@ void VCFData::writeBCFRecords(vector<tbb::concurrent_bounded_queue<bcf1_t*>> &re
 void VCFData::printSummary() const {
     cout << "\n----------------------------------------------------------------\n--- ";
     stringstream s;
-	s << "<h4>Summary:</h4>";
+	s << "<h4>Summary</h4>";
 	StatusFile::setContext(s.str());
 	cout << "Summary:" << endl;
     cout << "----------------------------------------------------------------" << endl;

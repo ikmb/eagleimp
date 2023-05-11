@@ -108,11 +108,7 @@ public:
             s << "---\n"; // add YAML "header"
         if (instance.yaml) {
             if (yamlmessage) {
-            	stringstream tmp;
-            	if (!instance.context.empty())
-            		tmp << filterHTML(instance.context) << " ";
-            	tmp << filterHTML(info);
-                addYAMLMessage(tmp.str(), s);
+                addYAMLMessage("info", filterHTML(info), s);
             }
         } else {
         	if (instance.infocontextnew)
@@ -139,11 +135,7 @@ public:
                 s << "<h3>WARNING:</h3>\n";
         }
         if (instance.yaml) {
-        	stringstream tmp;
-			if (!instance.context.empty())
-				tmp << filterHTML(instance.context) << " ";
-			tmp << filterHTML(warning);
-			addYAMLMessage(tmp.str(), s);
+			addYAMLMessage("warning", filterHTML(warning), s);
         } else {
         	if (instance.warningcontextnew)
         		s << instance.context << endl;
@@ -178,11 +170,7 @@ public:
                 s << "<h3>ERROR:</h3>\n";
         }
         if (instance.yaml) {
-        	stringstream tmp;
-			if (!instance.context.empty())
-				tmp << filterHTML(instance.context) << " ";
-			tmp << filterHTML(error);
-			addYAMLMessage(tmp.str(), s);
+			addYAMLMessage("error", filterHTML(error), s);
         } else {
         	if (instance.errorcontextnew)
         		s << instance.context << endl;
@@ -235,9 +223,11 @@ private:
         return s;
     }
 
-    static void addYAMLMessage(const string &message, stringstream &s) {
-        const string ind("    "); // indentation
-        s << "- message:\n"; // message key
+    static void addYAMLMessage(const string &key, const string &message, stringstream &s) {
+        const string ind("      "); // indentation
+        s << "- " << key << ":\n"; // message key, e.g. "warning"
+		s << "    Context: " << (instance.context.empty() ? string("global") : filterHTML(instance.context)) << "\n";
+        s << "    Message:\n";
         // find newline characters and insert indentation for each one
         size_t start = 0, pos = 0;
         while(pos != string::npos) {

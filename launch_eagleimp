@@ -96,7 +96,8 @@ fi
 # awk scripts for summary extraction
 SUMMARYAWK="${REPOPATH%/}/extract_summary.awk"
 SUMMARYAWKYAML="${REPOPATH%/}/extract_summary_yaml.awk"
-MERGEAWKYAML="${REPOPATH%/}/mergeX_info_yaml.awk"
+MERGEAWKYAMLINFO="${REPOPATH%/}/mergeX_info_yaml.awk"
+MERGEAWKYAMLMSG="${REPOPATH%/}/mergeX_message_yaml.awk"
 
 # determine according to system specifications:
 # NPAR: number of parallel running analyses dividing up the CPU ressources
@@ -536,8 +537,7 @@ if [[ -n "$SPLITX" ]]; then
     done
 
     # merge stat.{info/warning/error}.yaml files
-#    for IWE in info warning error; do   TODO!!! WORKS ONLY FOR INFO YET!!!
-    for IWE in info; do
+    for IWE in info warning error; do
         rm -rf $STAT.$IWE.yaml
         unset XSTATFILES
         for PART in PAR1 nonPAR PAR2; do
@@ -547,7 +547,11 @@ if [[ -n "$SPLITX" ]]; then
             fi
         done
         if (( ${#XSTATFILES[@]} > 0 )); then
-          $GAWK -f $MERGEAWKYAML ${XSTATFILES[@]} > $STAT.$IWE.yaml
+          if [[ $IWE == "info" ]]; then
+            $GAWK -f $MERGEAWKYAMLINFO ${XSTATFILES[@]} > $STAT.$IWE.yaml
+          else
+            $GAWK -f $MERGEAWKYAMLMSG ${XSTATFILES[@]} > $STAT.$IWE.yaml
+          fi
           #for TMP in ${XSTATFILES[@]}; do
           #  rm $TMP
           #done

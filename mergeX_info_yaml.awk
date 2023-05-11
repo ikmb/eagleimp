@@ -56,22 +56,23 @@ BEGIN {
 /Summary/{
   # store the line number of the summary
   summaryline = FNR
-  # get chromosome from the filename whenever the summary line is read
-  nchrom++
-  # get the basename of the file and split into fields separated by '.'
-  split(FILENAME,fnfields,"/")
-  split(fnfields[length(fnfields)],fnfieldsx,".")
-  chr=fnfieldsx[1]
-  #gsub("chr","",chr)
-  chrom[nchrom]=chr
 }
 
 # general
 {
-  # reset the line number of "Summary" and "Chunk" whenever a new file is read
+  # reset the line number of "Summary" and "Chunk" whenever a new file is read,
+  # and set chromosome
   if (FNR==1) {
     chunkline = 0
     summaryline = 0
+    # chromosome counter
+    nchrom++
+    # get the basename of the file and split into fields separated by '.'
+    split(FILENAME,fnfields,"/")
+    split(fnfields[length(fnfields)],fnfieldsx,".")
+    chr=fnfieldsx[1]
+    #gsub("chr","",chr)
+    chrom[nchrom]=chr
   }
 
   # generally, copy the input if we are in a chunk description
@@ -79,12 +80,13 @@ BEGIN {
     # exception: manipulate the chunk index
     if ($1=="Index:") {
       nchunks++ # one-based index
-      chunklines[nchunklines] = "    Index: " nchunks
+      chunklines[nchunklines] = "    Index: " chrom[nchrom] "/" $2
     } else chunklines[nchunklines] = $0
     nchunklines++
   }
 }
 
+#/Chromosome/ we do not parse the chromosome name from here as it may not be correctly reflected (e.g. X_PAR1 is just nominated as X)
 /Target samples/{ # they should be the same in all (max) three input files!
   # we are taking the maximum though
   if (ntsamples < $3) ntsamples=$3
