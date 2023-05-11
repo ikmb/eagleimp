@@ -181,10 +181,8 @@ BEGIN {
 END {
 print "---"
 print "- Summary:"
-printf "    Chromosomes: "
-printf chrom[1]
-for (c=2; c<=nchrom; c++) printf " " chrom[c]
-print ""
+print "    Chromosomes:"
+for (c=1; c<=nchrom; c++) print "      - " chrom[c]
 print "    Target samples min: " ntsamples_min
 print "    Target samples max: " ntsamples_max
 print "    Target variants: " ntvars
