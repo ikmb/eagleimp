@@ -219,7 +219,7 @@ if (ni>0) {
   print "    Exclusive reference variants: " ni
 }
 if (nimpout>0)  print "    Imputation output variants: " nimpout
-print "    Pphysical distance range: " physrange " bp"
+print "    Physical distance range: " physrange " bp"
 print "    Genetic distance range: " genrange " cM"
 printf "    Average SNPs per cM in target: %.0f\n", (np/genrange)+0.5
 if (refaltsflip>0) print "    REF ALT swap strand flips: " refaltsflip

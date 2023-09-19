@@ -227,19 +227,29 @@ private:
         const string ind("      "); // indentation
         s << "- " << key << ":\n"; // message key, e.g. "warning"
 		s << "    Context: " << (instance.context.empty() ? string("global") : filterHTML(instance.context)) << "\n";
-        s << "    Message:\n";
+        s << "    Message: ";
         // find newline characters and insert indentation for each one
         size_t start = 0, pos = 0;
+        bool first = true;
         while(pos != string::npos) {
             pos = message.find('\n', start);
             size_t spos = message.find_first_not_of(" \t", start); // find position after leading whitespace
             if (spos == string::npos)
                 break;
             string m = message.substr(spos, pos - spos);
-            if (!m.empty()) // only print non-empty messages
-                s << ind << m << "\n";
+            if (!m.empty()) { // only print non-empty messages
+            	s << "\n" << ind;
+            	if (first) {
+            		s << "\""; // put message in quotation marks
+            		first = false;
+            	}
+                s << m;
+            }
             start = pos+1; // character after newline
         }
+        if (!first)
+        	s << "\""; // end quotation mark
+        s << "\n";
     }
 
     void updateProgress(float progress) {

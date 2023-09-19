@@ -114,8 +114,16 @@ NWORK=$(( 2*$NPAR ))
 # first argument is target folder (already read), so consume this argument
 shift
 
-# add standard args and prvided args to global args
+# add standard args and provided args to global args
 GLOBARGS="$STDARGS $@"
+
+# check if --yaml argument is provided as argument
+YAML=0
+for ARG in $@; do
+  if [[ $ARG == "--yaml" ]]; then
+    YAML=1
+  fi
+done
 
 # parse job folder and run each file seperately
 # only choose .vcf.gz or .bcf
@@ -382,16 +390,26 @@ do
       # ... but skip if no reference file is available
       if [[ ! -e $QREF ]]; then
           echo "WARNING: Analysis skipped: No reference available for this chromosome." > "$LOG"
-          echo "<h3>WARNING:</h3>" > "$STAT.warning"
-          echo "<ul><li><b>Analysis skipped:</b> No reference available for this chromosome.</li></ul>" >> "$STAT.warning"
+          if (( $YAML == 1 )); then
+            # the preceding \n is because printf would otherwise recognize the --- as a bad option
+            printf "\n---\n- warning:\n    Context: global\n    Message: \"Analysis skipped: No reference available for this chromosome.\"\n" > "$STAT.warning.yaml"
+          else
+            echo "<h3>WARNING:</h3>" > "$STAT.warning"
+            echo "<ul><li><b>Analysis skipped:</b> No reference available for this chromosome.</li></ul>" >> "$STAT.warning"
+          fi
           echo "1,Skipped" > "$STAT"
           continue
       fi
       # ... and skip if there are no variants in the input target
       if [[ $($BCFTOOLS index -n $FILE) -eq 0 ]]; then
           echo "WARNING: Analysis skipped: No variants in target." > "$LOG"
-          echo "<h3>WARNING:</h3>" > "$STAT.warning"
-          echo "<ul><li><b>Analysis skipped:</b> No variants in target.</li></ul>" >> "$STAT.warning"
+          if (( $YAML == 1 )); then
+            # the preceding \n is because printf would otherwise recognize the --- as a bad option
+            printf "\n---\n- warning:\n    Context: global\n    Message: \"Analysis skipped: No variants in target.\"\n" > "$STAT.warning.yaml"
+          else
+            echo "<h3>WARNING:</h3>" > "$STAT.warning"
+            echo "<ul><li><b>Analysis skipped:</b> No variants in target.</li></ul>" >> "$STAT.warning"
+          fi
           echo "1,Skipped" > "$STAT"
           continue
       fi
