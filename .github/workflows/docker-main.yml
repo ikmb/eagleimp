@@ -1,0 +1,32 @@
+name: Docker main
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+
+jobs:
+  push_dockerhub:
+    name: Push new Docker image to Docker Hub (latest)
+    runs-on: ubuntu-latest
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASS: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - name: Check out pipeline code
+        uses: actions/checkout@v3
+
+      - name: Build new docker image
+        run: docker build --no-cache . -t ikmb/eagleimp:latest
+
+      - name: Push Docker image to DockerHub (latest)
+        run: |
+          echo "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+          docker push ikmb/eagleimp:latest
