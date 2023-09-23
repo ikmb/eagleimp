@@ -1,5 +1,5 @@
 /*
- *    Copyright (C) 2018-2021 by Lars Wienbrandt and Jan Christian Kässens,
+ *    Copyright (C) 2018-2023 by Lars Wienbrandt and Jan Christian Kässens,
  *    Institute of Clinical Molecular Biology, Kiel University
  *    
  *    This file is part of EagleImp.
@@ -44,6 +44,8 @@ extern "C" {
 #endif
 
 namespace hybridsys {
+
+using namespace std;
 
 class FPGA : Device
 {
@@ -113,8 +115,7 @@ public:
     // Device interface
     int getBus() override;
     int getSlot() override;
-    const std::string& getSerialNumber() override;
-/*    operator int() const override; */
+    const string& getSerialNumber() override;
     int getIndex() const override;
 
     /**
@@ -129,10 +130,10 @@ public:
     static constexpr size_t confBlockLength = (256/8);
     const void* getConfigurationData();
 
-    Result writeDMA(const FPGABuffer &buffer, unsigned channel, std::chrono::milliseconds timeout = std::chrono::milliseconds::max(), size_t size = 0);
-    Result readDMA(FPGABuffer &buffer, unsigned channel, std::chrono::milliseconds timeout = std::chrono::milliseconds::max());
-    void writeReg(std::uint64_t address, void *source, std::size_t length, enum Window win = WIN_USER);
-    void readReg(std::uint64_t address, void *target, std::size_t length, enum Window win = WIN_USER);
+    Result writeDMA(const FPGABuffer &buffer, unsigned channel, chrono::milliseconds timeout = chrono::milliseconds::max(), size_t size = 0);
+    Result readDMA(FPGABuffer &buffer, unsigned channel, chrono::milliseconds timeout = chrono::milliseconds::max());
+    void writeReg(uint64_t address, void *source, size_t length, enum Window win = WIN_USER);
+    void readReg(uint64_t address, void *target, size_t length, enum Window win = WIN_USER);
 
     /**
      * @brief Tries to cancel a running transaction on the specified DMA channel.
@@ -144,6 +145,9 @@ public:
      * It is safe to call this method if there is no running transaction.
      */
     void cancel(unsigned channel);
+
+    // cancels all FPGA DMA transactions and prevents new transactions
+    void abort();
 
     DeviceHandle& createThreadHandle();
     DeviceHandle& getHandle();
@@ -161,34 +165,37 @@ public:
 private:
     int bus;
     int slot;
-    std::string serial;
+    string serial;
 
     bool configInitialized;
-    std::array<char, confBlockLength> confData;
+    array<char, confBlockLength> confData;
 
     bool isTraced;
     int adIndex;
     DeviceHandle masterHandle;
 
     Spinlock transactionHandleLock;
-    std::unordered_map<int, DeviceHandle> transactionHandles;
+    unordered_map<int, DeviceHandle> transactionHandles;
     Spinlock deviceHandleLock;
-    std::unordered_map<pthread_t, DeviceHandle> deviceHandles;
-    std::vector<bool> cancellationRequested;
+    unordered_map<pthread_t, DeviceHandle> deviceHandles;
+    vector<bool> cancellationRequested;
+    bool aborted;
 
     unsigned maxDMAChannels;
-    std::vector<DMAChannelType> channelTypes;
+    vector<DMAChannelType> channelTypes;
 
+    string lockfile;
     bool locked;
     int lockfd;
+    bool lockfdwr;
 
-//    std::string getLockDirectory() const;
-//    std::string getLockFileName() const;
+//    string getLockDirectory() const;
+//    string getLockFileName() const;
     void reset(bool force = false);
-    void waitForLock(int inotify_fd, int watch, const std::string &lockfile);
+    void waitForLock(int inotify_fd, int watch, const string &lockfile);
 
-    const std::string lockfileprefix = "hybridsys-fpga-";
-    const std::string lockdir = "/opt/alphadata/lock";
+    const string lockfileprefix = "hybridsys-fpga-";
+    const string lockdir = "/opt/alphadata/lock";
 };
 
 }
