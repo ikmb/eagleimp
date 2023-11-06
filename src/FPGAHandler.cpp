@@ -473,7 +473,7 @@ void FPGAHandler::provideReferences(
             cout << "Provide FPGA " << threadIndex << ": Pushing #" << (totalBlocks - blocksRem_local) << "/" << totalBlocks <<  "." << endl;
         }
 
-        sleep(2);
+//        sleep(2);
     }
 
     if (debug) {
@@ -504,9 +504,7 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
     size_t buffer_rem512words = 0; // unprocessed 512bit words left in buffer
     shared_ptr<FPGABuffer> b;
     const uint32_t* data = NULL;
-    // DEBUG
-    size_t buffersread = 0;
-    // __DEBUG
+    size_t buffersread = 0; // for debug
 
     while(!last_block || blocks_processed < fpga_blocks_sent) { // this ensures that all data from blocks sent to the FPGA will be fetched (especially in the case of a user termination)
 
@@ -563,10 +561,11 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
 
                 b = bufferFactoryFPGA.get();
 
-                if (debug)
-                    cout << "Read FPGA " << threadIndex << ": Reading from FPGA...(#" << buffersread << ") " << endl;
+                if (debug) {
+                    cout << "Read FPGA " << threadIndex << ": Reading from FPGA...(buffer " << buffersread << ") " << endl;
+                    buffersread++;
+                }
                 FPGA::Result result = fpga.readDMA(*b, 1, timeout);
-                buffersread++; // DEBUG
                 switch(result) {
                 case FPGA::Result::Success:
                     {
