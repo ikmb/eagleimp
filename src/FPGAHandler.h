@@ -54,7 +54,8 @@ public:
     FPGAHandler(
             hybridsys::Hybridsys &hysys,
             chrono::milliseconds timeout,
-            hybridsys::BufferFactory<hybridsys::FPGABuffer> &fpgafactory,
+            hybridsys::BufferFactory<hybridsys::FPGABuffer> &fpgafactory_wr,
+            hybridsys::BufferFactory<hybridsys::FPGABuffer> &fpgafactory_rd,
             hybridsys::BufferFactory<hybridsys::CUDABuffer> &gpufactory,
             const VCFData &vcfdata,
             size_t maxsplitsites,
@@ -102,6 +103,11 @@ public:
             int threadIndex
             );
 
+    void readFPGA(
+            atomic_bool& termination_request,
+            int threadIndex
+            );
+
     // processes the returned FPGA buffers with condensed PBWT data, providing it to phaser
     void preProcessFPGAOnly(
             tbb::concurrent_bounded_queue<PBWTPhaser::targetQueue_type> &inqueue,
@@ -135,13 +141,16 @@ private:
     hybridsys::Hybridsys &hysys;
     FPGAConfigurationEagleImp fpgaconf;
     chrono::milliseconds timeout;
-    hybridsys::BufferFactory<hybridsys::FPGABuffer> &bufferFactoryFPGA;
+    hybridsys::BufferFactory<hybridsys::FPGABuffer> &bufferFactoryFPGA_write;
+    hybridsys::BufferFactory<hybridsys::FPGABuffer> &bufferFactoryFPGA_read;
     hybridsys::BufferFactory<hybridsys::CUDABuffer> &bufferFactoryGPU; // only required if used in combination with GPU
     const VCFData &vcfdata;
     vector<hybridsys::FPGABuffer> refbuffers;
     size_t maxpbwtsites;
     size_t K = 0;
     size_t iter = 0;
+
+    tbb::concurrent_bounded_queue<shared_ptr<hybridsys::FPGABuffer>> fpgaReadQueue;
 
     size_t totalTargets;
     atomic<size_t> targetsRemaining_in;

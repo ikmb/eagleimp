@@ -100,9 +100,14 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
             << " threads for phasing." << endl;
 
     // init FPGA buffers
-    BufferFactory<FPGABuffer> fpgaBufferFactory(fpga_buffersize);
+    BufferFactory<FPGABuffer> fpgaBufferFactory_wr(fpga_buffersize);
+    BufferFactory<FPGABuffer> fpgaBufferFactory_rd(fpga_buffersize);
+    // two buffers for FPGA writes (consumer and producer are single threads)
+    fpgaBufferFactory_wr.preallocateBuffer();
+    fpgaBufferFactory_wr.preallocateBuffer();
+    // user defined number of buffers for reading (should at least be two again)
     for(unsigned j = 0; j < fpga_num_buffers; ++j) {
-        fpgaBufferFactory.preallocateBuffer();
+        fpgaBufferFactory_rd.preallocateBuffer();
     }
 
     // init GPU buffers
@@ -121,7 +126,6 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
     tbb::concurrent_bounded_queue<Target*> prepareTargetsQueue;
     tbb::concurrent_bounded_queue<Target*> provideQueue;
     tbb::concurrent_bounded_queue<targetQueue_type> processQueue;
-//    tbb::concurrent_bounded_queue<condensedRefQueue_type> crefFPGAQueue;
     tbb::concurrent_bounded_queue<cPBWTQueue_type> cPBWTQueue;
     tbb::concurrent_bounded_queue<confidence_type> confidenceQueue; // contains only target ID and corresponding phasing confidence (incl. number of call sites) for result printing
 
@@ -130,9 +134,9 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
     string statusstring = ss.str();
     StatusFile::updateStatus(0, statusstring);
 
-    FPGAHandler fpgahandler(hysys, fpga_timeout, fpgaBufferFactory, gpuBufferFactory, vcfdata, maxpbwtsites, numthreads, !usegpu, debug);
+    FPGAHandler fpgahandler(hysys, fpga_timeout, fpgaBufferFactory_wr, fpgaBufferFactory_rd, gpuBufferFactory, vcfdata, maxpbwtsites, numthreads, !usegpu, debug);
     size_t blocksize = fpgahandler.getBlockSize();
-    prepareTargetsQueue.set_capacity(2*blocksize); // two blocks to prevent the FPGA from waiting for the host
+    provideQueue.set_capacity(2*blocksize); // two blocks to prevent the FPGA from waiting for the host
     cPBWTQueue.set_capacity(2*numthreads); // Note: This holds a lot of memory here (2*PBWT per target). Don't make this queue too large!
     confidenceQueue.set_capacity(nTarget);
 
