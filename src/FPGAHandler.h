@@ -83,9 +83,20 @@ public:
     // initializes constants and target data from first_target to first_target+fpgaconf.getNumPipelines() (only one target if FPGAs are not used)
     void initTargets(const vector<Target*>&, bool lastblock, int threadIndex);
 
-    // thread function that initializes the targets and streams the references
+    // processes a target block by calling initTargets and sending the references accordingly
+    void processBlock(const vector<Target*> &target_block, bool lastblock, int threadIndex);
+
+    // thread function that prepares the targets to be processed on the FPGA
+    void preparePhasing(
+            tbb::concurrent_bounded_queue<Target*> &inqueue,
+            tbb::concurrent_bounded_queue<Target*> &outqueue,
+            atomic_bool& termination_request,
+            int threadIndex
+            );
+
+    // thread function that initializes the targets on the FPGA and streams the references
     void provideReferences(
-            tbb::concurrent_bounded_queue<PBWTPhaser::targetQueue_type> &inqueue,
+            tbb::concurrent_bounded_queue<Target*> &inqueue,
             tbb::concurrent_bounded_queue<PBWTPhaser::targetQueue_type> &outqueue,
             atomic_bool& termination_request,
             int threadIndex
@@ -108,12 +119,12 @@ public:
             );
 
     bool isFinished() {
-        return targetsRemaining == 0;
+        return targetsRemaining_out == 0;
     }
 
     // shows the progress of the FPGA buffers between 0 (not started) and 1 (finished)
     double progress() {
-        return 1.0 - ((double)targetsRemaining / totalTargets);
+        return 1.0 - ((double)targetsRemaining_out / totalTargets);
     }
 
     // how many uint32_t words are required for general initialization (including sync word, excluding target specific data)
@@ -133,11 +144,12 @@ private:
     size_t iter = 0;
 
     size_t totalTargets;
-    atomic<size_t> targetsRemaining;
+    atomic<size_t> targetsRemaining_in;
+    atomic<size_t> targetsRemaining_out;
     size_t totalBlocks;
     size_t blocksize;
     atomic<size_t> fpga_blocks_sent;
-    atomic<bool> last_block;
+    atomic<bool> last_block_flag;
 
     size_t constrequired_bufsize;
     size_t tgtsize;

@@ -90,10 +90,11 @@ FPGAHandler::FPGAHandler(
     size_t nt = vcfdata.getNTarget();
 #endif
     totalTargets = nt;
-    targetsRemaining = nt;
+    targetsRemaining_in = nt;
+    targetsRemaining_out = nt;
     totalBlocks = nt / blocksize + (nt % blocksize ? 1 : 0);
     fpga_blocks_sent = 0;
-    last_block = false;
+    last_block_flag = false;
 
     // Check if buffers will be large enough
 
@@ -119,7 +120,8 @@ FPGAHandler::FPGAHandler(
 void FPGAHandler::initIteration(size_t K_, size_t iter_) {
     K = K_;
     iter = iter_;
-    targetsRemaining = totalTargets;
+    targetsRemaining_in = totalTargets;
+    targetsRemaining_out = totalTargets;
 
     Stopwatch swlockfpga("Wait lock (FPGA)");
     for(FPGA &f : hysys.getFPGAs()) { // this should be only one, otherwise this is a perfect deadlock situation...
@@ -402,82 +404,141 @@ void FPGAHandler::initTargets(const vector<Target*> &targets, bool lastblock, in
 
 }
 
-// thread function that initializes the targets and streams the references
-void FPGAHandler::provideReferences(
-        tbb::concurrent_bounded_queue<PBWTPhaser::targetQueue_type> &inqueue,
-        tbb::concurrent_bounded_queue<PBWTPhaser::targetQueue_type> &outqueue,
+void FPGAHandler::processBlock(const vector<Target*> &target_block, bool lastblock, int threadIndex) {
+    // initialize targets on FPGA
+    initTargets(target_block, lastblock, threadIndex);
+
+    // stream prepared references to the FPGA
+    if (debug)
+        cout << "Provide FPGA " << threadIndex << ": Reference data to FPGA..." << endl;
+    for (const auto &rb : refbuffers) {
+        FPGA::Result result;
+        result = hysys.getFPGA(threadIndex).writeDMA(rb, 0, timeout, rb.getContentLength());
+        if (result == FPGA::Result::Timeout) {
+            cout << endl;
+            StatusFile::addError("Provide FPGA timeout.");
+            exit(EXIT_FAILURE);
+        } else if (result == FPGA::Result::Cancelled) {
+            cout << endl;
+            StatusFile::addError("Provide FPGA cancelled.");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+// thread function that prepares the targets to be processed on the FPGA
+void FPGAHandler::preparePhasing(
+        tbb::concurrent_bounded_queue<Target*> &inqueue,
+        tbb::concurrent_bounded_queue<Target*> &outqueue,
         atomic_bool& termination_request,
         int threadIndex
         ) {
 
-    FPGA &fpga = hysys.getFPGA(threadIndex);
+    ThreadUtils::setThreadName("eimp prep FPGA");
+    if (debug)
+        cout << "Launched PrepPhasing FPGA " << threadIndex << "." << endl;
+
+    while (!termination_request && targetsRemaining_in > 0) {
+
+        try {
+            Target* tgtptr;
+            inqueue.pop(tgtptr);
+            targetsRemaining_in--;
+
+            if (debug)
+                cout << "PrepPhasing " << threadIndex << ": Preparing target #" << (totalTargets-targetsRemaining_in) << endl; // probable side effect with counter, but debug output anyway
+
+            // preparation + push
+            tgtptr->prepPhase();
+            outqueue.push(tgtptr);
+
+        } catch (tbb::user_abort &e) {
+            if (debug && targetsRemaining_in > 0)
+                cerr << "PrepPhasing " << threadIndex << ": User abort." << endl;
+            break;
+        }
+
+    }
+
+}
+
+// thread function that initializes the targets and streams the references
+void FPGAHandler::provideReferences(
+        tbb::concurrent_bounded_queue<Target*> &inqueue,
+        tbb::concurrent_bounded_queue<PBWTPhaser::targetQueue_type> &outqueue,
+        atomic_bool& termination_request,
+        int threadIndex
+        ) {
 
     ThreadUtils::setThreadName("eimp prov FPGA");
     if (debug)
         cout << "Launched Provide FPGA " << threadIndex << "." << endl;
 
     size_t blocksRem_local = totalBlocks; // not for multiple provide threads! (use global atomic blocksRemLocal then!)
-    last_block = false;
-    while(!last_block) { // check ensures that the last block sent to the FPGA is marked with "last_block" (especially in the case of a user termination)
+    size_t tgtsRem_local = totalTargets;
+    size_t curr_filled = 0;
 
-        PBWTPhaser::targetQueue_type block;
+    vector<Target*> *target_block = new vector<Target*>;
+    while (tgtsRem_local > 0) { // we need to handle a termination request inside the loop and break
+
+        Target* tgtptr;
+
         try {
-            // DEBUG
-            if (debug)
-                cout << "Provide FPGA " << threadIndex << ": Waiting for block... rem: " << blocksRem_local << endl;
-
-            inqueue.pop(block);
-            blocksRem_local--;
-            fpga_blocks_sent++;
-
-            // DEBUG
-            if (debug)
-                cout << "Provide FPGA " << threadIndex << ": Got #" << (totalBlocks-blocksRem_local) << "/" << totalBlocks << "." << endl;
+            if (!termination_request)
+                inqueue.pop(tgtptr);
+            else
+                throw tbb::user_abort();
 
         } catch (tbb::user_abort &e) {
-            if (debug && blocksRem_local > 0)
+            if (debug && tgtsRem_local > 0)
                 cerr << "Provide FPGA " << threadIndex << ": User abort." << endl;
-            break;
+            break; // leave the loop with a termination request
         }
 
-        omp_set_num_threads(numthreads);
-#pragma omp parallel for
-        for (size_t tidx = 0; tidx < block->size(); tidx++) {
-            (*block)[tidx]->prepPhase();
-        }
+        // need to push the current data to the queue,
+        // in the case of a termination request, we know at least one datum is in the block!
+        if (curr_filled == blocksize) {
+            blocksRem_local--;
+            if (debug)
+                cout << "Provide FPGA " << threadIndex << ": Got block #" << (totalBlocks-blocksRem_local) << "/" << totalBlocks << " (tgtsrem: " << tgtsRem_local << ")." << endl;
 
-        // initialize targets on FPGA
-        last_block = blocksRem_local == 0 || termination_request;
-        initTargets(*block, last_block, threadIndex);
+            processBlock(*target_block, false, threadIndex); // this can never be the last block as there is already one target that needs to be pushed into a new block at this point
 
-        // stream prepared references to the FPGA
-        if (debug)
-            cout << "Provide FPGA " << threadIndex << ": Reference data to FPGA..." << endl;
-        for (const auto &rb : refbuffers) {
-            FPGA::Result result;
-            result = fpga.writeDMA(rb, 0, timeout, rb.getContentLength());
-            if (result == FPGA::Result::Timeout) {
-                cout << endl;
-                StatusFile::addError("Provide FPGA timeout.");
-                exit(EXIT_FAILURE);
-            } else if (result == FPGA::Result::Cancelled) {
-                cout << endl;
-                StatusFile::addError("Provide FPGA cancelled.");
-                exit(EXIT_FAILURE);
+            fpga_blocks_sent++; // set this before actually sending the block to prevent interprocess side effects
+            outqueue.push(PBWTPhaser::targetQueue_type(target_block)); // make a shared pointer from target_block and add to queue
+
+            if (debug) {
+                cout << "Provide FPGA " << threadIndex << ": Pushed #" << (totalBlocks - blocksRem_local) << "/" << totalBlocks <<  " (size: " << target_block->size() << ")." << endl;
             }
+
+            target_block = new vector<Target*>; // assign new block
+            curr_filled = 0;
         }
 
-        outqueue.push(block);
+        target_block->push_back(tgtptr);
+        curr_filled++;
+        tgtsRem_local--;
 
-        if (debug) {
-            cout << "Provide FPGA " << threadIndex << ": Pushing #" << (totalBlocks - blocksRem_local) << "/" << totalBlocks <<  "." << endl;
-        }
+    }
 
-//        sleep(2);
+    // send the last block to the FPGA
+    // (even with a termination request, we know that there's at least one target in the block)
+    blocksRem_local--;
+    if (debug)
+        cout << "Provide FPGA " << threadIndex << ": Got last block #" << (totalBlocks-blocksRem_local) << "/" << totalBlocks << " (tgtsrem: " << tgtsRem_local << ")." << endl;
+
+    processBlock(*target_block, true, threadIndex);
+
+    fpga_blocks_sent++;
+    last_block_flag = true;
+    outqueue.push(PBWTPhaser::targetQueue_type(target_block)); // make a shared pointer from target_block and add to queue
+
+    if (debug) {
+        cout << "Provide FPGA " << threadIndex << ": Pushed last block #" << (totalBlocks - blocksRem_local) << "/" << totalBlocks <<  " (size: " << target_block->size() << ")." << endl;
     }
 
     if (debug) {
-        if (blocksRem_local > 0)
+        if (tgtsRem_local > 0)
             cout << "Provide FPGA " << threadIndex << " terminated." << endl;
         else
             cout << "Provide FPGA " << threadIndex << " finished." << endl;
@@ -506,7 +567,7 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
     const uint32_t* data = NULL;
     size_t buffersread = 0; // for debug
 
-    while(!last_block || blocks_processed < fpga_blocks_sent) { // this ensures that all data from blocks sent to the FPGA will be fetched (especially in the case of a user termination)
+    while(!last_block_flag || blocks_processed < fpga_blocks_sent) { // this ensures that all data from blocks sent to the FPGA will be fetched (especially in the case of a user termination)
 
         PBWTPhaser::targetQueue_type block;
         try {
@@ -690,24 +751,25 @@ void FPGAHandler::processPBWT(
     int threadIndex
     ) {
 
-        ThreadUtils::setThreadName("eimp Phas FPGA");
+        ThreadUtils::setThreadName("eimp phas FPGA");
         if (debug)
             cout << "Launched Phase FPGA " << threadIndex << "." << endl;
 
-        while (!termination_request && targetsRemaining > 0) {
+        while (!termination_request && targetsRemaining_out > 0) {
             PBWTPhaser::cPBWTQueue_type target;
             try {
                 // DEBUG
                 if (debug)
-                    cout << "Phase FPGA " << threadIndex << ": Waiting... rem: " << targetsRemaining << endl;
+                    cout << "Phase FPGA " << threadIndex << ": Waiting... rem: " << targetsRemaining_out << endl;
 
                 inqueue.pop(target);
+                targetsRemaining_out--;
 
                 // DEBUG
                 if (debug)
-                    cout << "Phase FPGA " << threadIndex << ": Got #" << (totalTargets-targetsRemaining+1) << "/" << totalTargets << "." << endl;
+                    cout << "Phase FPGA " << threadIndex << ": Got #" << (totalTargets-targetsRemaining_out) << "/" << totalTargets << "." << endl; // probable side effect regarding the counter, but it's debug output anyway...
             } catch (tbb::user_abort &e) {
-                if (debug && targetsRemaining > 0)
+                if (debug && targetsRemaining_out > 0)
                     cerr << "Phase FPGA " << threadIndex << ": User abort." << endl;
                 break;
             }
@@ -733,11 +795,10 @@ void FPGAHandler::processPBWT(
 
             // cleanup this target (note, that the destructor of PBWT already clears target.cpbwt and gCount0
             delete target.target;
-            targetsRemaining--;
         }
 
         if (debug) {
-            if (targetsRemaining > 0)
+            if (targetsRemaining_out > 0)
                 cout << "Phase FPGA " << threadIndex << " terminated." << endl;
             else
                 cout << "Phase FPGA " << threadIndex << " finished." << endl;
