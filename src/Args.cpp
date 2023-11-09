@@ -298,7 +298,7 @@ Args::Args(int argc, char *argv[]) :
 #endif
 #ifdef USE_AD_FPGA
     opts_hidden_hybrid.add_options()
-    ("buffer-size-FPGA", value<size_t>()->default_value(128*1024*1024), "Size for transmission buffers (FPGA->host) in bytes.")
+    ("buffer-size-FPGA", value<size_t>()->default_value(512*1024*1024), "Size for transmission buffers (FPGA->host) in bytes.")
     ("buffers-FPGA", value<unsigned>()->default_value(0), "Number of transmission buffers (FPGA->host) to keep around. (0=automatic)")
     ("timeout", value<unsigned long>(&timeout)->default_value(600000), "Timeout for FPGA transmissions (in ms)")
     ;

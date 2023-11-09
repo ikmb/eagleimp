@@ -241,7 +241,7 @@ void FPGAHandler::initTargets(const vector<Target*> &targets, bool lastblock, in
     // # sites (M) -1 (last site)
     constants[13] = vcfdata.getNSNPs()-1;
     // buffer size
-    constants[14] = bufferFactoryFPGA_write.getBufferSize() / (256/8); // buffer size in 256bit PCIe words
+    constants[14] = bufferFactoryFPGA_read.getBufferSize() / (256/8); // buffer size of the result buffer in 256bit PCIe words
     // mark the last charge
     constants[15] = lastblock ? 0x80000000U : 0;
 
@@ -551,59 +551,61 @@ void FPGAHandler::provideReferences(
 }
 
 
-void FPGAHandler::readFPGA(
-             atomic_bool& termination_request,
-             int threadIndex
-             ) {
-
-
-    FPGA &fpga = hysys.getFPGA(threadIndex);
-
-    ThreadUtils::setThreadName("eimp read FPGA");
-    if (debug)
-        cout << "Launched Read FPGA " << threadIndex << "." << endl;
-
-    // for debug
-    const size_t buffer512words = (bufferFactoryFPGA_read.getBufferSize()*8)/512; // number of 512bit words in buffer
-    size_t buffersread = 0;
-
-    while(!termination_request) {
-
-        if (debug)
-            cout << "Read FPGA " << threadIndex << ": Waiting for buffer..." << endl;
-
-        shared_ptr<FPGABuffer> b = bufferFactoryFPGA_read.get();
-
-        if (debug) {
-            cout << "Read FPGA " << threadIndex << ": Reading from FPGA...(buffer " << buffersread << ") " << endl;
-            buffersread++;
-        }
-
-//        FPGA::Result result = fpga.readDMA(*b, 1, timeout);
-        FPGA::Result result = fpga.readDMA(*b, 1, (chrono::milliseconds)500); // half a second timeout -> loop will be repeated until term_request
-        switch(result) {
-        case FPGA::Result::Success:
-            {
-                if (debug)
-                    cout << "Read FPGA " << threadIndex << ": Received " << buffer512words << " in buffer." << endl;
-                fpgaReadQueue.push(b);
-            }
-            break;
-        case FPGA::Result::Timeout:
-            if (debug)
-                cout << "Read FPGA timeout." << endl;
+//void FPGAHandler::readFPGA(
+//             atomic_bool& termination_request,
+//             int threadIndex
+//             ) {
+//
+//
+//    FPGA &fpga = hysys.getFPGA(threadIndex);
+//
+//    ThreadUtils::setThreadName("eimp read FPGA");
+//    if (debug)
+//        cout << "Launched Read FPGA " << threadIndex << "." << endl;
+//
+//    // for debug
+//    const size_t buffer512words = (bufferFactoryFPGA_read.getBufferSize()*8)/512; // number of 512bit words in buffer
+//    size_t buffersread = 0;
+//
+//    while(!termination_request) {
+//
+//        if (debug)
+//            cout << "Read FPGA " << threadIndex << ": Waiting for buffer..." << endl;
+//
+//        shared_ptr<FPGABuffer> b = bufferFactoryFPGA_read.get();
+//
+//        if (debug) {
+//            cout << "Read FPGA " << threadIndex << ": Reading from FPGA...(buffer " << buffersread << ") " << endl;
+//            buffersread++;
+//        }
+//
+//        // read the buffer from FPGA
+//        FPGA::Result result = fpga.readDMA(*b, 1, timeout); // don't let this run into a timeout! data loss may occur!
+//
+//        switch(result) {
+//        case FPGA::Result::Success:
+//            {
+//                if (debug)
+//                    cout << "Read FPGA " << threadIndex << ": Received " << buffer512words << " in buffer." << endl;
+//                fpgaReadQueue.push(b);
+//            }
+//            break;
+//        case FPGA::Result::Timeout:
 //            cout << endl;
 //            StatusFile::addError("Read FPGA timeout.");
 //            exit(EXIT_FAILURE);
-            break;
-        case FPGA::Result::Cancelled:
-            if (debug)
-                cout << "Read FPGA cancelled." << endl;
-            break;
-        }
-
-    }
-}
+//            break;
+//        case FPGA::Result::Cancelled: // normal way to stop this thread TODO how to make this nicer?!
+//            if (debug)
+//                cout << "Read FPGA cancelled." << endl;
+//            break;
+//        }
+//
+//    }
+//
+//    if (debug)
+//        cout << "Finished Read FPGA " << threadIndex << "." << endl;
+//}
 
 
 void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::targetQueue_type> &inqueue,
@@ -612,23 +614,27 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
              int threadIndex
              ) {
 
+//    // DEBUG
+//    size_t dbgcopycount = 0;
+//    size_t dbgnocopycount = 0;
+
     FPGA &fpga = hysys.getFPGA(threadIndex);
 
     ThreadUtils::setThreadName("eimp prep FPGA");
     if (debug)
         cout << "Launched PreProc FPGA " << threadIndex << "." << endl;
 
-    // spawn separate reader thread
-    atomic_bool reader_term_request;
-    reader_term_request = false;
-    thread readthr(&FPGAHandler::readFPGA, this, std::ref(reader_term_request), threadIndex);
+//    // spawn separate reader thread
+//    atomic_bool reader_term_request;
+//    reader_term_request = false;
+//    thread readthr(&FPGAHandler::readFPGA, this, std::ref(reader_term_request), threadIndex);
 
     const size_t site512words = divideRounded(K, (size_t)512); // how many 512 bit words per site?
     size_t blocks_processed = 0; // not for multiple threads! (use global atomic then!)
     const size_t buffer512words = (bufferFactoryFPGA_read.getBufferSize()*8)/512; // number of 512bit words in buffer
     size_t buffer_rem512words = 0; // unprocessed 512bit words left in buffer
     shared_ptr<FPGABuffer> b;
-    const uint32_t* data = NULL;
+    uint32_t* data = NULL;
     size_t buffersread = 0; // for debug
 
     while(!last_block_flag || blocks_processed < fpga_blocks_sent) { // this ensures that all data from blocks sent to the FPGA will be fetched (especially in the case of a user termination)
@@ -650,29 +656,23 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
             break;
         }
 
-        // the complete condensed PBWT data for this block, reserved space for 'blocksize' targets
-        vector<uint32_t*> allpbwts;
-        allpbwts.resize(block->size());
-        // reserve for each target the required amount of space for the PBWT according to the number of split sites
-        for (size_t t = 0; t < block->size(); t++) {
-            size_t capacity = site512words*512/8; //roundToMultiple(sitesize, UNITWORDS * sizeof(BooleanVector::data_type) * 8) / 8;
-            size_t nsplits = (*block)[t]->getNSplits();
-            uint32_t *pbwtdata = (uint32_t*) MyMalloc::malloc((2*nsplits+1) * capacity * 2, string("pbwtdata_t")+to_string(t)+"_b"+to_string(blocks_processed)); // space for the fwd and reverse PBWT for this target
-            allpbwts[t] = pbwtdata; //new PBWTPhaser::refincs_type(2*nsplits+1, BooleanVector(refincdata, capacity));
-//            // reserve for each site the space required for all references
-//            auto curr_data = refincdata;
-//            for (BooleanVector &bv : *(allrefincs[t])) {
-//                bv.setData(curr_data, capacity, sitesize); // don't need to preinitialize here
-//                curr_data += capacity / sizeof(BooleanVector::data_type);
-//            }
-        }
+        // the complete condensed PBWT data for this block
+        vector<uint32_t*> allpbwts(block->size(), NULL);
+//        // reserve for each target the required amount of space for the PBWT according to the number of split sites
+//        for (size_t t = 0; t < block->size(); t++) {
+//            size_t capacity = site512words*512/8; //roundToMultiple(sitesize, UNITWORDS * sizeof(BooleanVector::data_type) * 8) / 8;
+//            size_t nsplits = (*block)[t]->getNSplits();
+//            uint32_t *pbwtdata = (uint32_t*) MyMalloc::malloc((2*nsplits+1) * capacity * 2, string("pbwtdata_t")+to_string(t)+"_b"+to_string(blocks_processed)); // space for the fwd and reverse PBWT for this target
+//            allpbwts[t] = pbwtdata; //new PBWTPhaser::refincs_type(2*nsplits+1, BooleanVector(refincdata, capacity));
+//        }
         // add dummy targets to total number of words, if necessary (should be the case only for last buffer)
         size_t dummytgt512words = (blocksize - block->size()) * site512words * 2; // dummies also produce a fwd and a bck PBWT
 
         // to keep track of where we are:
         size_t curr_tgt = 0;  // curr target (relative to block)
         uint32_t *curr_data = allpbwts[curr_tgt]; // start of PBWT data block for this target
-        size_t tgt_rem512words = (2*(*block)[curr_tgt]->getNSplits()+1) * site512words * 2; // including fwd and bck PBWT
+        size_t tgt_512words = (2*(*block)[curr_tgt]->getNSplits()+1) * site512words * 2; // including fwd and bck PBWT
+        size_t tgt_rem512words = tgt_512words;
 
         // process all required 512 bit words for this block
 #if defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET
@@ -684,19 +684,58 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
                 if (debug)
                     cout << "PreProc FPGA " << threadIndex << ": Waiting for buffer..." << endl;
 
-                fpgaReadQueue.pop(b);
+//                fpgaReadQueue.pop(b);
 
-                if (debug) {
-                    cout << "PreProc FPGA " << threadIndex << ": Got buffer " << buffersread << endl;
-                    buffersread++;
+                b = bufferFactoryFPGA_read.get();
+
+                if (debug)
+                    cout << "PreProc FPGA " << threadIndex << ": Reading from FPGA...(buffer " << buffersread << ") " << endl;
+
+                // read the buffer from FPGA
+                FPGA::Result result = fpga.readDMA(*b, 1, timeout); // don't let this run into a timeout! data loss may occur!
+
+                switch(result) {
+                case FPGA::Result::Success:
+                    {
+                        if (debug) {
+                            cout << "PreProc FPGA " << threadIndex << ": Received " << buffer512words << " in buffer." << endl;
+                            buffersread++;
+                        }
+//                        fpgaReadQueue.push(b);
+                    }
+                    break;
+                case FPGA::Result::Timeout:
+                    cout << endl;
+                    StatusFile::addError("PreProc FPGA read timeout.");
+                    exit(EXIT_FAILURE);
+                    break;
+                case FPGA::Result::Cancelled:
+                    cout << endl;
+                    StatusFile::addError("PreProc FPGA read cancelled.");
+                    exit(EXIT_FAILURE);
+                    break;
                 }
-                data = reinterpret_cast<const uint32_t*>(b->getData());
+
+//                if (debug) {
+//                    cout << "PreProc FPGA " << threadIndex << ": Got buffer " << buffersread << endl;
+//                    buffersread++;
+//                }
+
+                data = reinterpret_cast<uint32_t*>(b->getData());
                 buffer_rem512words = buffer512words;
             } // end if buffer_rem512words == 0
 
             // data copying from buffer:
             // process as much data as possible for this target
             size_t copy512words = min(buffer_rem512words, tgt_rem512words);
+
+            bool tgtcomplete = false;
+            if (tgt_512words == tgt_rem512words && copy512words == tgt_rem512words && curr_tgt < block->size()) {
+                // complete target is in the buffer -> just set the pointers to the data and skip copying
+                tgtcomplete = true;
+                allpbwts[curr_tgt] = data;
+            }
+
             tgt_rem512words -= copy512words;
             buffer_rem512words -= copy512words;
 
@@ -714,8 +753,18 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
 #endif
 
             // copy
-            if (copy512words > 0 && curr_tgt < block->size() && !termination_request) // don't copy dummies!
-                memcpy(curr_data, data, copy512words*512/8); // this is the runtime killer!!!
+            if (!tgtcomplete && copy512words > 0 && curr_tgt < block->size() && !termination_request) { // only copy really required data
+                // check if space was already allocated for the destination.
+                // if not, allocate!
+                if (!curr_data) {
+                    size_t capacity = site512words*512/8; //roundToMultiple(sitesize, UNITWORDS * sizeof(BooleanVector::data_type) * 8) / 8;
+                    size_t nsplits = (*block)[curr_tgt]->getNSplits();
+                    uint32_t *pbwtdata = (uint32_t*) MyMalloc::malloc((2*nsplits+1) * capacity * 2, string("pbwtdata_t")+to_string(curr_tgt)+"_b"+to_string(blocks_processed)); // space for the fwd and reverse PBWT for this target
+                    allpbwts[curr_tgt] = pbwtdata; //new PBWTPhaser::refincs_type(2*nsplits+1, BooleanVector(refincdata, capacity));
+                    curr_data = pbwtdata;
+                }
+                memcpy(curr_data, data, copy512words*512/8);
+            }
 
             // increment counters and data ptr
             data += copy512words*512/32;
@@ -729,43 +778,55 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
             // finished a target (or dummies)
             if (tgt_rem512words == 0) {
 
-                    // push current target into outqueue
-                    if (!termination_request && curr_tgt < block->size()) { // only real targets and we don't need to push the data into outqueue if we received a termination request
-                        if (debug)
-                            cout << "PreProc FPGA " << threadIndex << ": Pushing tgt #" << curr_tgt+1 << "/" << block->size() << " of block #" << blocks_processed << "/" << totalBlocks <<  "." << endl;
-                        PBWTPhaser::cPBWTQueue_type tgt;
-                        tgt.target = (*block)[curr_tgt];
-                        tgt.cpbwt = allpbwts[curr_tgt];
-                        outqueue.push(tgt);
-                    }
+                // push current target into outqueue
+                if (!termination_request && curr_tgt < block->size()) { // only real targets and we don't need to push the data into outqueue if we received a termination request
+                    if (debug)
+                        cout << "PreProc FPGA " << threadIndex << ": Pushing tgt #" << curr_tgt+1 << "/" << block->size() << " of block #" << blocks_processed << "/" << totalBlocks <<  "." << endl;
+                    PBWTPhaser::cPBWTQueue_type tgt;
+                    tgt.target = (*block)[curr_tgt];
+                    tgt.cpbwt = allpbwts[curr_tgt];
+                    if (tgtcomplete)
+                        tgt.parent = b; // prevent the buffer from deletion
+//                    // DEBUG
+//                    if (tgtcomplete)
+//                        dbgnocopycount++;
+//                    else
+//                        dbgcopycount++;
+//                    cerr << "CC:" << dbgcopycount << " NC:" << dbgnocopycount << endl;
+//                    // __DEBUG
+                    outqueue.push(tgt);
+                }
 
-                    // prepare next target
-                    curr_tgt++;
-                    if (curr_tgt < block->size()) { // only real targets
+                // prepare next target
+                curr_tgt++;
+                tgtcomplete = false;
+                if (curr_tgt < block->size()) { // only real targets
 #if defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET
-                        if (debug)
-                            cout << " Finished target padding. Next target..." << endl;
+                    if (debug)
+                        cout << " Finished target padding. Next target..." << endl;
 #endif
-                        curr_data = allpbwts[curr_tgt]; // start of PBWT data block for this target (fwd and bck)
-                        tgt_rem512words = (2*(*block)[curr_tgt]->getNSplits()+1) * site512words * 2;
-                    } else if (curr_tgt == block->size()){ // padding targets
-                        // this only applies for the very last block in this run if we have padding targets,
-                        // but is no problem for usual block ends (dummytgt512words is zero then):
-                        // we want all remaining dummy words at once now
-                        tgt_rem512words = dummytgt512words;
+                    curr_data = allpbwts[curr_tgt]; // start of PBWT data block for this target (fwd and bck)
+                    tgt_512words = (2*(*block)[curr_tgt]->getNSplits()+1) * site512words * 2;
+                    tgt_rem512words = tgt_512words;
+                } else if (curr_tgt == block->size()){ // padding targets
+                    // this only applies for the very last block in this run if we have padding targets,
+                    // but is no problem for usual block ends (dummytgt512words is zero then):
+                    // we want all remaining dummy words at once now
+                    tgt_512words = 0;
+                    tgt_rem512words = dummytgt512words;
 
 #if defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET
-                        if (debug) {
-                            cout << " Finished target padding. Was last target in block." << endl;
+                    if (debug) {
+                        cout << " Finished target padding. Was last target in block." << endl;
 //                            if (curr_tgt < blocksize)
 //                                cout << " Last block with padding targets! Padding words: " << tgt_rem512words_padding << endl;
-                        }
+                    }
 #endif
 
-                    } // tgt_rem512words stays zero and we're finished
+                } // tgt_rem512words stays zero and we're finished
 #if defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET
-                        else if (debug)
-                            cout << " Finished target padding. Was padding target of block." << endl;
+                    else if (debug)
+                        cout << " Finished target padding. Was padding target of block." << endl;
 #endif
             }
 
@@ -775,14 +836,14 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
 
     } // end while over all blocks
 
-    // stop FPGA reading process
-    reader_term_request = true;
-    try {
-        fpga.cancel(1);
-        readthr.join();
-    } catch (exception& e) {
-        cerr << "Caught an exception while cancelling FPGA read. Continuing anyway..." << endl;
-    }
+//    // stop FPGA reading process
+//    reader_term_request = true;
+//    try {
+//        fpga.cancel(1);
+//        readthr.join();
+//    } catch (exception& e) {
+//        cerr << "Caught an exception while cancelling FPGA read. Continuing anyway..." << endl;
+//    }
 
     if (debug) {
         if (blocks_processed < totalBlocks)
@@ -838,7 +899,9 @@ void FPGAHandler::processPBWT(
             int M = 2*(tgt->getNSplits())+1;
 
             PBWT pbwt(target.cpbwt, K, Kwords, M, tgt->getIdx());
-            MyMalloc::free(target.cpbwt); // has been copied by now
+            if (target.parent.get() == NULL) // no parent -> my memory -> can free it
+                MyMalloc::free(target.cpbwt); // has been copied by now
+            //else parent exists -> don't free the memory -> is re-used in FPGA-host communication
             tgt->phaseExtPBWT(pbwt);
             PBWTPhaser::confidence_type tconf;
             tconf.id = tgt->getIdx();
@@ -846,7 +909,7 @@ void FPGAHandler::processPBWT(
             tconf.ncalls = tgt->getNCallSites();
             outqueue.push(tconf);
 
-            // cleanup this target (note, that the destructor of PBWT already clears target.cpbwt and gCount0
+            // cleanup this target
             delete target.target;
         }
 

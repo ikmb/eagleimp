@@ -100,7 +100,7 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
             << " threads for phasing." << endl;
 
     // init FPGA buffers
-    BufferFactory<FPGABuffer> fpgaBufferFactory_wr(fpga_buffersize);
+    BufferFactory<FPGABuffer> fpgaBufferFactory_wr(fpga_buffersize/4);
     BufferFactory<FPGABuffer> fpgaBufferFactory_rd(fpga_buffersize);
     // two buffers for FPGA writes (consumer and producer are single threads)
     fpgaBufferFactory_wr.preallocateBuffer();

@@ -103,10 +103,10 @@ public:
             int threadIndex
             );
 
-    void readFPGA(
-            atomic_bool& termination_request,
-            int threadIndex
-            );
+//    void readFPGA(
+//            atomic_bool& termination_request,
+//            int threadIndex
+//            );
 
     // processes the returned FPGA buffers with condensed PBWT data, providing it to phaser
     void preProcessFPGAOnly(
@@ -150,7 +150,7 @@ private:
     size_t K = 0;
     size_t iter = 0;
 
-    tbb::concurrent_bounded_queue<shared_ptr<hybridsys::FPGABuffer>> fpgaReadQueue;
+//    tbb::concurrent_bounded_queue<shared_ptr<hybridsys::FPGABuffer>> fpgaReadQueue;
 
     size_t totalTargets;
     atomic<size_t> targetsRemaining_in;

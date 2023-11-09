@@ -47,7 +47,8 @@ public:
     struct cPBWTQueue_type {
         Target* target = NULL;
         uint32_t* cpbwt = NULL;
-        vector<int>* count0 = NULL;
+        // used in FPGA code only to block deletion and re-use of the transfer buffer if the data in cpbwt points into it
+        shared_ptr<hybridsys::FPGABuffer> parent;
     };
     struct confidence_type {
         size_t id;
