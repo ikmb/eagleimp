@@ -392,10 +392,10 @@ do
           echo "WARNING: Analysis skipped: No reference available for this chromosome." > "$LOG"
           if (( $YAML == 1 )); then
             # the preceding \n is because printf would otherwise recognize the --- as a bad option
-            printf "\n---\n- warning:\n    Context: global\n    Message: \"Analysis skipped: No reference available for this chromosome.\"\n" > "$STAT.warning.yaml"
+            printf "\n---\n- warning:\n    Context: global\n    Message: \"Analysis skipped: No reference available for this chromosome. Did you name your input correctly, e.g. chr1.something.vcf.gz or 1.something.vcf.gz? Watch out for the period separating the chromosome name from the rest!\"\n" > "$STAT.warning.yaml"
           else
             echo "<h3>WARNING:</h3>" > "$STAT.warning"
-            echo "<ul><li><b>Analysis skipped:</b> No reference available for this chromosome.</li></ul>" >> "$STAT.warning"
+            echo "<ul><li><b>Analysis skipped:</b> No reference available for this chromosome. Did you name your input correctly, e.g. chr1.something.vcf.gz or 1.something.vcf.gz? Watch out for the period separating the chromosome name from the rest!</li></ul>" >> "$STAT.warning"
           fi
           echo "1,Skipped" > "$STAT"
           continue
