@@ -65,7 +65,7 @@ public:
     BufferFactory(const BufferFactory &other) = delete;
     BufferFactory& operator=(const BufferFactory &other) = delete;
 
-    std::shared_ptr<buffer_type> getIfMoreThanXAvailable(size_t x, bool wait = true) {
+    std::shared_ptr<buffer_type> getIfMoreThanXAvailable(size_t x, bool wait = true, bool force = false) {
 
         std::shared_ptr<buffer_type> ret;
 
@@ -79,9 +79,16 @@ public:
             // wait for a buffer to become available, if necessary
 
             if(buffers.size() <= x) {
+
                 auto t_start = std::chrono::high_resolution_clock::now();
 
-                stack_cv.wait(lock, [&]() { return buffers.size() > x; });
+                if (force) { // don't wait for a buffer, create one!
+                    preallocateBuffer();
+//                    // DEBUG
+//                    std::cerr << "!!!added a buffer!!!" << std::endl;
+                } else {
+                    stack_cv.wait(lock, [&]() { return buffers.size() > x; });
+                }
 
                 auto t_end = std::chrono::high_resolution_clock::now();
                 std::chrono::milliseconds dur = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
@@ -101,8 +108,8 @@ public:
 
     }
 
-    std::shared_ptr<buffer_type> get(bool wait = true) {
-        return getIfMoreThanXAvailable(0, wait);
+    std::shared_ptr<buffer_type> get(bool wait = true, bool force = false) {
+        return getIfMoreThanXAvailable(0, wait, force);
     }
 
 

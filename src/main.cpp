@@ -339,7 +339,7 @@ int main(int argc, char *argv[]) {
                 // if not set explicitly numFPGAs+2 buffers are prepared for FPGA<->host communication
                 unsigned buffersFPGA = args.get<unsigned>("buffers-FPGA");
                 size_t buffersizeFPGA = args.get<size_t>("buffer-size-FPGA");
-                phaser.setFPGAParameters(buffersFPGA == 0 ? hysys.getFPGAs().size() * 8 : buffersFPGA, buffersizeFPGA, chrono::milliseconds(args.get<unsigned long>("timeout")), maxpbwtsites);
+                phaser.setFPGAParameters(buffersFPGA == 0 ? hysys.getFPGAs().size() * 4 : buffersFPGA, buffersizeFPGA, chrono::milliseconds(args.get<unsigned long>("timeout")), maxpbwtsites);
                 term_wait = true; // need proper shutdown procedure when using FPGAs
             }
             if (usegpu) {

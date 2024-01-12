@@ -686,7 +686,7 @@ void FPGAHandler::preProcessFPGAOnly(tbb::concurrent_bounded_queue<PBWTPhaser::t
 
 //                fpgaReadQueue.pop(b);
 
-                b = bufferFactoryFPGA_read.get();
+                b = bufferFactoryFPGA_read.get(true, true); // force getting a new buffer!
 
                 if (debug)
                     cout << "PreProc FPGA " << threadIndex << ": Reading from FPGA...(buffer " << buffersread << ") " << endl;
