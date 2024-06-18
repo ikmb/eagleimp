@@ -177,6 +177,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
 //    bcf_sr_set_opt(sr, BCF_SR_PAIR_LOGIC, allowRefAltSwap ? BCF_SR_PAIR_BOTH_REF : BCF_SR_PAIR_EXACT);
     bcf_sr_set_opt(sr, BCF_SR_PAIR_LOGIC, BCF_SR_PAIR_BOTH_REF);
     bcf_sr_set_opt(sr, BCF_SR_REQUIRE_IDX);
+    bcf_sr_set_threads(sr, numThreads);
 
     {
         // set the region (including flanks)

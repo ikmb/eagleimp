@@ -32,6 +32,10 @@
 
 #include "Target.h"
 
+#ifdef STOPWATCH
+#include "Stopwatch.h"
+#endif
+
 using namespace std;
 
 bool operator<(const ConstraintContainer& a, const ConstraintContainer& b) { return a.p < b.p; }

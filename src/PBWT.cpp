@@ -26,6 +26,10 @@
 
 #include "PBWT.h"
 
+#ifdef STOPWATCH
+#include "Stopwatch.h"
+#endif
+
 PBWT::PBWT(const vector<BooleanVector> *dataraw_, vector<int> *gCount0_, int ntarget_)
     : K((*dataraw_)[0].size()),
 //      Kwords(4*roundToMultiple((size_t)K, UNITWORDS * sizeof(BooleanVector::data_type) * 8) / (8 * sizeof(BooleanVector::data_type))),
