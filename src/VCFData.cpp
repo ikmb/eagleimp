@@ -379,7 +379,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         }
         size_t reqsum_dyn = reqphasecref + reqphasedos + reqimpref + reqimppbwt + reqimpabsp;
         size_t reqsum_stat = reqimpbunchhaps + reqimpqueue;
-        size_t reqsafety = reqsum_dyn/5;
+        size_t reqsafety = reqsum_dyn/4;
         reqsum_dyn += reqsafety;
 
         if (!createQRef) { // give a short memory summary
@@ -391,7 +391,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
                 cout << "    Reference haps : " << divideRounded(reqimpref, 1024ul*1024ul) << " MiB" << endl;
                 cout << "    RefT + PBWT    : " << divideRounded(reqimppbwt, 1024ul*1024ul) << " MiB" << endl;
                 cout << "    PBWT absPerm   : " << divideRounded(reqimpabsp, 1024ul*1024ul) << " MiB" << endl;
-                cout << "    20% safety     : " << divideRounded(reqsafety, 1024ul*1024ul) << " MiB" << endl;
+                cout << "    25% safety     : " << divideRounded(reqsafety, 1024ul*1024ul) << " MiB" << endl;
                 cout << "  Static (chunk independent) memory:" << endl;
                 cout << "    Imputed haps   : " << divideRounded(reqimpbunchhaps, 1024ul*1024ul) << " MiB" << endl;
                 cout << "    Outqueue space : " << divideRounded(reqimpqueue, 1024ul*1024ul) << " MiB" << endl;
@@ -1795,7 +1795,7 @@ inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, 
     BooleanVector::data_type* hapdata = (BooleanVector::data_type*) MyMalloc::calloc(hapcapacity, 1, "hapdata_processRefSNP"); // need this pre-initialized with zeros!
     if (!hapdata) {
         cout << endl;
-        StatusFile::addError("Not enough memory for full reference.");
+        StatusFile::addError(string("Not enough memory for reference. Alloc size: ").append(to_string(hapcapacity)));
         exit(EXIT_FAILURE);
     }
     referenceFullT.emplace_back(hapdata, hapcapacity, Nrefhaps);
@@ -2484,7 +2484,7 @@ inline void VCFData::qRefLoadNextVariant() {
     BooleanVector::data_type* hapdata = (BooleanVector::data_type*) MyMalloc::calloc(hapcapacity, 1, "hapdata_qref"); // pre-initialization with zeroes
     if (!hapdata) {
         cout << endl;
-        StatusFile::addError("Not enough memory for full reference.");
+        StatusFile::addError(string("Not enough memory for reference. Alloc size: ").append(to_string(hapcapacity)));
         exit(EXIT_FAILURE);
     }
     referenceFullT.emplace_back(hapdata, hapcapacity, Nrefhaps);
