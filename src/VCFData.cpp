@@ -3483,19 +3483,27 @@ inline void VCFData::appendVersionToBCFHeader(bcf_hdr_t *hdr) const {
 }
 
 inline void VCFData::concatFiles(const vector<string>& filenames) const {
-    const unsigned tmpbufsize = 32768; // empirically
-    char buf[tmpbufsize];
-    ofstream dest(filenames[0].c_str(), ofstream::app); // open for appending
+    ofstream dest(filenames[0].c_str(), ios_base::binary | ios_base::app); // open for appending
     for (unsigned f = 1; f < filenames.size(); f++) {
-        ifstream src(filenames[f].c_str());
-        while (src) {
-            src.read(buf, tmpbufsize);
-            dest.write(buf, src.gcount()); // only write as many bytes as were read before
-        }
-        src.close();
+        ifstream src(filenames[f].c_str(), ios_base::binary);
+        dest << src.rdbuf();
+        src.close(); // append to first file
         remove(filenames[f].c_str()); // delete temporary file
     }
     dest.close();
+//    const unsigned tmpbufsize = 32768; // empirically
+//    char buf[tmpbufsize];
+//    ofstream dest(filenames[0].c_str(), ofstream::app); // open for appending
+//    for (unsigned f = 1; f < filenames.size(); f++) {
+//        ifstream src(filenames[f].c_str());
+//        while (src) {
+//            src.read(buf, tmpbufsize);
+//            dest.write(buf, src.gcount()); // only write as many bytes as were read before
+//        }
+//        src.close();
+//        remove(filenames[f].c_str()); // delete temporary file
+//    }
+//    dest.close();
 }
 
 inline string VCFData::getOutputSuffix() {
