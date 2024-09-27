@@ -150,10 +150,11 @@ include_directories(${Boost_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${Boost_LIBRARIES})
 
 # Intel TBB
-find_package(TBB REQUIRED)
-include_directories(${TBB_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} ${TBB_LIBRARIES})
-target_compile_definitions(${PROJECT_NAME} PUBLIC ${TBB_DEFINITIONS} TBB_USE_EXCEPTIONS)
+#find_package(TBB REQUIRED)
+#include_directories(${TBB_INCLUDE_DIRS})
+#target_link_libraries(${PROJECT_NAME} ${TBB_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} tbb)
+#target_compile_definitions(${PROJECT_NAME} PUBLIC ${TBB_DEFINITIONS} TBB_USE_EXCEPTIONS)
 
 target_link_libraries(${PROJECT_NAME} rt)
 target_link_libraries(${PROJECT_NAME} curl)

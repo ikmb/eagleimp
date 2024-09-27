@@ -27,6 +27,7 @@
 
 #include <thread>
 #include <cstring>
+#include <array>
 
 #include "ThreadUtils.h"
 

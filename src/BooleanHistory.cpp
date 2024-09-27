@@ -22,6 +22,8 @@
 #include <utility>
 #include <iostream>
 
+#include <stdint.h>
+
 #include "StatusFile.h"
 
 #include "BooleanHistory.h"

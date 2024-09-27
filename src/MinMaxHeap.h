@@ -24,6 +24,8 @@
 #include <functional>
 #include <vector>
 
+#include <stdint.h>
+
 template<class T, class Compare = std::less<T>>
 class MinMaxHeap {
     std::vector<T> heap;
@@ -34,8 +36,8 @@ class MinMaxHeap {
     size_t left(size_t index) const { return 2*index + 1; }
     size_t right(size_t index) const { return 2*index + 2; }
 
-    std::uint64_t log2 (std::uint64_t x) const {
-        std::uint64_t result;
+    uint64_t log2 (uint64_t x) const {
+        uint64_t result;
         if(x == 0) return 0;
 
         asm ("\tbsr %1, %0\n"

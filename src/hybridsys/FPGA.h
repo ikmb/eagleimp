@@ -27,6 +27,7 @@
 #include <memory>
 #include <thread>
 #include <vector>
+#include <array>
 #include <map>
 
 #include "Device.h"

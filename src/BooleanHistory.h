@@ -36,7 +36,7 @@ using namespace std;
 
 class BooleanHistory {
 public:
-    using data_type = std::uint64_t;
+    using data_type = uint64_t;
     static const size_t DATA_TYPE_BITS = sizeof(data_type) * 8;
     static const size_t DATA_VECTOR_SIZE = 2;
 

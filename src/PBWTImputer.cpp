@@ -52,7 +52,7 @@ void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets) 
         BooleanVector::data_type *refdata = (BooleanVector::data_type*) MyMalloc::malloc(M * capacity, string("refdata")); // pre-initialization below
 
         // transposed reference reduced to target sites (used as base for PBWT)
-        vector<BooleanVector> refT = move(vector<BooleanVector>(M, BooleanVector(refdata, M * capacity, 0, false))); // init complete area with false
+        vector<BooleanVector> refT = vector<BooleanVector>(M, BooleanVector(refdata, M * capacity, 0, false)); // init complete area with false
 
         auto curr_data = refdata;
         for (auto &ref : refT) {
