@@ -252,6 +252,8 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         tgtmissOverlap.resize(Ntarget);
         tgtinphase.clear();
         tgtinphase.resize(Ntarget);
+        tgtinphaseOverlap.clear();
+        tgtinphaseOverlap.resize(Ntarget);
 
         chunkStartPhase.clear();
         chunkStartPhase.resize(Ntarget, false); // w.l.o.g. the first starting phase is the reference allele for the maternal path
