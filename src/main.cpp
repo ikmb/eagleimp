@@ -363,7 +363,7 @@ int main(int argc, char *argv[]) {
                 vcfdata.determineStartPhases(phasedTargets);
 
             swp.stop();
-            if (!usefpga && !lockfile_plain.empty())
+            if (!usefpga && !lockfile_plain.empty() && !args.skipPhasing)
                 releaseLock(lockfd);
 
 
