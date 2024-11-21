@@ -307,7 +307,10 @@ int main(int argc, char *argv[]) {
             if (args.hist <= 0.0 && args.hist >= 0.0) // due to "unsafe" fp-comparison...
                 args.hist = 1.0;
 
-            cout << "\nPhasing:" << endl;
+            if (args.skipPhasing)
+                cout << "\nParsing target phases:" << endl;
+            else
+                cout << "\nPhasing:" << endl;
 
             int lockfd = 0;
             if (!usefpga && !lockfile_plain.empty() && !args.skipPhasing) {

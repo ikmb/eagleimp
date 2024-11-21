@@ -70,11 +70,11 @@ void PBWTPhaser::phase(vector<BooleanVector> &phasedTargets, vector<vector<float
 
     // do the phasing
 
-    if (usefpga) {
+    if (usefpga && !skipPhasing) {
 
         phaseFPGA(phasedTargets, phasedDosages, chunk, totconfidences, ncalls);
 
-    } else if (usegpu) {
+    } else if (usegpu && !skipPhasing) {
 
         phaseGPU(phasedTargets, phasedDosages, chunk, totconfidences, ncalls);
 
@@ -590,17 +590,23 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
 
     {
         stringstream ss;
-        ss << "Phasing (Chunk " << chunk+1 << "/" << vcfdata.getNChunks() << ")";
+        if (skipPhasing)
+            ss << "Phase parsing";
+        else
+            ss << "Phasing";
+        ss << "(Chunk " << chunk+1 << "/" << vcfdata.getNChunks() << ")";
         StatusFile::updateStatus(0, ss.str());
     }
 
-    cout << "Using " <<
+    if (!skipPhasing) {
+        cout << "Using " <<
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT //|| defined STOPWATCH
                      1
 #else
                     numthreads
 #endif
                     << " threads for phasing." << endl;
+    }
 
     for (uint32_t iter = 1; iter <= iters; iter++) {
         Stopwatch swpi(string("iter ").append(to_string(iter)).c_str());
@@ -674,7 +680,11 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
         }
         localK = min(localNrefhapsCorr, Karg);
 
-        cout << "Phasing iteration " << iter << "/" << iters << " (K=" << localK << "): 0%" << flush;
+        if (!skipPhasing)
+            cout << "Phasing iteration " << iter << "/" << iters << " (K=" << localK << "): ";
+        else
+            cout << "Parsing: ";
+        cout << "0%" << flush;
         int pgb = 0; // for progress bar
 
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT
