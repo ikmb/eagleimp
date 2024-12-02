@@ -50,7 +50,7 @@ BEGIN {
   if (FNR==1) summaryline = 0
 }
 
-/SUMMARY/{
+/Summary/{
   # store the line number of the summary
   summaryline = FNR
   # get chromosome from the filename whenever the summary line is read
