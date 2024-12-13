@@ -98,7 +98,8 @@ public:
     bool outputUnphased = false;
 
     bool skipImputation = false;
-    double impFilter;
+    double impR2filter;
+    double impMAFfilter;
     bool noMissingIDs = false;
 
     bool outputPhased = false;

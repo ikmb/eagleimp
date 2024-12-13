@@ -68,7 +68,8 @@ VCFData::VCFData(const Args& args, int argc, char** argv, const vector<FPGAConfi
       writeADosage(args.writeADosage),
       writeGDosage(args.writeGDosage),
       writeProbs(args.writeProb),
-      impFilter(args.impFilter),
+      impR2filter(args.impR2filter),
+      impMAFfilter(args.impMAFfilter),
       loadQuickRef(args.isQRef),
       createQRef(args.createQuickRef),
       overwriteCalls(args.overwriteCalls),
@@ -3377,9 +3378,10 @@ void VCFData::writeVCFImputedBunch(
                 else
                     r2 = 0.0;
             }
+            double maf = af > 0.5 ? 1-af : af;
 
-            // only proceed if score exceeds filter threshold
-            if (r2 < impFilter) {
+            // only proceed if score exceeds filter threshold(s)
+            if (r2 < impR2filter || maf < impMAFfilter) {
                 // add null pointer to output queue to indicate that this record was filtered
                 recqs[block][(startidx+bidx) % num_workers].push(NULL);
                 bcf_destroy(bcfrec); // not required
@@ -3388,10 +3390,10 @@ void VCFData::writeVCFImputedBunch(
 
                 float r2f = r2; // convert to float
                 float aff = af;
-                float maf = aff > 0.5 ? 1-aff : aff;
+                float maff = maf;
                 bcf_update_info_float(bcfhdr, bcfrec, "RefPanelAF", &rpaf, 1); // allele frequency in reference panel
                 bcf_update_info_float(bcfhdr, bcfrec, "AF", &aff, 1); // estimated allele frequency from allele dosages
-                bcf_update_info_float(bcfhdr, bcfrec, "MAF", &maf, 1); // estimated minor allele frequency from allele dosages
+                bcf_update_info_float(bcfhdr, bcfrec, "MAF", &maff, 1); // estimated minor allele frequency from allele dosages
                 bcf_update_info_float(bcfhdr, bcfrec, "R2", &r2f, 1); // minimac4 imputation info score
                 bcf_update_info_int32(bcfhdr, bcfrec, "AC", &ac1, 1); // allele count
                 bcf_update_info_int32(bcfhdr, bcfrec, "AN", &an, 1);  // total alleles
