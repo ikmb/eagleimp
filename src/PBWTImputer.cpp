@@ -141,15 +141,23 @@ void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets) 
 #ifdef COUNTSMMATCHES
     size_t totalmatches = 0;
     size_t totalsites = 0;
+    size_t total_reducable_sites = 0;
     for (size_t nt = 0; nt < nTargetHap/2; nt++) {
         for (int i = 0; i < 2; i++) {
-            cout << nt << "." << i << ": " << targets[2*nt + i].num_matches << " matches. " << targets[2*nt + i].num_sites << " sites." << endl;
+            cout << nt << "." << i << ":\t" <<
+                    targets[2*nt + i].num_matches << " matches.\t" <<
+                    targets[2*nt + i].num_sites << " sites (" << targets[2*nt+i].reducable_sites << " reducable).\t" <<
+                    "avl: " << targets[2*nt + i].av_match_length << "\t" <<
+                    "avh: " << targets[2*nt + i].av_match_height << endl;
             totalmatches += targets[2*nt + i].num_matches;
             totalsites += targets[2*nt + i].num_sites;
+            total_reducable_sites += targets[2*nt + i].reducable_sites;
+            // more DEBUG - print matches
+            targets[2*nt+i].printSMMatches();
         }
     }
     cout << "Total matches: " << totalmatches << endl;
-    cout << "Total sites: " << totalsites << endl;
+    cout << "Total sites: " << totalsites << " (" << total_reducable_sites << " removable / " << (total_reducable_sites*100/(double)totalsites) << "%)" << endl;
     cout << "M: " << M << endl;
 #endif
     // __DEBUG

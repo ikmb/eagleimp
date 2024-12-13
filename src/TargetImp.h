@@ -46,6 +46,10 @@ public:
 #ifdef COUNTSMMATCHES
     size_t num_matches = 0;
     size_t num_sites = 0;
+    double av_match_length = 0.0;
+    double av_match_height = 0.0;
+    size_t reducable_sites = 0;
+    void printSMMatches();
 #endif
     // __DEBUG
 
@@ -60,7 +64,14 @@ private:
         size_t end;      // end position (SNP), exclusive
         size_t refstart; // first ref index in PBWT sort order at end position of match (end-1)
         size_t refend;   // last ref index (inclusive) in PBWT sort order at end position of match (end-1)
+#ifdef COUNTSMMATCHES
+        size_t reducable_length = 0;
+#endif
     };
+
+#ifdef COUNTSMMATCHES
+    void printSMMatch(const Match &m);
+#endif
 
     // a tree consisting of these nodes stores PBWT intervals in the history when finding set-maximal-matches
     // @depth depth of the tree until this node, represents the length of the path represented by this node

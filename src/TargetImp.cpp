@@ -162,9 +162,34 @@ void TargetImp::calcSMMatches() {
 #ifdef COUNTSMMATCHES
     {
         num_sites = 0;
-        for (const auto &match : sm_matches)
-            num_sites += (match.end - match.start) * (match.refend - match.refstart + 1);
+        size_t mlsum = 0, mhsum = 0;
+        for (Match &match : sm_matches) {
+            size_t match_length = match.end - match.start;
+            size_t match_height = match.refend - match.refstart + 1;
+            mlsum += match_length;
+            mhsum += match_height;
+
+            // check for which sites quick imputation is possible (if AF is very low)
+            size_t mref_start = vcfdata.getSNPIndexToFullRef(match.start);
+            size_t mref_end = match.end == vcfdata.getNSNPs() ? vcfdata.getNSNPsFullRef() : vcfdata.getSNPIndexToFullRef(match.end);
+            size_t mref_length = mref_end - mref_start;
+            size_t m_height = match.refend - match.refstart + 1;
+            num_sites += mref_length * m_height;
+            size_t nref = vcfdata.getNReferenceHaps();
+            size_t mref_reducable_length = 0; // reducable length (sites that can be quickly imputed)
+            for (size_t mr = mref_start; mr < mref_end; mr++) {
+                float af = vcfdata.getAlleleFreqFullRefRegion(mr);
+                float maf = af > 0.5 ? 1-af : af;
+                if (maf*nref < 0.1*m_height) {
+                    mref_reducable_length++;
+                }
+            }
+            reducable_sites += mref_reducable_length * m_height;
+            match.reducable_length = mref_reducable_length;
+        }
         num_matches = sm_matches.size();
+        av_match_length = mlsum / (double)num_matches;
+        av_match_height = mhsum / (double)num_matches;
     }
 #endif
     // __DEBUG
@@ -245,6 +270,45 @@ void TargetImp::calcSMMatches() {
         forwardBlock(block, num_sites_per_block[block-1]);
     }
 }
+
+#ifdef COUNTSMMATCHES
+void TargetImp::printSMMatches() {
+    for (const auto &m : sm_matches) {
+        printSMMatch(m);
+
+        size_t mref_start = vcfdata.getSNPIndexToFullRef(m.start);
+        size_t mref_end = m.end == vcfdata.getNSNPs() ? vcfdata.getNSNPsFullRef() : vcfdata.getSNPIndexToFullRef(m.end);
+        size_t mref_length = mref_end - mref_start;
+        size_t m_height = m.refend - m.refstart + 1;
+        size_t nref = vcfdata.getNReferenceHaps();
+        size_t mref_red_length = mref_length; // reduced length (sites that cannot be quickly imputed)
+//        size_t naf0001=0, naf001=0, naf01=0, naf1=0, nafr=0;
+        for (size_t mr = mref_start; mr < mref_end; mr++) {
+            float af = vcfdata.getAlleleFreqFullRefRegion(mr);
+//            if (af <= 0.00001) {
+//                naf0001++;
+//            } else if (af <= 0.0001) {
+//                naf001++;
+//            } else if (af <= 0.001) {
+//                naf01++;
+//            } else if (af <= 0.01) {
+//                naf1++;
+//            } else
+//                nafr++;
+            float maf = af > 0.5 ? 1-af : af;
+            if (maf*nref < 0.1*m_height) {
+                mref_red_length--;
+            }
+        }
+        cout << "      [ " << mref_start << "\t" << mref_end << "\t(" << mref_red_length << "/" << mref_length << " = " << (mref_red_length*100.0/mref_length) << "%) ]" << endl;
+                //"\t" << naf0001/(double)mref_length << "\t" << naf001/(double)mref_length << "\t" << naf01/(double)mref_length << "\t" << naf1/(double)mref_length << "\t" << nafr/(double)mref_length << "\t]" << endl;
+    }
+}
+void TargetImp::printSMMatch(const Match &m) {
+    cout << "\t" << m.start << "\t" << m.end << "\t(" << (m.end - m.start) << ")\t" <<
+                    m.refstart << "\t" << m.refend << "\t(" << (m.refend - m.refstart + 1) << ")" << endl;
+}
+#endif
 
 // rtree is expected to be NULL on entry!
 size_t TargetImp::processHistorySubTree(HistoryTreeNode* &ltree, HistoryTreeNode* &rtree, size_t m, bool curr_hap, bool missing, size_t treedepth, bool perase, vector<Match> &matches) {
@@ -421,12 +485,24 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
                     // (we adapted the score such that m at the beginning of the match will also generate a value)
                     uint64_t single = (currms[block] - sm_matches[idx].start + 1) * (sm_matches[idx].end - currms[block]);
 
-                    // iterate over all references included in the interval of the match
-                    for (size_t ref = sm_matches[idx].refstart; ref <= sm_matches[idx].refend; ref++) {
-                        sum += single;
-                        size_t absref = pbwt.getSortOrder(sm_matches[idx].end)[ref]; // find the corresponding absolute index in the reference
-                        if (vcfdata.getReferenceFullT()[mrefs[block]][vcfdata.getHaploidsRefMap()[absref]]) { // is the corresponding haplotype == 1?
-                            score += single;
+                    // check if quick imputation for this site is possible (if AF is very low)
+                    float af = vcfdata.getAlleleFreqFullRefRegion(mrefs[block]);
+                    float maf = af > 0.5 ? 1-af : af;
+                    size_t sm_height = sm_matches[idx].refend - sm_matches[idx].refstart + 1;
+                    // check if due to AF the minor allele in this match cannot contribute enough (less than 0.1 dosage) to the score
+                    if (maf * vcfdata.getNReferenceHaps() < 0.1 * sm_height) {
+                        sum += sm_height * single;
+                        if (af > 0.5) { // if AF is not MAF -> increase score as if every ref would contribute a '1' haplotype
+                            score += sm_height * single;
+                        } // else, leave score as is (such as every ref would contribute a '0' haplotype)
+                    } else {
+                        // iterate over all references included in the interval of the match
+                        for (size_t ref = sm_matches[idx].refstart; ref <= sm_matches[idx].refend; ref++) {
+                            sum += single;
+                            size_t absref = pbwt.getSortOrder(sm_matches[idx].end)[ref]; // find the corresponding absolute index in the reference
+                            if (vcfdata.getReferenceFullT()[mrefs[block]][vcfdata.getHaploidsRefMap()[absref]]) { // is the corresponding haplotype == 1?
+                                score += single;
+                            }
                         }
                     }
 
