@@ -22,6 +22,6 @@
 
 const char * const prog_timestamp = __DATE__ ", " __TIME__;
 
-const char * const prog_version = "v1.10_" GIT_BRANCH "_" GIT_REF;
+const char * const prog_version = "v1.11_" GIT_BRANCH "_" GIT_REF;
 
 const char * const prog_bugaddress = "Lars Wienbrandt <l.wienbrandt@ikmb.uni-kiel.de>";

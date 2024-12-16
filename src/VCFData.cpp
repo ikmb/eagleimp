@@ -3378,14 +3378,13 @@ void VCFData::writeVCFImputedBunch(
                 else
                     r2 = 0.0;
             }
-            double maf = af > 0.5 ? 1-af : af;
 
             // convert to float
             // (needed for writing vcf/bcf tag)
             // (filtering is also done according to the float value to be consistent with the output)
             float r2f = r2;
             float aff = af;
-            float maff = maf;
+            float maff = aff > 0.5 ? 1-aff : aff;
 
             // only proceed if score exceeds filter threshold(s)
             if (r2f < impR2filter || maff < impMAFfilter) {
