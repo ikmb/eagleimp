@@ -258,8 +258,8 @@ Args::Args(int argc, char *argv[]) :
 
     opts_imputation.add_options()
     ("imputeInfo", value<string>(&impInfoStr)->default_value("a"), "string indicating desired imputation information for each genotype: 'a' allele dosage, 'g' genotype dosage, 'p' genotype probabilities; argument may contain any combination or none")
-    ("imputeR2filter", value<double>(&impR2filter)->default_value(0.0), "r2 score filter threshold for imputation output")
-    ("imputeMAFfilter", value<double>(&impMAFfilter)->default_value(0.0), "MAF filter threshold for imputation output (MAF is calculated from allele dosages!)")
+    ("imputeR2filter", value<float>(&impR2filter)->default_value(0.0), "r2 score filter threshold for imputation output")
+    ("imputeMAFfilter", value<float>(&impMAFfilter)->default_value(0.0), "MAF filter threshold for imputation output (MAF is calculated from allele dosages!)")
     ("outputPhasedFile", "output phased sites in extra file if reference imputation is enabled, otherwise phased sites are written anyway")
     ("noMissingIDs", "convert missing variant IDs to chr:pos:ref:alt in imputation output or Qref, this option is automatically enabled when creating a Qref")
     ;

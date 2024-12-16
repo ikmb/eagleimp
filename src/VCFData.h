@@ -318,8 +318,8 @@ private:
     bool writeADosage = false;
     bool writeGDosage = false;
     bool writeProbs = false;
-    double impR2filter = 0.0;
-    double impMAFfilter = 0.0;
+    float impR2filter = 0.0;
+    float impMAFfilter = 0.0;
     unsigned num_workers = 1;
     vector<size_t> site_offsets;
     unsigned num_files = 1;

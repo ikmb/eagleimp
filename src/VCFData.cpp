@@ -3380,17 +3380,21 @@ void VCFData::writeVCFImputedBunch(
             }
             double maf = af > 0.5 ? 1-af : af;
 
+            // convert to float
+            // (needed for writing vcf/bcf tag)
+            // (filtering is also done according to the float value to be consistent with the output)
+            float r2f = r2;
+            float aff = af;
+            float maff = maf;
+
             // only proceed if score exceeds filter threshold(s)
-            if (r2 < impR2filter || maf < impMAFfilter) {
+            if (r2f < impR2filter || maff < impMAFfilter) {
                 // add null pointer to output queue to indicate that this record was filtered
                 recqs[block][(startidx+bidx) % num_workers].push(NULL);
                 bcf_destroy(bcfrec); // not required
             } else {
                 // update and enqueue record for writing
 
-                float r2f = r2; // convert to float
-                float aff = af;
-                float maff = maf;
                 bcf_update_info_float(bcfhdr, bcfrec, "RefPanelAF", &rpaf, 1); // allele frequency in reference panel
                 bcf_update_info_float(bcfhdr, bcfrec, "AF", &aff, 1); // estimated allele frequency from allele dosages
                 bcf_update_info_float(bcfhdr, bcfrec, "MAF", &maff, 1); // estimated minor allele frequency from allele dosages
