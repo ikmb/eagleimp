@@ -399,9 +399,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
 
             // check if required static size does not exceed half of the chunk memory, otherwise reduce bunch size
             if (reqimpbunchhaps + reqimpqueue > maxchunkmem/2) {
-                cerr << "bunchsize old: " << bunchsize << endl;
                 bunchsize /= divideRounded(reqimpbunchhaps + reqimpqueue, maxchunkmem/2);
-                cerr << "bunchsize new: " << bunchsize << endl;
                 if (bunchsize < num_workers) { // we need at least one record per bunch per worker!
                     StatusFile::addError("Too many samples. Sorry.");
                     exit(EXIT_FAILURE);
@@ -409,7 +407,6 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
                 // only set to multiple of num_workers if the memory increase would not be too much!
                 if (bunchsize > 4*num_workers)
                     bunchsize = roundToMultiple(bunchsize, (size_t)num_workers);
-                cerr << "bunchsize new: " << bunchsize << endl;
                 // recalculate required sizes
                 reqimpbunchhaps = Ntarget * bunchsize / 4; // imputation haplotypes (mat+pat) in a bunch (in bytes)
                 reqimpqueue = Ntarget * bunchsize * args.num_files * 2 * entrysize; // number of records in output queues x number of target samples per record x size of the entry
@@ -513,7 +510,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             if (nChunks > 1 && Mglob/nChunks < chunkflanksize) {
                 string serr("<b>Analysis not possible:</b> Too many chunks.");
                 if (!overrideChunks)
-                    serr += " Try larger chunk memory size with --maxChunkMem.";
+                    serr += " Try larger chunk memory size with --maxChunkMemory.";
                 StatusFile::addError(serr);
                 exit(EXIT_FAILURE);
             }

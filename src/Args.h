@@ -175,7 +175,7 @@ protected:
     bpo::options_description opts_regular_hybrid; /**< regular options, shown on help output */
     bpo::options_description opts_region;         /**< regular region select options, shown on help output */
     bpo::options_description opts_phasing;        /**< regular phasing algorithm options, shown on help output */
-    bpo::options_description opts_imputation;        /**< regular imputation algorithm options, shown on help output */
+    bpo::options_description opts_imputation;     /**< regular imputation algorithm options, shown on help output */
     bpo::options_description opts_hidden;         /**< hidden options */
     bpo::options_description opts_hidden_hybrid;  /**< hidden options */
 
