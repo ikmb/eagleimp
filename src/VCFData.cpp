@@ -332,6 +332,41 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
     // We estimate the amount of required memory and perform a division into chunks if necessary and possible.
     // We also check, if the data can be used with the current FPGA configuration (if available)
     {
+        // FPGA check:
+        if (!createQRef && usefpga) { // we have an FPGA configuration
+            // take only the first conf
+            const auto &conf = fpgaconfs[0];
+
+            // check maximum haps
+            if (conf.getMaxHaps() < Nrefhapsmax) {
+                stringstream ss;
+                if (args.iters > 1 && conf.getMaxHaps() >= Nrefhaps) {
+                    ss << "<b>Disabling FPGA:</b> Analysis requires support for " << Nrefhapsmax << " haplotypes due to several phasing iterations,<br>\n"
+                       << "  but FPGA only supports " << conf.getMaxHaps() << ". To use the FPGA try only one phasing iteration by applying -i 1.";
+                } else {
+                    ss << "<b>Disabling FPGA:</b> Analysis requires support for " << Nrefhapsmax << " haplotypes,<br>\n"
+                       << "  but FPGA only supports " << conf.getMaxHaps() << ".";
+                }
+                StatusFile::addWarning(ss.str());
+                usefpga = false;
+            }
+
+            // check maximum K
+            if (conf.getMaxK() < min(args.K, Nrefhapsmax)) {
+                stringstream ss;
+                if (args.iters > 1 && conf.getMaxK() >= min(args.K, Nrefhaps)) {
+                    ss << "<b>Disabling FPGA:</b> Analysis requires support for K=" << min(args.K, Nrefhapsmax) << " conditioning haplotypes<br>\n"
+                       << "  due to several phasing iterations, but FPGA only supports " << conf.getMaxK() << ".<br>\n"
+                       << "  Try only one phasing iteration by applying -i 1 or a lower K by -K " << conf.getMaxK() << ".";
+                } else {
+                    ss << "<b>Disabling FPGA:</b> Analysis requires support for K=" << min(args.K, Nrefhapsmax) << " conditioning haplotypes,<br>\n"
+                       << "  but FPGA only supports " << conf.getMaxK() << ". Try applying a lower K, e.g. -K " << conf.getMaxK() << ".";
+                }
+                StatusFile::addWarning(ss.str());
+                usefpga = false;
+            }
+        }
+
         size_t Mrefpre = Mrefglob + Mrefglob/10; // 10% extra for multi-allelic splits
         // condensed references + PBWTs (estimated, if every third site is a call site, fwd+bck and ref+inc, no cref required when using FPGA,
         // but number corresponds to all FPGA pipelines times the capacity of the FPGA processor outqueue, which is fixed to 2)
@@ -404,40 +439,6 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             cout << "Maximum allowed memory: " << divideRounded(maxchunkmem, 1024ul*1024ul) << " MiB" << endl;
         }
 
-        // FPGA check:
-        if (!createQRef && usefpga) { // we have an FPGA configuration
-            // take only the first conf
-            const auto &conf = fpgaconfs[0];
-
-            // check maximum haps
-            if (conf.getMaxHaps() < Nrefhapsmax) {
-                stringstream ss;
-                if (args.iters > 1 && conf.getMaxHaps() >= Nrefhaps) {
-                    ss << "<b>Disabling FPGA:</b> Analysis requires support for " << Nrefhapsmax << " haplotypes due to several phasing iterations,<br>\n"
-                       << "  but FPGA only supports " << conf.getMaxHaps() << ". To use the FPGA try only one phasing iteration by applying -i 1.";
-                } else {
-                    ss << "<b>Disabling FPGA:</b> Analysis requires support for " << Nrefhapsmax << " haplotypes,<br>\n"
-                       << "  but FPGA only supports " << conf.getMaxHaps() << ".";
-                }
-                StatusFile::addWarning(ss.str());
-                usefpga = false;
-            }
-
-            // check maximum K
-            if (conf.getMaxK() < min(args.K, Nrefhapsmax)) {
-                stringstream ss;
-                if (args.iters > 1 && conf.getMaxK() >= min(args.K, Nrefhaps)) {
-                    ss << "<b>Disabling FPGA:</b> Analysis requires support for K=" << min(args.K, Nrefhapsmax) << " conditioning haplotypes<br>\n"
-                       << "  due to several phasing iterations, but FPGA only supports " << conf.getMaxK() << ".<br>\n"
-                       << "  Try only one phasing iteration by applying -i 1 or a lower K by -K " << conf.getMaxK() << ".";
-                } else {
-                    ss << "<b>Disabling FPGA:</b> Analysis requires support for K=" << min(args.K, Nrefhapsmax) << " conditioning haplotypes,<br>\n"
-                       << "  but FPGA only supports " << conf.getMaxK() << ". Try applying a lower K, e.g. -K " << conf.getMaxK() << ".";
-                }
-                StatusFile::addWarning(ss.str());
-                usefpga = false;
-            }
-        }
 
         // Determine number of chunks:
         // If the user's set a region, we don't know how many variants are actually in that region,
