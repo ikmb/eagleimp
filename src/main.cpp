@@ -87,7 +87,7 @@ int main(int argc, char *argv[]) {
     cout << "--- " << prog_version << endl;
     cout << "--- (compiled on " <<  prog_timestamp << ")" << endl;
     cout << "---" << endl;
-    cout << "--- Copyright (C) 2018-2023 by Lars Wienbrandt," << endl;
+    cout << "--- Copyright (C) 2018-2025 by Lars Wienbrandt," << endl;
     cout << "--- Institute of Clinical Molecular Biology, Kiel University" << endl;
     cout << "--- Distributed under the GNU GPLv3 license." << endl;
     cout << "--------------------------------------------------------" << endl;

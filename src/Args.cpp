@@ -76,7 +76,12 @@ using namespace bpo;
     size_t qpos = args.ref.rfind(".qref");
     args.isQRef = qpos != string::npos && qpos == args.ref.size()-5;
 
-    if (args.count("makeQref") && args.isQRef) {
+    if (!args.isQRef && !args.createQuickRef) {
+        StatusFile::addError("Using a VCF/BCF reference is not supported anymore. Please generate a Qref first by using --makeQref.");
+        exit(EXIT_FAILURE);
+    }
+
+    if (args.isQRef && args.createQuickRef) {
         StatusFile::addError("Qref creation requires a VCF reference. Try --help.");
         exit(EXIT_FAILURE);
     }
@@ -209,7 +214,7 @@ Args::Args(int argc, char *argv[]) :
     ("threads,t", value<unsigned>(&num_threads)->default_value(std::thread::hardware_concurrency()), "number of threads to use for phasing and imputation")
     ("output,o", value<string>(&outPrefix), "output file prefix (optional)")
     ("geneticMap", value<string>(&genMapFile), "HapMap genetic map")
-    ("ref", value<string>(&ref), "tabix-indexed compressed VCF/BCF file or Qref file for reference haplotypes")
+    ("ref", value<string>(&ref), "Qref file for reference haplotypes (tabix-indexed compressed VCF/BCF file only for Qref creation)")
     ("target", value<string>(&vcfTarget), "tabix-indexed compressed VCF/BCF file for target genotypes")
     ("vcfExclude", value<string>(&vcfExclude), "tabix-indexed compressed VCF/BCF file containing variants to exclude from phasing")
     ("vcfOutFormat,O", value<string>(&vcfOutFormat)->default_value("z"), "b|u|z|v: compressed BCF (b), uncomp BCF (u), compressed VCF (z), uncomp VCF (v)")

@@ -1,5 +1,5 @@
 /*
- *    Copyright (C) 2018-2021 by Lars Wienbrandt,
+ *    Copyright (C) 2018-2025 by Lars Wienbrandt,
  *    Institute of Clinical Molecular Biology, Kiel University
  *    
  *    This file is part of EagleImp.
@@ -263,7 +263,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
     ref_hdr = NULL;
     if (loadQuickRef) { // load metadata from Qref
         qRefOpenReadMeta();
-    } else { // prepare reading from VCF reference
+    } else { // prepare reading from VCF reference for creating a Qref
         ref_hdr = bcf_sr_get_header(sr, 0);
         Nref = bcf_hdr_nsamples(ref_hdr);
         Nrefhaps = 2*Nref;
@@ -765,7 +765,7 @@ void VCFData::processNextChunk() {
             }
         }
 
-    }
+    } // end if(!createQRef)
 
     // determine Mrefpre for chunks
     // size of Mrefpre is Mrefglob increased by 10% to leave some space for multi-allelic splits and naively divided by the number of chunks
@@ -1078,8 +1078,9 @@ void VCFData::processNextChunk() {
 
         // drop multi-allelic reference markers if desired by user
         if (excludeMultiAllRef) {
-            if ((!loadQuickRef && ref->n_allele > 2)
-                    || (loadQuickRef && multiAllFlagsFullRefRegion[qfoundidx])) {
+//            if ((!loadQuickRef && ref->n_allele > 2)
+//                    || (loadQuickRef && multiAllFlagsFullRefRegion[qfoundidx])) {
+            if (multiAllFlagsFullRefRegion[qfoundidx]) {
                 lstats.MmultiAllelicRefTgt++;
                 if (outputUnphased) {
                     bcf_pout.push_back(bcf_dup(tgt));
@@ -1096,12 +1097,12 @@ void VCFData::processNextChunk() {
             }
         }
 
-        // if not done so far, we need to unpack the records here:
-        // for accessing ref->d.allele we need to unpack up to ALT at least (BCF_UN_STR),
-        // (in order to access the genotypes, it is called again later with BCF_UN_FMT
-        // within bcf_get_genotypes())
-        if (!loadQuickRef)
-            bcf_unpack(ref, BCF_UN_STR);
+//        // if not done so far, we need to unpack the records here:
+//        // for accessing ref->d.allele we need to unpack up to ALT at least (BCF_UN_STR),
+//        // (in order to access the genotypes, it is called again later with BCF_UN_FMT
+//        // within bcf_get_genotypes())
+//        if (!loadQuickRef)
+//            bcf_unpack(ref, BCF_UN_STR);
 
         // we can fetch the genotypes already here, which also unpacks the d.allele fields
         int ntgt_gt = bcf_get_genotypes(tgt_hdr, tgt, &tgt_gt, &mtgt_gt); // calls bcf_unpack() within
@@ -1114,117 +1115,120 @@ void VCFData::processNextChunk() {
 
         // preserve monomorphic markers if not monomorphic in the reference panel
         if (tgt->n_allele < 2) {
-            if (loadQuickRef) {
-                string allref = qrswapped ? allelesFullRefRegion[2*qfoundidx+1] : allelesFullRefRegion[2*qfoundidx];
-                string allalt = qrswapped ? allelesFullRefRegion[2*qfoundidx] : allelesFullRefRegion[2*qfoundidx+1];
-                if (qrflipped) {
-                    allref = reverseComplement(allref.c_str());
-                    allalt = reverseComplement(allalt.c_str());
-                }
-                bcf_update_alleles_str(tgt_hdr, tgt, allref.append(",").append(allalt).c_str());
-            } else {
-                // check which allele is ours
-                unsigned int a = 0;
-                bool strandflip = false;
-                bool found = true; // we expect to find the allele
-                while (a < ref->n_allele && strcmp(ref->d.allele[a], tgt->d.allele[0]) != 0)
-                    a++;
-                if (a == ref->n_allele) { // not found: strand flip?
-                    a = 0;
-                    while (a < ref->n_allele && reverseComplement(ref->d.allele[a]).compare(tgt->d.allele[0]))
-                        a++;
-                    if (a == ref->n_allele) // not found
-                        found = false;
-                    else // strand flip
-                        strandflip = true;
-                }
-                if (found) {
-                    if (!strandflip) {
-                        if (a) // swap alleles if the common one was not the reference
-                            bcf_update_alleles_str(tgt_hdr, tgt, string(ref->d.allele[a]).append(".").append(ref->d.allele[0]).c_str());
-                        else
-                            bcf_update_alleles_str(tgt_hdr, tgt, string(ref->d.allele[0]).append(".").append(ref->d.allele[1]).c_str());
-                    } else { // strand flip
-                        if (a)
-                            bcf_update_alleles_str(tgt_hdr, tgt, string(reverseComplement(ref->d.allele[a])).append(".").append(reverseComplement(ref->d.allele[0])).c_str());
-                        else
-                            bcf_update_alleles_str(tgt_hdr, tgt, string(reverseComplement(ref->d.allele[0])).append(".").append(reverseComplement(ref->d.allele[1])).c_str());
-                    }
-                } else
-                    bcf_update_alleles_str(tgt_hdr, tgt, string(tgt->d.allele[0]).append(",.").c_str()); // make bi-allelic with one allele missing. will later result in refalterror anyway
+//            if (loadQuickRef) {
+            string allref = qrswapped ? allelesFullRefRegion[2*qfoundidx+1] : allelesFullRefRegion[2*qfoundidx];
+            string allalt = qrswapped ? allelesFullRefRegion[2*qfoundidx] : allelesFullRefRegion[2*qfoundidx+1];
+            if (qrflipped) {
+                allref = reverseComplement(allref.c_str());
+                allalt = reverseComplement(allalt.c_str());
             }
+            bcf_update_alleles_str(tgt_hdr, tgt, allref.append(",").append(allalt).c_str());
+//            } else {
+//                // check which allele is ours
+//                unsigned int a = 0;
+//                bool strandflip = false;
+//                bool found = true; // we expect to find the allele
+//                while (a < ref->n_allele && strcmp(ref->d.allele[a], tgt->d.allele[0]) != 0)
+//                    a++;
+//                if (a == ref->n_allele) { // not found: strand flip?
+//                    a = 0;
+//                    while (a < ref->n_allele && reverseComplement(ref->d.allele[a]).compare(tgt->d.allele[0]))
+//                        a++;
+//                    if (a == ref->n_allele) // not found
+//                        found = false;
+//                    else // strand flip
+//                        strandflip = true;
+//                }
+//                if (found) {
+//                    if (!strandflip) {
+//                        if (a) // swap alleles if the common one was not the reference
+//                            bcf_update_alleles_str(tgt_hdr, tgt, string(ref->d.allele[a]).append(".").append(ref->d.allele[0]).c_str());
+//                        else
+//                            bcf_update_alleles_str(tgt_hdr, tgt, string(ref->d.allele[0]).append(".").append(ref->d.allele[1]).c_str());
+//                    } else { // strand flip
+//                        if (a)
+//                            bcf_update_alleles_str(tgt_hdr, tgt, string(reverseComplement(ref->d.allele[a])).append(".").append(reverseComplement(ref->d.allele[0])).c_str());
+//                        else
+//                            bcf_update_alleles_str(tgt_hdr, tgt, string(reverseComplement(ref->d.allele[0])).append(".").append(reverseComplement(ref->d.allele[1])).c_str());
+//                    }
+//                } else
+//                    bcf_update_alleles_str(tgt_hdr, tgt, string(tgt->d.allele[0]).append(",.").c_str()); // make bi-allelic with one allele missing. will later result in refalterror anyway
+//            }
         }
 
         // check for REF/ALT errors
-        bool refaltswap = loadQuickRef ? qrswapped : false;
-        bool strandflip = loadQuickRef ? qrflipped : false;
-        bool refalterror = loadQuickRef ? (qrrefalterror || (qrswapped && !allowRefAltSwap) || (qrflipped && !allowStrandFlip)) : true; // default to true, if we find a match, we set it to false
-        if (!loadQuickRef) {
-            // test through all possibilities in order, stop if we find a match:
-            // 1. direct match
-            if (strcmp(tgt->d.allele[0], ref->d.allele[0]) == 0) { // equal reference alleles
-                if (strcmp(tgt->d.allele[1], ref->d.allele[1]) == 0) { // equal first alternative alleles
-                    refalterror = false;
-                } else if (ref->n_allele > 2) { // if ref is multi-allelic, need to find the alt allele
-                    for (int i = 2; i < ref->n_allele; i++) {
-                        if (strcmp(tgt->d.allele[1], ref->d.allele[i]) == 0) {
-                            refalterror = false;
-                            break;
-                        }
-                    }
-                }
-            } // NOTE: we will stop here if we've already found an equal SNP here as refalterror was already set to false then
-            // alternatives are only possible if tgt is a SNP
-            if (bcf_is_snp(tgt)) {
-                // 2. ref/alt swapped
-                if (refalterror && allowRefAltSwap && strcmp(tgt->d.allele[1], ref->d.allele[0]) == 0) { // equal alternative target allele and ref reference allele
-                    if (strcmp(tgt->d.allele[0], ref->d.allele[1]) == 0) { // target ref matches first alternative reference allele
-                        refalterror = false;
-                        refaltswap = true;
-                    } else if (ref->n_allele > 2) { // if ref is multi-allelic, need to find the alt allele
-                        for (int i = 2; i < ref->n_allele; i++) {
-                            if (strcmp(tgt->d.allele[0], ref->d.allele[i]) == 0) {
-                                refalterror = false;
-                                refaltswap = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                // 3. strand flipped
-                if (refalterror && allowStrandFlip && reverseComplement(tgt->d.allele[0]).compare(ref->d.allele[0]) == 0) { // equal reference alleles if reverse complemented
-                    if (reverseComplement(tgt->d.allele[1]).compare(ref->d.allele[1]) == 0) { // equal first alternative alleles if reverse complemented
-                        refalterror = false;
-                        strandflip = true;
-                    } else if (ref->n_allele > 2) { // if ref is multi-allelic, need to find the alt allele
-                        for (int i = 2; i < ref->n_allele; i++) {
-                            if (reverseComplement(tgt->d.allele[1]).compare(ref->d.allele[i]) == 0) {
-                                refalterror = false;
-                                strandflip = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                // 4. ref/alt swapped and strand flipped
-                if (refalterror && allowRefAltSwap && allowStrandFlip && reverseComplement(tgt->d.allele[1]).compare(ref->d.allele[0]) == 0) { // equal reference alleles if reverse complemented
-                    if (reverseComplement(tgt->d.allele[0]).compare(ref->d.allele[1]) == 0) { // target ref matches first alternative reference allele if reverse complemented
-                        refalterror = false;
-                        refaltswap = true;
-                        strandflip = true;
-                    } else if (ref->n_allele > 2) { // if ref is multi-allelic, need to find the alt allele
-                        for (int i = 2; i < ref->n_allele; i++) {
-                            if (reverseComplement(tgt->d.allele[0]).compare(ref->d.allele[i]) == 0) {
-                                refalterror = false;
-                                refaltswap = true;
-                                strandflip = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            } // END if is SNP?
-        } // END !loadQref
+//        bool refaltswap = loadQuickRef ? qrswapped : false;
+//        bool strandflip = loadQuickRef ? qrflipped : false;
+//        bool refalterror = loadQuickRef ? (qrrefalterror || (qrswapped && !allowRefAltSwap) || (qrflipped && !allowStrandFlip)) : true; // default to true, if we find a match, we set it to false
+        bool refaltswap = qrswapped;
+        bool strandflip = qrflipped;
+        bool refalterror = qrrefalterror || (qrswapped && !allowRefAltSwap) || (qrflipped && !allowStrandFlip);
+//        if (!loadQuickRef) {
+//            // test through all possibilities in order, stop if we find a match:
+//            // 1. direct match
+//            if (strcmp(tgt->d.allele[0], ref->d.allele[0]) == 0) { // equal reference alleles
+//                if (strcmp(tgt->d.allele[1], ref->d.allele[1]) == 0) { // equal first alternative alleles
+//                    refalterror = false;
+//                } else if (ref->n_allele > 2) { // if ref is multi-allelic, need to find the alt allele
+//                    for (int i = 2; i < ref->n_allele; i++) {
+//                        if (strcmp(tgt->d.allele[1], ref->d.allele[i]) == 0) {
+//                            refalterror = false;
+//                            break;
+//                        }
+//                    }
+//                }
+//            } // NOTE: we will stop here if we've already found an equal SNP here as refalterror was already set to false then
+//            // alternatives are only possible if tgt is a SNP
+//            if (bcf_is_snp(tgt)) {
+//                // 2. ref/alt swapped
+//                if (refalterror && allowRefAltSwap && strcmp(tgt->d.allele[1], ref->d.allele[0]) == 0) { // equal alternative target allele and ref reference allele
+//                    if (strcmp(tgt->d.allele[0], ref->d.allele[1]) == 0) { // target ref matches first alternative reference allele
+//                        refalterror = false;
+//                        refaltswap = true;
+//                    } else if (ref->n_allele > 2) { // if ref is multi-allelic, need to find the alt allele
+//                        for (int i = 2; i < ref->n_allele; i++) {
+//                            if (strcmp(tgt->d.allele[0], ref->d.allele[i]) == 0) {
+//                                refalterror = false;
+//                                refaltswap = true;
+//                                break;
+//                            }
+//                        }
+//                    }
+//                }
+//                // 3. strand flipped
+//                if (refalterror && allowStrandFlip && reverseComplement(tgt->d.allele[0]).compare(ref->d.allele[0]) == 0) { // equal reference alleles if reverse complemented
+//                    if (reverseComplement(tgt->d.allele[1]).compare(ref->d.allele[1]) == 0) { // equal first alternative alleles if reverse complemented
+//                        refalterror = false;
+//                        strandflip = true;
+//                    } else if (ref->n_allele > 2) { // if ref is multi-allelic, need to find the alt allele
+//                        for (int i = 2; i < ref->n_allele; i++) {
+//                            if (reverseComplement(tgt->d.allele[1]).compare(ref->d.allele[i]) == 0) {
+//                                refalterror = false;
+//                                strandflip = true;
+//                                break;
+//                            }
+//                        }
+//                    }
+//                }
+//                // 4. ref/alt swapped and strand flipped
+//                if (refalterror && allowRefAltSwap && allowStrandFlip && reverseComplement(tgt->d.allele[1]).compare(ref->d.allele[0]) == 0) { // equal reference alleles if reverse complemented
+//                    if (reverseComplement(tgt->d.allele[0]).compare(ref->d.allele[1]) == 0) { // target ref matches first alternative reference allele if reverse complemented
+//                        refalterror = false;
+//                        refaltswap = true;
+//                        strandflip = true;
+//                    } else if (ref->n_allele > 2) { // if ref is multi-allelic, need to find the alt allele
+//                        for (int i = 2; i < ref->n_allele; i++) {
+//                            if (reverseComplement(tgt->d.allele[0]).compare(ref->d.allele[i]) == 0) {
+//                                refalterror = false;
+//                                refaltswap = true;
+//                                strandflip = true;
+//                                break;
+//                            }
+//                        }
+//                    }
+//                }
+//            } // END if is SNP?
+//        } // END !loadQref
 
         // skip on ref/alt error
         if (refalterror) {
@@ -1270,128 +1274,125 @@ void VCFData::processNextChunk() {
                 cMsOverlap.push_back(mapint.interp(chrBpsReg.back()));
         }
 
-        // split reference SNP into several SNPs if multi-allelic (if we wanted to exclude multi-allelics, we would have done already)
-        vector<bcf1_t*> masplits;
-        if (!loadQuickRef) {
-            if (ref->n_allele > 2) {
-                lstats.MmultiAllelicRefTgt++;
-                int numMissing, numUnphased;
-                splitSNP(ref, &ref_gt, &mref_gt, masplits, lstats.MmultiSplittedTgt, lstats.GmultiFilledTgt);
-
-                auto splitit = masplits.begin();
-                while( splitit != masplits.end() && strcmp(tgt->d.allele[1], ref->d.allele[1]) != 0 ) {
-                    // current ref is not the one we need for phasing here, so store only for imputation and try next
-                    if (doImputation) {
-                        lstats.MrefOnly++;
-                        processReferenceOnlySNP(ref, &ref_gt, &mref_gt, numMissing, numUnphased, inOverlap, true);
-                        if (numMissing)
-                            lstats.MmissingRefOnly++;
-                        if (numUnphased)
-                            lstats.MunphasedRefOnly++;
-                        lstats.GmissingRefOnly += numMissing;
-                        lstats.GunphasedRefOnly += numUnphased;
-                    }
-                    ref = *splitit;
-                    bcf_unpack(ref, BCF_UN_STR);
-                    splitit++;
-                }
-                // store remaining splits (will be listed before the one used for imputation/phasing in the output)
-                for (; splitit != masplits.end(); splitit++) {
-                    if (doImputation) {
-                        lstats.MrefOnly++;
-                        processReferenceOnlySNP(*splitit, &ref_gt, &mref_gt, numMissing, numUnphased, inOverlap, true);
-                        if (numMissing)
-                            lstats.MmissingRefOnly++;
-                        if (numUnphased)
-                            lstats.MunphasedRefOnly++;
-                        lstats.GmissingRefOnly += numMissing;
-                        lstats.GunphasedRefOnly += numUnphased;
-                    }
-                }
-                multiAllFlagsFullRefRegion.push_back_withPreInit(true);
-                MrefMultiAllreg++;
-            } else { // n_allele <= 2
-                multiAllFlagsFullRefRegion.push_back_withPreInit(false);
-            }
-        } else { // loadQuickRef
-            if (multiAllFlagsFullRefRegion[qfoundidx])
-                lstats.MmultiAllelicRefTgt++; // just for the statistics
-        }
+//        // split reference SNP into several SNPs if multi-allelic (if we wanted to exclude multi-allelics, we would have done already)
+//        vector<bcf1_t*> masplits;
+//        if (!loadQuickRef) {
+//            if (ref->n_allele > 2) {
+//                lstats.MmultiAllelicRefTgt++;
+//                int numMissing, numUnphased;
+//                splitSNP(ref, &ref_gt, &mref_gt, masplits, lstats.MmultiSplittedTgt, lstats.GmultiFilledTgt);
+//
+//                auto splitit = masplits.begin();
+//                while( splitit != masplits.end() && strcmp(tgt->d.allele[1], ref->d.allele[1]) != 0 ) {
+//                    // current ref is not the one we need for phasing here, so store only for imputation and try next
+//                    if (doImputation) {
+//                        lstats.MrefOnly++;
+//                        processReferenceOnlySNP(ref, &ref_gt, &mref_gt, numMissing, numUnphased, inOverlap, true);
+//                        if (numMissing)
+//                            lstats.MmissingRefOnly++;
+//                        if (numUnphased)
+//                            lstats.MunphasedRefOnly++;
+//                        lstats.GmissingRefOnly += numMissing;
+//                        lstats.GunphasedRefOnly += numUnphased;
+//                    }
+//                    ref = *splitit;
+//                    bcf_unpack(ref, BCF_UN_STR);
+//                    splitit++;
+//                }
+//                // store remaining splits (will be listed before the one used for imputation/phasing in the output)
+//                for (; splitit != masplits.end(); splitit++) {
+//                    if (doImputation) {
+//                        lstats.MrefOnly++;
+//                        processReferenceOnlySNP(*splitit, &ref_gt, &mref_gt, numMissing, numUnphased, inOverlap, true);
+//                        if (numMissing)
+//                            lstats.MmissingRefOnly++;
+//                        if (numUnphased)
+//                            lstats.MunphasedRefOnly++;
+//                        lstats.GmissingRefOnly += numMissing;
+//                        lstats.GunphasedRefOnly += numUnphased;
+//                    }
+//                }
+//                multiAllFlagsFullRefRegion.push_back_withPreInit(true);
+//                MrefMultiAllreg++;
+//            } else { // n_allele <= 2
+//                multiAllFlagsFullRefRegion.push_back_withPreInit(false);
+//            }
+//        } else { // loadQuickRef
+        if (multiAllFlagsFullRefRegion[qfoundidx])
+            lstats.MmultiAllelicRefTgt++; // just for the statistics
+//        }
 
         // include SNP in reference data for phasing and, if desired, in the full data for imputation
 
-        int numMissing = 0, numUnphased = 0;
+//        int numMissing = 0, numUnphased = 0;
+        int numMissing = 0;
         float af = 0.0;
-        if (loadQuickRef) {
-            // copy ref information for phasing
-            af = alleleFreqsFullRefRegion[qfoundidx];
-            referenceT[currM].setSize(Nrefhaps); // size will be the number of haps to add
-            if (inOverlap)
-                referenceTOverlap[currMOverlap].setSize(Nrefhaps);
-            for (size_t i = 0; i < Nrefhaps; i++) {
-                reference[i].push_back_withPreInit(referenceFullT[qfoundidx-currChunkOffset][i]);
-                referenceT[currM].setWithPreInit(i, referenceFullT[qfoundidx-currChunkOffset][i]);
-                if (inOverlap) {
-                    referenceOverlap[i].push_back_withPreInit(referenceFullT[qfoundidx-currChunkOffset][i]);
-                    referenceTOverlap[currMOverlap].setWithPreInit(i, referenceFullT[qfoundidx-currChunkOffset][i]);
-                }
+//        if (loadQuickRef) {
+        // copy ref information for phasing
+        af = alleleFreqsFullRefRegion[qfoundidx];
+        referenceT[currM].setSize(Nrefhaps); // size will be the number of haps to add
+        if (inOverlap)
+            referenceTOverlap[currMOverlap].setSize(Nrefhaps);
+        for (size_t i = 0; i < Nrefhaps; i++) {
+            reference[i].push_back_withPreInit(referenceFullT[qfoundidx-currChunkOffset][i]);
+            referenceT[currM].setWithPreInit(i, referenceFullT[qfoundidx-currChunkOffset][i]);
+            if (inOverlap) {
+                referenceOverlap[i].push_back_withPreInit(referenceFullT[qfoundidx-currChunkOffset][i]);
+                referenceTOverlap[currMOverlap].setWithPreInit(i, referenceFullT[qfoundidx-currChunkOffset][i]);
             }
-        } else { // !loadQuickRef
-            processReferenceSNP(Nref, ref, &ref_gt, &mref_gt, inOverlap, numMissing, numUnphased, af, true);
-
-            if (numMissing)
-                lstats.MwithMissingRef++;
-            if (numUnphased)
-                lstats.MwithUnphasedRef++;
-            lstats.GmissingRef += numMissing;
-            lstats.GunphasedRef += numUnphased;
         }
+//        } else { // !loadQuickRef
+//            processReferenceSNP(Nref, ref, &ref_gt, &mref_gt, inOverlap, numMissing, numUnphased, af, true);
+//
+//            if (numMissing)
+//                lstats.MwithMissingRef++;
+//            if (numUnphased)
+//                lstats.MwithUnphasedRef++;
+//            lstats.GmissingRef += numMissing;
+//            lstats.GunphasedRef += numUnphased;
+//        }
 
         // process target genotypes: append Ntarget entries (0/1/2/9) to genosTarget[]
         processTargetSNP(Ntarget, ntgt_gt, reinterpret_cast<int*>(tgt_gt), refaltswap, inOverlap, numMissing, tgt->pos);
         lstats.GmissingTarget += numMissing;
 
-        // keep the record's information
-        if (doImputation && !loadQuickRef) {
-            alleleFreqsFullRefRegion.push_back(af);
-            positionsFullRefRegion.push_back(ref->pos);
-            allelesFullRefRegion.emplace_back(ref->d.allele[0]);
-            allelesFullRefRegion.emplace_back(ref->d.allele[1]);
-            variantIDsFullRefRegion.emplace_back(ref->d.id);
-
-            isImputed.push_back(false);
-            indexToRefFull.push_back(currMref);
-            nextPidx.push_back(bcf_pout.size()); // common site, index will point to element being inserted now
-            ptgtIdx.push_back(currM);
-            currMref++;
-            if (inOverlap) {
-                isImputedOverlap.push_back(false);
-                indexToRefFullOverlap.push_back(currMrefOverlap);
-                nextPidxOverlap.push_back(bcf_poutOverlap.size()); // common site, index will point to element being inserted now
-                ptgtIdxOverlap.push_back(currMOverlap);
-                currMrefOverlap++;
-            }
-        }
-        if (loadQuickRef) { // loaded quick ref
-            // we need to change the imputation flag since it was initialized with "true"
-            isImputed.back() = false;
-            indexToRefFull.push_back(isImputed.size()-1);
-            if (inOverlap) {
-                isImputedOverlap.back() = false;
-                indexToRefFullOverlap.push_back(isImputedOverlap.size()-1);
-            }
-            // nextPidx and ptgtIdx was already taken care of after loading the Qref
-        }
-//        if (Ntarget == (size_t)ntgt_gt) { // special case: haploid marker, apparently on chrX or Y -> keep record and mark as unphased, but keep all information for phasing
-//            isPhased.push_back(false);
-//            if (inOverlap)
-//                isPhasedOverlap.push_back(false);
-//        } else { // diploid marker (will be phased)
-            bcf_update_genotypes(tgt_hdr, tgt, NULL, 0); // remove genotypes (will be phased)
-            isPhased.push_back(true);
-            if (inOverlap)
-                isPhasedOverlap.push_back(true);
+//        // keep the record's information
+//        if (doImputation && !loadQuickRef) {
+//            alleleFreqsFullRefRegion.push_back(af);
+//            positionsFullRefRegion.push_back(ref->pos);
+//            allelesFullRefRegion.emplace_back(ref->d.allele[0]);
+//            allelesFullRefRegion.emplace_back(ref->d.allele[1]);
+//            variantIDsFullRefRegion.emplace_back(ref->d.id);
+//
+//            isImputed.push_back(false);
+//            indexToRefFull.push_back(currMref);
+//            nextPidx.push_back(bcf_pout.size()); // common site, index will point to element being inserted now
+//            ptgtIdx.push_back(currM);
+//            currMref++;
+//            if (inOverlap) {
+//                isImputedOverlap.push_back(false);
+//                indexToRefFullOverlap.push_back(currMrefOverlap);
+//                nextPidxOverlap.push_back(bcf_poutOverlap.size()); // common site, index will point to element being inserted now
+//                ptgtIdxOverlap.push_back(currMOverlap);
+//                currMrefOverlap++;
+//            }
 //        }
+//        if (loadQuickRef) { // loaded quick ref
+        // we need to change the imputation flag since it was initialized with "true"
+        isImputed.back() = false;
+        indexToRefFull.push_back(isImputed.size()-1);
+        if (inOverlap) {
+            isImputedOverlap.back() = false;
+            indexToRefFullOverlap.push_back(isImputedOverlap.size()-1);
+        }
+        // nextPidx and ptgtIdx was already taken care of after loading the Qref
+//        }
+
+        // remove genotypes (will be phased)
+        bcf_update_genotypes(tgt_hdr, tgt, NULL, 0);
+        isPhased.push_back(true);
+        if (inOverlap)
+            isPhasedOverlap.push_back(true);
         bcf_pout.push_back(bcf_dup(tgt));
         alleleFreqsCommon.push_back(af);
         currM++;
@@ -1407,14 +1408,14 @@ void VCFData::processNextChunk() {
             infoexpl = "strand flip";
         else if (refaltswap)
             infoexpl = "ref/alt swap";
-        if (loadQuickRef)
-            addToInfoFileIncluded(tgt->pos, tgt->d.id, tref, talt, variantIDsFullRefRegion[qfoundidx], allelesFullRefRegion[2*qfoundidx], allelesFullRefRegion[2*qfoundidx+1], infoexpl);
-        else
-            addToInfoFileIncluded(tgt->pos, tgt->d.id, tref, talt, ref->d.id, ref->d.allele[0], ref->d.allele[1], infoexpl);
+//        if (loadQuickRef)
+        addToInfoFileIncluded(tgt->pos, tgt->d.id, tref, talt, variantIDsFullRefRegion[qfoundidx], allelesFullRefRegion[2*qfoundidx], allelesFullRefRegion[2*qfoundidx+1], infoexpl);
+//        else
+//            addToInfoFileIncluded(tgt->pos, tgt->d.id, tref, talt, ref->d.id, ref->d.allele[0], ref->d.allele[1], infoexpl);
 
-        // need to clean up potentially generated splits -> if ref points to one of these splits, it is going to be destroyed here! don't use it afterwards!
-        for (bcf1_t* s : masplits)
-            bcf_destroy(s);
+//        // need to clean up potentially generated splits -> if ref points to one of these splits, it is going to be destroyed here! don't use it afterwards!
+//        for (bcf1_t* s : masplits)
+//            bcf_destroy(s);
 
     } // END while (reading chunk)
 
@@ -1446,18 +1447,18 @@ void VCFData::processNextChunk() {
     // set the map for haploid samples
     if (currChunk == 0 && !createQRef) {
         // reference
-        if (!loadQuickRef) { // otherwise already set
-//            if (chrom == CHRX || chrom == CHRY) { // go through the flags if we are on X or Y
-                for (size_t i = 0; i < Nrefhapsmax/2; i++) {
-                    haploidsRefMap.push_back(2*i);
-                    if (!haploidsRef[i]) // diploid
-                        haploidsRefMap.push_back(2*i+1);
-                }
-//            } else { // diploid chromosome: identity
-//                for (size_t i = 0; i < Nrefhapsmax; i++)
-//                    haploidsRefMap.push_back(i);
-//            }
-        }
+//        if (!loadQuickRef) { // otherwise already set
+////            if (chrom == CHRX || chrom == CHRY) { // go through the flags if we are on X or Y
+//                for (size_t i = 0; i < Nrefhapsmax/2; i++) {
+//                    haploidsRefMap.push_back(2*i);
+//                    if (!haploidsRef[i]) // diploid
+//                        haploidsRefMap.push_back(2*i+1);
+//                }
+////            } else { // diploid chromosome: identity
+////                for (size_t i = 0; i < Nrefhapsmax; i++)
+////                    haploidsRefMap.push_back(i);
+////            }
+//        }
         // target
 //        if (chrom == CHRX || chrom == CHRY) { // go through the flags if we are on X or Y
             for (size_t i = 0; i < Ntarget; i++) {
@@ -1492,8 +1493,8 @@ void VCFData::processNextChunk() {
 
     if (!createQRef) { // statistics for normal run
 
-        if (loadQuickRef)
-            lstats.MmultiAllelicRefOnly = MrefMultiAllreg - lstats.MmultiAllelicRefTgt;
+//        if (loadQuickRef)
+        lstats.MmultiAllelicRefOnly = MrefMultiAllreg - lstats.MmultiAllelicRefTgt;
 
         stringstream stmp;
         stmp << "<p class='pinfo'><b>" << M << " variants in both target and reference are used for phasing.</b>";
@@ -1580,18 +1581,18 @@ void VCFData::processNextChunk() {
                 StatusFile::addInfo("  Dropped " + to_string(lstats.MmultiAllelicRefTgt) + " variants bi-allelic in target but multi-allelic in reference.<br>", false);
                 yamlinfo << "    Dropped multi-allelic reference variants: " << lstats.MmultiAllelicRefTgt << "\n";
             } else {
-                if (!loadQuickRef){
-                    StatusFile::addInfo("  Split " + to_string(lstats.MmultiAllelicRefTgt) + " variants bi-allelic in target but multi-allelic in reference into " + to_string(lstats.MmultiSplittedTgt)
-                            + " bi-allelic reference variants,<br>\n"
-                            + "  "  + to_string(lstats.GmultiFilledTgt) + " haplotypes filled with reference alleles.<br>", false);
-                    yamlinfo << "    Multi-allelic splits in common variants:\n";
-                    yamlinfo << "      Common multi-allelic reference variants before split: " << lstats.MmultiAllelicRefTgt << "\n";
-                    yamlinfo << "      Resulting bi-allelic reference variants: " << lstats.MmultiSplittedTgt << "\n";
-                    yamlinfo << "      Haplotypes filled with reference alleles: " << lstats.GmultiFilledTgt << "\n";
-                } else {
-                    StatusFile::addInfo("  " + to_string(lstats.MmultiAllelicRefTgt) + " variants bi-allelic in target were multi-allelic in reference.<br>", false);
-                    yamlinfo << "    Common reference variants from multi-allelic splits: " << lstats.MmultiAllelicRefTgt << "\n";
-                }
+//                if (!loadQuickRef){
+//                    StatusFile::addInfo("  Split " + to_string(lstats.MmultiAllelicRefTgt) + " variants bi-allelic in target but multi-allelic in reference into " + to_string(lstats.MmultiSplittedTgt)
+//                            + " bi-allelic reference variants,<br>\n"
+//                            + "  "  + to_string(lstats.GmultiFilledTgt) + " haplotypes filled with reference alleles.<br>", false);
+//                    yamlinfo << "    Multi-allelic splits in common variants:\n";
+//                    yamlinfo << "      Common multi-allelic reference variants before split: " << lstats.MmultiAllelicRefTgt << "\n";
+//                    yamlinfo << "      Resulting bi-allelic reference variants: " << lstats.MmultiSplittedTgt << "\n";
+//                    yamlinfo << "      Haplotypes filled with reference alleles: " << lstats.GmultiFilledTgt << "\n";
+//                } else {
+                StatusFile::addInfo("  " + to_string(lstats.MmultiAllelicRefTgt) + " variants bi-allelic in target were multi-allelic in reference.<br>", false);
+                yamlinfo << "    Common reference variants from multi-allelic splits: " << lstats.MmultiAllelicRefTgt << "\n";
+//                }
             }
         }
         if (lstats.MmonomorphicRefTgt) {
@@ -1613,7 +1614,8 @@ void VCFData::processNextChunk() {
         }
 
         StatusFile::addInfo("</p><p class='pinfo'>", false);
-        size_t mrefonly = loadQuickRef ? (Mref-M) : lstats.MrefOnly;
+//        size_t mrefonly = loadQuickRef ? (Mref-M) : lstats.MrefOnly;
+        size_t mrefonly = Mref-M;
         StatusFile::addInfo("  " + to_string(mrefonly) + " variants in reference but not in target.<br>", false);
         yamlinfo << "    Reference-only variants: " << mrefonly << "\n";
         if (doImputation) {
@@ -1621,18 +1623,18 @@ void VCFData::processNextChunk() {
                 StatusFile::addInfo("  Excluding " + to_string(lstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants from imputation.<br>", false);
                 yamlinfo << "    Excluded reference-only multi-allelic variants: " << lstats.MmultiAllelicRefOnly << "\n";
             } else if (lstats.MmultiAllelicRefOnly) {
-                if (!loadQuickRef){
-                    StatusFile::addInfo("  Split " + to_string(lstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants into "
-                            + to_string(lstats.MmultiSplittedRefOnly) + " bi-allelic reference variants,<br>\n"
-                            + "    " + to_string(lstats.GmultiFilledRefOnly) + " haplotypes filled with reference alleles.<br>", false);
-                    yamlinfo << "    Multi-allelic splits in reference-only variants:\n";
-                    yamlinfo << "      Reference-only multi-allelic variants before split: " << lstats.MmultiAllelicRefOnly << "\n";
-                    yamlinfo << "      Resulting bi-allelic reference variants: " << lstats.MmultiSplittedRefOnly << "\n";
-                    yamlinfo << "      Haplotypes filled with reference alleles: " << lstats.GmultiFilledRefOnly << "\n";
-                } else {
-                    StatusFile::addInfo("  " + to_string(lstats.MmultiAllelicRefOnly) + " bi-allelic variants in reference only that originate from multi-allelic splits.<br>", false);
-                    yamlinfo << "    Reference-only bi-allelic variants from multi-allelic splits: " << lstats.MmultiAllelicRefOnly << "\n";
-                }
+//                if (!loadQuickRef){
+//                    StatusFile::addInfo("  Split " + to_string(lstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants into "
+//                            + to_string(lstats.MmultiSplittedRefOnly) + " bi-allelic reference variants,<br>\n"
+//                            + "    " + to_string(lstats.GmultiFilledRefOnly) + " haplotypes filled with reference alleles.<br>", false);
+//                    yamlinfo << "    Multi-allelic splits in reference-only variants:\n";
+//                    yamlinfo << "      Reference-only multi-allelic variants before split: " << lstats.MmultiAllelicRefOnly << "\n";
+//                    yamlinfo << "      Resulting bi-allelic reference variants: " << lstats.MmultiSplittedRefOnly << "\n";
+//                    yamlinfo << "      Haplotypes filled with reference alleles: " << lstats.GmultiFilledRefOnly << "\n";
+//                } else {
+                StatusFile::addInfo("  " + to_string(lstats.MmultiAllelicRefOnly) + " bi-allelic variants in reference only that originate from multi-allelic splits.<br>", false);
+                yamlinfo << "    Reference-only bi-allelic variants from multi-allelic splits: " << lstats.MmultiAllelicRefOnly << "\n";
+//                }
             } else {
                 StatusFile::addInfo("  No multi-allelic reference-only variants.<br>", false);
                 // we skip this output in YAML
@@ -3754,18 +3756,18 @@ void VCFData::printSummary() const {
             StatusFile::addInfo("  Excluded " + to_string(globalstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants from imputation.<br>", false);
             yamlinfo << "    Excluded reference-only multi-allelic variants: " << globalstats.MmultiAllelicRefOnly << "\n";
         } else if (globalstats.MmultiAllelicRefOnly) {
-            if (!loadQuickRef){
-                StatusFile::addInfo("  Split " + to_string(globalstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants into "
-                        + to_string(globalstats.MmultiSplittedRefOnly) + " bi-allelic reference variants,<br>\n"
-                        + "    " + to_string(globalstats.GmultiFilledRefOnly) + " haplotypes filled with reference alleles.<br>", false);
-                yamlinfo << "    Multi-allelic splits in reference-only variants:\n";
-                yamlinfo << "      Reference-only multi-allelic variants before split: " << globalstats.MmultiAllelicRefOnly << "\n";
-                yamlinfo << "      Resulting bi-allelic reference variants: " << globalstats.MmultiSplittedRefOnly << "\n";
-                yamlinfo << "      Haplotypes filled with reference alleles: " << globalstats.GmultiFilledRefOnly << "\n";
-            } else {
-                StatusFile::addInfo("  " + to_string(globalstats.MmultiAllelicRefOnly) + " bi-allelic variants in reference only that originate from multi-allelic splits.<br>", false);
-                yamlinfo << "    Reference-only bi-allelic variants from multi-allelic splits: " << globalstats.MmultiAllelicRefOnly << "\n";
-            }
+//            if (!loadQuickRef){
+//                StatusFile::addInfo("  Split " + to_string(globalstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants into "
+//                        + to_string(globalstats.MmultiSplittedRefOnly) + " bi-allelic reference variants,<br>\n"
+//                        + "    " + to_string(globalstats.GmultiFilledRefOnly) + " haplotypes filled with reference alleles.<br>", false);
+//                yamlinfo << "    Multi-allelic splits in reference-only variants:\n";
+//                yamlinfo << "      Reference-only multi-allelic variants before split: " << globalstats.MmultiAllelicRefOnly << "\n";
+//                yamlinfo << "      Resulting bi-allelic reference variants: " << globalstats.MmultiSplittedRefOnly << "\n";
+//                yamlinfo << "      Haplotypes filled with reference alleles: " << globalstats.GmultiFilledRefOnly << "\n";
+//            } else {
+            StatusFile::addInfo("  " + to_string(globalstats.MmultiAllelicRefOnly) + " bi-allelic variants in reference only that originate from multi-allelic splits.<br>", false);
+            yamlinfo << "    Reference-only bi-allelic variants from multi-allelic splits: " << globalstats.MmultiAllelicRefOnly << "\n";
+//            }
         } else {
             StatusFile::addInfo("  No multi-allelic reference-only variants.<br>", false);
             // we skip this output in YAML
