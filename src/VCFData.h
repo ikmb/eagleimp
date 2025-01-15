@@ -254,7 +254,6 @@ private:
     vector<string> variantIDsFullRefRegion; // variant IDs of complete reference in region
     BooleanVector multiAllFlagsFullRefRegion;  // marked true if multi-allelic variant was split to bi-allelic, of complete reference in region
 
-
     size_t Nref;
     size_t Nrefhaps; // number of reference haplotypes (NOTE: originally haploids are encoded homozygous diploid!, so this is 2*Nref)
     size_t Ntarget; // number of target samples
@@ -357,6 +356,7 @@ private:
     int nChunks = 1; // default
     int currChunk = -1; // indicates the currently loaded chunk, -1 indicates "chunk not yet loaded"
     size_t currChunkOffset; // index offset of current chunk's first local imputation index to reference index in current region
+    int64_t maxChunkExtension = 0; // max. possible extension of a chunk in target sites
 
     ofstream infofile; // imputation info file that contains information on each target variant
 

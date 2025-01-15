@@ -277,6 +277,13 @@ int main(int argc, char *argv[]) {
     steps *= vcfdata.getNChunks(); // all steps repeated for each chunk
     StatusFile::updateSteps(0,steps);
 
+//    // DEBUG
+//    ofstream memofs(args.outPrefix + ".memmap_bc");
+//    MyMalloc::printSummary(string("before chunks"));
+//    MyMalloc::dumpMemMap(memofs);
+//    memofs.close();
+//    // __DEBUG
+
     // process data in chunks
     for (int chunk = 0; chunk < vcfdata.getNChunks(); chunk++) {
 
@@ -382,11 +389,6 @@ int main(int argc, char *argv[]) {
                 vcfdata.writePhasedConfidences(totconfidences, ncalls);
             }
 
-//#ifndef DISABLE_MYMALLOC
-//            ofstream ofs(args.outPrefix + ".memmap_p" + to_string(chunk));
-//            MyMalloc::print(ofs, string("intermediate after phasing chunk ")+to_string(chunk));
-//#endif
-
         } // END phasing block
 
         if (!args.skipImputation) { // imputation block
@@ -491,10 +493,12 @@ int main(int argc, char *argv[]) {
 
         MyMalloc::free(pdata);
 
-#ifndef DISABLE_MYMALLOC
-        ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
-        MyMalloc::print(ofs, string("intermediate after chunk ")+to_string(chunk));
-#endif
+//        // DEBUG
+//        ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
+//        MyMalloc::printSummary(string("intermediate after chunk ")+to_string(chunk));
+//        MyMalloc::dumpMemMap(ofs);
+//        ofs.close();
+//        // __DEBUG
 
     } // end for all chunks
     StatusFile::clearContext();
@@ -516,10 +520,12 @@ int main(int argc, char *argv[]) {
 
     } // all destructors called
 
-#ifndef DISABLE_MYMALLOC
-    ofstream ofs(args.outPrefix + ".memmap_end");
-    MyMalloc::print(ofs, string("at end"));
-#endif
+//    // DEBUG
+//    ofstream ofs(args.outPrefix + ".memmap_end");
+//    MyMalloc::printSummary(string("at end"));
+//    MyMalloc::dumpMemMap(ofs);
+//    ofs.close();
+//    // __DEBUG
 
     return EXIT_SUCCESS;
 }

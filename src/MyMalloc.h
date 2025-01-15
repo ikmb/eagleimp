@@ -28,8 +28,6 @@
 #include <string>
 #include <utility>
 
-#define DISABLE_MYMALLOC
-
 using namespace std;
 
 class MyMalloc {
@@ -51,19 +49,18 @@ public:
         mm.myfree(p);
     }
 
-#ifndef DISABLE_MYMALLOC
     // don't care about mutual exclusion here
-    static size_t getAlloced() { return mm.mem_alloced; }
-    static size_t getFreed() { return mm.mem_freed; }
-    static size_t getNotFreed() { return mm.mem_alloced - mm.mem_freed; }
+    static size_t getTotalAlloced() { return mm.mem_alloced; }
+    static size_t getTotalFreed() { return mm.mem_freed; }
+    static size_t getCurrentAlloced() { return mm.mem_alloced - mm.mem_freed; }
     static size_t getMaxAlloced() { return mm.mem_maxalloced; }
     static const map<size_t,pair<size_t,string>> &getMap() { return mm.mem_map; };
 
-    static void print(ofstream &ofs, const string &note) {
+    static void printSummary(const string &note) {
         cerr << "\nMemory " << note << ":" << endl;
-        cerr << "allocated:    " << getAlloced() << " (" << MyMalloc::getAlloced()/(1024*1024) << " MiB)" << endl;
-        cerr << "freed:        " << getFreed() << " (" << MyMalloc::getFreed()/(1024*1024) << " MiB)" << endl;
-        cerr << "not freed:    " << getNotFreed() << " (" << MyMalloc::getNotFreed()/(1024*1024) << " MiB)" << endl;
+        cerr << "allocated:    " << getTotalAlloced() << " (" << MyMalloc::getTotalAlloced()/(1024*1024) << " MiB)" << endl;
+        cerr << "freed:        " << getTotalFreed() << " (" << MyMalloc::getTotalFreed()/(1024*1024) << " MiB)" << endl;
+        cerr << "not freed:    " << getCurrentAlloced() << " (" << MyMalloc::getCurrentAlloced()/(1024*1024) << " MiB)" << endl;
         cerr << "max. alloced: " << getMaxAlloced() << " (" << MyMalloc::getMaxAlloced()/(1024*1024) << " MiB)" << endl;
         const auto &memmap = mm.mem_map;
         cerr << "Remaining map entries (size in MiB): " << memmap.size() << endl;
@@ -74,7 +71,13 @@ public:
             }
             if (mapit != memmap.cend())
                 cerr << " ..." << endl;
-            ofs << "not freed:    " << MyMalloc::getNotFreed() << " (" << MyMalloc::getNotFreed()/1024 << " kiB)" << endl;
+        }
+    }
+
+    static void dumpMemMap(ofstream &ofs) {
+        const auto &memmap = mm.mem_map;
+        if (memmap.size()) {
+            ofs << "not freed:    " << MyMalloc::getCurrentAlloced() << " (" << MyMalloc::getCurrentAlloced()/1024 << " kiB)" << endl;
             ofs << "max. alloced: " << MyMalloc::getMaxAlloced() << " (" << MyMalloc::getMaxAlloced()/1024 << " kiB)" << endl;
             ofs << "Remaining map entries (size in kiB): " << memmap.size() << endl;
             for (const auto &m : memmap)
@@ -82,7 +85,6 @@ public:
         }
     }
 
-#endif
 
 private:
     MyMalloc(){}
@@ -91,51 +93,42 @@ private:
 
     void *mymalloc(size_t size, const string &id __attribute__((unused))) {
         void *p = std::malloc(size);
-#ifndef DISABLE_MYMALLOC
         add(p, size, id);
-#endif
         return p;
     }
 
     void *mycalloc(size_t size, size_t elt_size, const string &id __attribute__((unused))) {
         void *p = std::calloc(size, elt_size);
-#ifndef DISABLE_MYMALLOC
         add(p, size, id);
-#endif
         return p;
     }
 
     void *myrealloc(void *p, size_t size, const string &id __attribute__((unused))) {
         void *oldp __attribute__((unused)) = p;
         void *np = std::realloc(p, size);
-#ifndef DISABLE_MYMALLOC
         if (np) { // re-allocation successful
             remove(oldp);
             add(np, size, id);
         }
-#endif
         return np;
     }
 
     void myfree(void *p) {
-#ifndef DISABLE_MYMALLOC
         remove(p);
-#endif
         std::free(p);
     }
 
-#ifndef DISABLE_MYMALLOC
     inline void add(void *p, size_t size, const string &id) {
         if (p) {
             mux.lock();
-            if (mem_map.find((size_t)p) != mem_map.end())
-                cerr << "MyMalloc: Address already in use! Double allocation?! ID: " << id << endl;
             mem_alloced += size;
-            mem_map[(size_t)p] = make_pair(size,id);
             if (mem_alloced-mem_freed > mem_maxalloced) {
 //                cerr << "MyMalloc: reached max! added:\t" << size << "\t" << id << "\tin use: " << mem_alloced - mem_freed << endl;
                 mem_maxalloced = mem_alloced - mem_freed;
             }
+//            if (mem_map.find((size_t)p) != mem_map.end())
+//                cerr << "MyMalloc: Address already in use! Double allocation?! ID: " << id << endl;
+            mem_map[(size_t)p] = make_pair(size,id);
             mux.unlock();
         }
     }
@@ -144,8 +137,8 @@ private:
         mux.lock();
         size_t sizefreed = mem_map[(size_t)p].first;
         mem_freed += sizefreed;
-        if (sizefreed == 0)
-            cerr << "MyMalloc: freed size is zero. Did you allocate with MyMalloc?" << endl;
+//        if (sizefreed == 0)
+//            cerr << "MyMalloc: freed size is zero. Did you allocate with MyMalloc?" << endl;
         mem_map.erase((size_t)p);
         mux.unlock();
     }
@@ -155,7 +148,6 @@ private:
     size_t mem_alloced = 0;
     size_t mem_freed = 0;
     size_t mem_maxalloced = 0;
-#endif
 
 };
 #endif /* MYMALLOC_H_ */

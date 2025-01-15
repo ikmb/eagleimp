@@ -498,7 +498,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
                         StatusFile::addWarning("Increased number of chunks to " + to_string(nChunks) + " due to the FPGA's available memory restriction.");
 
                     // check, if we increased the number of chunks too much
-                    if (Mglob/nChunks < chunkflanksize) {
+                    if (Mglob/nChunks < 2*chunkflanksize) {
                         nChunks = nChunks_old;
                         usefpga = false;
                         StatusFile::addWarning("<b>Disabled FPGA:</b> Chunk size too small. Reverted number of chunks to " + to_string(nChunks) + " and continuing with CPU only.");
@@ -506,8 +506,9 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
                 }
             }
 
-            // check if chunk size is large enough
-            if (nChunks > 1 && Mglob/nChunks < chunkflanksize) {
+            // check if chunk size is large enough:
+            // as an overlap will be defined on both ends of a chunk, chunk size must be at least two overlaps!
+            if (nChunks > 1 && Mglob/nChunks < 2*chunkflanksize) {
                 string serr("<b>Analysis not possible:</b> Too many chunks.");
                 if (!overrideChunks)
                     serr += " Try larger chunk memory size with --maxChunkMemory.";
@@ -532,6 +533,8 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             startChunkFlankIdx.push_back(curridx - chunkflanksize); // as the chunk size will be larger than the flank size, this index will exist
             endChunkFlankIdx.push_back(curridx + chunkflanksize); // as the chunk size will be larger than the flank size, this index will exist as well
         }
+        // calculate the maximum possible extension of a chunk by the size of the last chunk minus 2*flanksize
+        maxChunkExtension = Mglob - startChunkFlankIdx.back() - 2*chunkflanksize;
         // sentinel at the end
         startChunkIdx.push_back(Mglob);
         startChunkFlankIdx.push_back(Mglob); // important to have no overlap here!
@@ -644,10 +647,13 @@ void VCFData::processNextChunk() {
     // the statistics collected here are only for the current chunk and without the overlap from the previous chunk
     VCFStats lstats;
 
+    // reset maxChunkExtension for each chunk
+    int64_t currMaxChunkExtension = maxChunkExtension;
+
     // determine Mpre for chunks:
-    // Mpre is the number of variants in the current chunk
-    size_t Mpre = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk];
-    size_t Mprenext = currChunk < nChunks-1 ? endChunkFlankIdx[currChunk+1] - startChunkFlankIdx[currChunk+1] : 0;
+    // Mpre is the number of target variants in the current chunk
+    size_t Mpre = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk] + currMaxChunkExtension;
+    size_t Mprenext = currChunk < nChunks-1 ? endChunkFlankIdx[currChunk+1] - startChunkFlankIdx[currChunk+1] + currMaxChunkExtension : 0;
 
     if (!createQRef) {
         cout << "\n----------------------------------------------------------------\n--- ";
@@ -892,7 +898,7 @@ void VCFData::processNextChunk() {
         if (!createQRef) {
             tgt = bcf_sr_get_line(sr, loadQuickRef ? 0 : 1); // read one line of target, if available at current position (otherwise NULL)
             if (tgt) {
-                if (tgtlinesread % 1024 == 0) {
+                if (tgtlinesread % 1024 == 0) { // TODO as the chunk size is (approximately) known, we can use this to better display the progress
                     float progress = currChunk == 0 ? (tgtlinesread/(float)endChunkFlankIdx[0]) : ((tgtlinesread - endChunkFlankIdx[currChunk-1])/(float)(endChunkFlankIdx[currChunk]-endChunkFlankIdx[currChunk-1]));
                     int progresspercent = currChunk == 0 ? (100*tgtlinesread/endChunkFlankIdx[0]) : (100*(tgtlinesread - endChunkFlankIdx[currChunk-1])/(endChunkFlankIdx[currChunk]-endChunkFlankIdx[currChunk-1]));
                     StatusFile::updateStatus(progress);
@@ -904,11 +910,58 @@ void VCFData::processNextChunk() {
                         pgb++;
                     }
                 }
+
                 inOverlap = tgtlinesread >= startChunkFlankIdx[currChunk+1]; // indicates if we entered the left flank of the border to the next chunk
+
+                // check, how we get along with our memory
+                if (tgtlinesread == startChunkFlankIdx[currChunk+1]) { // this is the first line of the overlap to the next chunk
+                    // if there's enough space left, extend this chunk by some sites
+                    // NOTE: if we are at the last chunk, we will never reach this point.
+                    if (currMaxChunkExtension > 0) {
+                        size_t chunksize = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk];
+                        size_t memlimit = (maxchunkmem * tgtlinesread) / chunksize; // memory which may be used up by now
+                        if (MyMalloc::getCurrentAlloced() < memlimit) {
+                            int64_t extension = max(currMaxChunkExtension/10, (int64_t)1); // 10% of available extension, at least one site
+                            startChunkFlankIdx[currChunk+1] += extension;
+                            startChunkIdx[currChunk+1] += extension;
+                            endChunkFlankIdx[currChunk] += extension;
+                            currMaxChunkExtension -= extension;
+                            inOverlap = false;
+                            // DEBUG
+                            cerr << "+++ EXTENDED chunk by " << extension << " sites. (maxChunkExtension: " << currMaxChunkExtension << ")" << endl;
+                        }
+                    }
+                } else if (!inOverlap) { // not yet reached the overlap
+//                } else if (!inOverlap && currChunk != nChunks-1) { // not yet reached the overlap (and not in the last chunk where we cannot reduce anymore)
+                    // if we already used up our available memory so far, we need to reduce this chunk now and start with the overlap
+                    // NOTE: reduction in last chunk is not possible, but should not be necessary anyway...
+                    size_t chunksize = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk];
+                    size_t memlimit = (maxchunkmem * (chunksize - 2*chunkflanksize)) / chunksize; // memory which may be used up by now
+                    if (MyMalloc::getCurrentAlloced() > memlimit) {
+                        // DEBUG
+                        if (currChunk == nChunks-1) {
+                            cerr << "XXX Oh, oh! Reduction of last chunk not possible!!" << endl;
+                        } else {
+                        // __DEBUG
+                        int64_t reduction = startChunkFlankIdx[currChunk+1] - tgtlinesread; // difference to the previously calculated start of the overlap
+                        startChunkFlankIdx[currChunk+1] -= reduction;
+                        startChunkIdx[currChunk+1] -= reduction;
+                        endChunkFlankIdx[currChunk] -= reduction;
+                        currMaxChunkExtension += reduction;
+                        inOverlap = true;
+                        // DEBUG
+                        cerr << "--- REDUCED chunk by " << reduction << " sites. (maxChunkExtension: " << currMaxChunkExtension << ")" << endl;
+                        }
+                        // __DEBUG
+                    }
+                }
+
                 if (tgtlinesread == startChunkIdx[currChunk+1]) { // we just entered the next chunk (right flank of the border to next chunk)
                     endChunkBp = tgt->pos; // should be position minus 1, but tgt->pos is zero-based, and we are 1-based, so this is ok.
                 }
+
                 tgtlinesread++;
+
                 // check, if the target contains the same chromosome as the chosen reference
                 if (!checkedChrom) {
                     checkedChrom = true;
