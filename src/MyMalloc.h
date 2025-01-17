@@ -67,26 +67,16 @@ public:
         if (memmap.size()) {
             int count_refdata = 0;
             int count_refdataT = 0;
-            int count_refdataOverlap = 0;
-            int count_refdataTOverlap = 0;
             int count_hapdata = 0;
             int count_tgt_gt = 0;
             int count_else = 0;
             size_t size_refdata = 0;
             size_t size_refdataT = 0;
-            size_t size_refdataOverlap = 0;
-            size_t size_refdataTOverlap = 0;
             size_t size_hapdata = 0;
             size_t size_tgt_gt = 0;
             size_t size_else = 0;
             for (const auto &m : memmap) {
-                if (m.second.second.find("refdataTOverlap") != string::npos) {
-                    count_refdataTOverlap++;
-                    size_refdataTOverlap += m.second.first;
-                } else if (m.second.second.find("refdataOverlap") != string::npos) {
-                    count_refdataOverlap++;
-                    size_refdataOverlap += m.second.first;
-                } else if (m.second.second.find("refdataT") != string::npos) {
+                if (m.second.second.find("refdataT") != string::npos) {
                     count_refdataT++;
                     size_refdataT += m.second.first;
                 } else if (m.second.second.find("refdata") != string::npos) {
@@ -107,10 +97,6 @@ public:
                 cerr << "  refdata:         " << count_refdata << "\t" << size_refdata / 1024 << " kiB" << endl;
             if (count_refdataT)
                 cerr << "  refdataT:        " << count_refdataT << "\t" << size_refdataT / 1024 << " kiB" << endl;
-            if (count_refdataOverlap)
-                cerr << "  refdataOverlap:  " << count_refdataOverlap << "\t" << size_refdataOverlap / 1024 << " kiB" << endl;
-            if (count_refdataTOverlap)
-                cerr << "  refdataTOverlap: " << count_refdataTOverlap << "\t" << size_refdataTOverlap / 1024 << " kiB" << endl;
             if (count_hapdata)
                 cerr << "  hapdata:         " << count_hapdata << "\t" << size_hapdata / 1024 << " kiB" << endl;
             if (count_tgt_gt)

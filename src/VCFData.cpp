@@ -763,9 +763,9 @@ void VCFData::processNextChunk() {
             for (auto &t : targetsOverlap)
                 t.reserve(Mprenext);
             size_t capacitynext = roundToMultiple<size_t>(Mprenext, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8; // space for Mprenext SNPs
-            refdataOverlap = (BooleanVector::data_type*) MyMalloc::realloc(refdataOverlap, Nrefhapsmax*capacitynext, "refdataOverlap_c" + to_string(currChunk));
+            refdataOverlap = (BooleanVector::data_type*) MyMalloc::realloc(refdataOverlap, Nrefhapsmax*capacitynext, "refdata_c" + to_string(currChunk+1));
             size_t capacityTnext = roundToMultiple<size_t>(Nrefhapsmax, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8;
-            refdataTOverlap = (BooleanVector::data_type*) MyMalloc::realloc(refdataTOverlap, Mprenext*capacityTnext, "refdataTOverlap_c" + to_string(currChunk));
+            refdataTOverlap = (BooleanVector::data_type*) MyMalloc::realloc(refdataTOverlap, Mprenext*capacityTnext, "refdataT_c" + to_string(currChunk+1));
             if (!refdataOverlap || !refdataTOverlap) {
                 StatusFile::addError("Not enough memory for phasing reference!");
                 exit(EXIT_FAILURE);
