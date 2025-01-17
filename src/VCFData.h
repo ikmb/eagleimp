@@ -341,7 +341,7 @@ private:
     bool improveCalls;
 
     bool skipHeader;
-    int overrideChunks;
+//    int overrideChunks;
 
     size_t tgtlinesread;
     size_t reflinesread;

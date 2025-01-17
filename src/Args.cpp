@@ -289,7 +289,7 @@ Args::Args(int argc, char *argv[]) :
     ("overwriteCalls", "imputation is allowed to change genotype calls from the input, it will do so whenever the imputation result is different to the original call")
     ("improveCalls", "as in --overwriteCalls imputation is allowed to change genotype calls, but only if the dosage will be improved")
     ("numTmpFiles", value<unsigned>(&num_files)->default_value(0), "number of temporary files for imputation output (0=auto)")
-    ("overrideChunks", value<int>(&overrideChunks)->default_value(0), "disable automatic chunk division and set to provided number (0=auto enabled)")
+//    ("overrideChunks", value<int>(&overrideChunks)->default_value(0), "disable automatic chunk division and set to provided number (0=auto enabled)")
     ("skipHeader", "skip writing of VCF header for output files")
     ("deterministic", "disable random generator such that the output is deterministic for each run")
     ("debug", "produce lots of debug output")

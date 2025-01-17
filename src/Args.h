@@ -154,7 +154,7 @@ public:
     bool createQuickRef = false;
     bool skipHeader = false;
 
-    int overrideChunks;
+//    int overrideChunks;
     bool deterministic = false;
     bool debug = false;
     bool yaml = false;

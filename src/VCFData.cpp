@@ -75,7 +75,7 @@ VCFData::VCFData(const Args& args, int argc, char** argv, const vector<FPGAConfi
       overwriteCalls(args.overwriteCalls),
       improveCalls(args.improveCalls),
       skipHeader(args.skipHeader),
-      overrideChunks(args.overrideChunks),
+//      overrideChunks(args.overrideChunks),
       numThreads(args.num_threads),
       usefpga(!fpgaconfs.empty()),
       yaml(args.yaml)
@@ -446,14 +446,14 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         if (createQRef) { // no chunking required for creating a Qref
             nChunks = 1;
         } else {
-            if (overrideChunks) { // override chunk calculation
-                nChunks = overrideChunks;
-                StatusFile::addWarning("Automatic chunk division disabled by user.");
-                if (reqsum_dyn/nChunks > maxchunkmem-reqsum_stat) {
-                    StatusFile::addWarning("The analysis of your target data together with the reference will probably not fit into memory!<br>\n"
-                            "  Estimated maximum memory requirements per chunk: " + to_string(reqsum_dyn/nChunks+reqsum_stat) + " bytes.");
-                }
-            } else {
+//            if (overrideChunks) { // override chunk calculation
+//                nChunks = overrideChunks;
+//                StatusFile::addWarning("Automatic chunk division disabled by user.");
+//                if (reqsum_dyn/nChunks > maxchunkmem-reqsum_stat) {
+//                    StatusFile::addWarning("The analysis of your target data together with the reference will probably not fit into memory!<br>\n"
+//                            "  Estimated maximum memory requirements per chunk: " + to_string(reqsum_dyn/nChunks+reqsum_stat) + " bytes.");
+//                }
+//            } else {
                 nChunks = divideRounded(reqsum_dyn, maxchunkmem-reqsum_stat); // a safety margin is already included in reqsum
                 if (nChunks > 1) {
                     // recalculate memory requirements per chunk including overlap
@@ -504,14 +504,14 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
                         StatusFile::addWarning("<b>Disabled FPGA:</b> Chunk size too small. Reverted number of chunks to " + to_string(nChunks) + " and continuing with CPU only.");
                     }
                 }
-            }
+//            }
 
             // check if chunk size is large enough:
             // as an overlap will be defined on both ends of a chunk, chunk size must be at least two overlaps!
             if (nChunks > 1 && Mglob/nChunks < 2*chunkflanksize) {
                 string serr("<b>Analysis not possible:</b> Too many chunks.");
-                if (!overrideChunks)
-                    serr += " Try larger chunk memory size with --maxChunkMemory.";
+//                if (!overrideChunks)
+                serr += " If possible, try larger chunk memory size with --maxChunkMemory.";
                 StatusFile::addError(serr);
                 exit(EXIT_FAILURE);
             }
