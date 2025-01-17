@@ -277,12 +277,12 @@ int main(int argc, char *argv[]) {
     steps *= vcfdata.getNChunks(); // all steps repeated for each chunk
     StatusFile::updateSteps(0,steps);
 
-//    // DEBUG
+    // DEBUG
+    MyMalloc::printSummary(string("before chunks"));
 //    ofstream memofs(args.outPrefix + ".memmap_bc");
-//    MyMalloc::printSummary(string("before chunks"));
 //    MyMalloc::dumpMemMap(memofs);
 //    memofs.close();
-//    // __DEBUG
+    // __DEBUG
 
     // process data in chunks
     for (int chunk = 0; chunk < vcfdata.getNChunks(); chunk++) {
@@ -493,12 +493,12 @@ int main(int argc, char *argv[]) {
 
         MyMalloc::free(pdata);
 
-//        // DEBUG
+        // DEBUG
+        MyMalloc::printSummary(string("intermediate after chunk ")+to_string(chunk+1));
 //        ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
-//        MyMalloc::printSummary(string("intermediate after chunk ")+to_string(chunk));
 //        MyMalloc::dumpMemMap(ofs);
 //        ofs.close();
-//        // __DEBUG
+        // __DEBUG
 
     } // end for all chunks
     StatusFile::clearContext();
@@ -520,12 +520,12 @@ int main(int argc, char *argv[]) {
 
     } // all destructors called
 
-//    // DEBUG
+    // DEBUG
+    MyMalloc::printSummary(string("at end"));
 //    ofstream ofs(args.outPrefix + ".memmap_end");
-//    MyMalloc::printSummary(string("at end"));
 //    MyMalloc::dumpMemMap(ofs);
 //    ofs.close();
-//    // __DEBUG
+    // __DEBUG
 
     return EXIT_SUCCESS;
 }

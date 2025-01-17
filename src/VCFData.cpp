@@ -533,8 +533,8 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             startChunkFlankIdx.push_back(curridx - chunkflanksize); // as the chunk size will be larger than the flank size, this index will exist
             endChunkFlankIdx.push_back(curridx + chunkflanksize); // as the chunk size will be larger than the flank size, this index will exist as well
         }
-        // calculate the maximum possible extension of a chunk by the size of the last chunk minus 2*flanksize
-        maxChunkExtension = Mglob - startChunkFlankIdx.back() - 2*chunkflanksize;
+        // calculate the maximum possible extension of a chunk TODO still required??
+        maxChunkExtension = 0; //Mglob - startChunkFlankIdx.back() - 2*chunkflanksize;
         // sentinel at the end
         startChunkIdx.push_back(Mglob);
         startChunkFlankIdx.push_back(Mglob); // important to have no overlap here!
@@ -648,12 +648,14 @@ void VCFData::processNextChunk() {
     VCFStats lstats;
 
     // reset maxChunkExtension for each chunk
-    int64_t currMaxChunkExtension = maxChunkExtension;
+//    int64_t currMaxChunkExtension = maxChunkExtension;
+    int64_t currMaxChunkExtension = currChunk == nChunks-1 ? 0 : startChunkFlankIdx[currChunk+2] - endChunkFlankIdx[currChunk]; // zero for the last chunk
+    int64_t nextMaxChunkExtension = currChunk >= nChunks-2 ? 0 : startChunkFlankIdx[currChunk+3] - endChunkFlankIdx[currChunk+1]; // zero for the last two chunks
 
     // determine Mpre for chunks:
     // Mpre is the number of target variants in the current chunk
     size_t Mpre = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk] + currMaxChunkExtension;
-    size_t Mprenext = currChunk < nChunks-1 ? endChunkFlankIdx[currChunk+1] - startChunkFlankIdx[currChunk+1] + currMaxChunkExtension : 0;
+    size_t Mprenext = currChunk < nChunks-1 ? endChunkFlankIdx[currChunk+1] - startChunkFlankIdx[currChunk+1] + nextMaxChunkExtension : 0;
 
     if (!createQRef) {
         cout << "\n----------------------------------------------------------------\n--- ";
@@ -663,6 +665,12 @@ void VCFData::processNextChunk() {
         cout << "Chunk " << currChunk+1 << "/" << nChunks << ":" << endl;
         cout << "----------------------------------------------------------------" << endl;
 
+        // DEBUG
+        cerr << "sf/s/e: " << startChunkFlankIdx[currChunk] << "/" << startChunkIdx[currChunk] << "/" << endChunkFlankIdx[currChunk]
+             << " sizef/size: " <<  endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk] << "/" << endChunkFlankIdx[currChunk] - startChunkIdx[currChunk]
+             << " tgtlinesread: " << tgtlinesread
+             << " sfn/sn: " << startChunkFlankIdx[currChunk+1] << "/" << startChunkIdx[currChunk+1]
+             << endl;
 
         // prepare memory for target data of current chunk, copy overlap from previous chunk
 
@@ -823,6 +831,12 @@ void VCFData::processNextChunk() {
         ptgtIdxOverlap.reserve(Mrefpre);
     }
 
+    // DEBUG
+    MyMalloc::printSummary(string("intermediate before reading chunk ")+to_string(currChunk+1));
+//        ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
+//        MyMalloc::dumpMemMap(ofs);
+//        ofs.close();
+    // __DEBUG
 
     Stopwatch swrdvcf("Read data");
     stringstream ss;
@@ -915,13 +929,18 @@ void VCFData::processNextChunk() {
 
                 // check, how we get along with our memory
                 if (tgtlinesread == startChunkFlankIdx[currChunk+1]) { // this is the first line of the overlap to the next chunk
+                    // DEBUG
+                    cerr << "*** At overlap! maxChunkExtension: " << currMaxChunkExtension << endl;
+
                     // if there's enough space left, extend this chunk by some sites
                     // NOTE: if we are at the last chunk, we will never reach this point.
                     if (currMaxChunkExtension > 0) {
                         size_t chunksize = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk];
-                        size_t memlimit = (maxchunkmem * tgtlinesread) / chunksize; // memory which may be used up by now
+                        size_t memlimit = (maxchunkmem * (tgtlinesread - startChunkFlankIdx[currChunk])) / chunksize; // memory which may be used up by now
+                        // DEBUG
+                        cerr << "*** currAlloced: " << MyMalloc::getCurrentAlloced()/1024/1024 << " memlimit: " << memlimit/1024/1024 << endl;
                         if (MyMalloc::getCurrentAlloced() < memlimit) {
-                            int64_t extension = max(currMaxChunkExtension/10, (int64_t)1); // 10% of available extension, at least one site
+                            int64_t extension = currMaxChunkExtension; // max(currMaxChunkExtension/10, (int64_t)1); // 10% of available extension, at least one site
                             startChunkFlankIdx[currChunk+1] += extension;
                             startChunkIdx[currChunk+1] += extension;
                             endChunkFlankIdx[currChunk] += extension;
@@ -1536,6 +1555,14 @@ void VCFData::processNextChunk() {
     }
 
     swrdvcf.stop();
+
+    // DEBUG
+    cerr << "sf/s/e: " << startChunkFlankIdx[currChunk] << "/" << startChunkIdx[currChunk] << "/" << endChunkFlankIdx[currChunk]
+         << " size/sizef: " <<  endChunkFlankIdx[currChunk] - startChunkIdx[currChunk] << "/" << endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk]
+         << " tgtlinesread: " << tgtlinesread
+         << " sfn/sn: " << startChunkFlankIdx[currChunk+1] << "/" << startChunkIdx[currChunk+1]
+         << endl;
+
 
     if (pgb == 0) // just printed "xx%"
         cout << ".";

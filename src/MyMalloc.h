@@ -63,14 +63,60 @@ public:
         cerr << "not freed:    " << getCurrentAlloced() << " (" << MyMalloc::getCurrentAlloced()/(1024*1024) << " MiB)" << endl;
         cerr << "max. alloced: " << getMaxAlloced() << " (" << MyMalloc::getMaxAlloced()/(1024*1024) << " MiB)" << endl;
         const auto &memmap = mm.mem_map;
-        cerr << "Remaining map entries (size in MiB): " << memmap.size() << endl;
+        cerr << "Remaining map entries: " << memmap.size() << endl;
         if (memmap.size()) {
-            auto mapit = memmap.cbegin();
-            for (int i=0; i < 20 && mapit != memmap.cend(); i++, mapit++) {
-                cerr << " " << i << ":\t" << mapit->second.second << "\t" << mapit->second.first/(1024*1024) << endl;
+            int count_refdata = 0;
+            int count_refdataT = 0;
+            int count_refdataOverlap = 0;
+            int count_refdataTOverlap = 0;
+            int count_hapdata = 0;
+            int count_tgt_gt = 0;
+            int count_else = 0;
+            size_t size_refdata = 0;
+            size_t size_refdataT = 0;
+            size_t size_refdataOverlap = 0;
+            size_t size_refdataTOverlap = 0;
+            size_t size_hapdata = 0;
+            size_t size_tgt_gt = 0;
+            size_t size_else = 0;
+            for (const auto &m : memmap) {
+                if (m.second.second.find("refdataTOverlap") != string::npos) {
+                    count_refdataTOverlap++;
+                    size_refdataTOverlap += m.second.first;
+                } else if (m.second.second.find("refdataOverlap") != string::npos) {
+                    count_refdataOverlap++;
+                    size_refdataOverlap += m.second.first;
+                } else if (m.second.second.find("refdataT") != string::npos) {
+                    count_refdataT++;
+                    size_refdataT += m.second.first;
+                } else if (m.second.second.find("refdata") != string::npos) {
+                    count_refdata++;
+                    size_refdata += m.second.first;
+                } else if (m.second.second.find("hapdata") != string::npos) {
+                    count_hapdata++;
+                    size_hapdata += m.second.first;
+                } else if (m.second.second.find("tgt_gt") != string::npos) {
+                    count_tgt_gt++;
+                    size_tgt_gt += m.second.first;
+                } else {
+                    count_else++;
+                    size_else += m.second.first;
+                }
             }
-            if (mapit != memmap.cend())
-                cerr << " ..." << endl;
+            if (count_refdata)
+                cerr << "  refdata:         " << count_refdata << "\t" << size_refdata / 1024 << " kiB" << endl;
+            if (count_refdataT)
+                cerr << "  refdataT:        " << count_refdataT << "\t" << size_refdataT / 1024 << " kiB" << endl;
+            if (count_refdataOverlap)
+                cerr << "  refdataOverlap:  " << count_refdataOverlap << "\t" << size_refdataOverlap / 1024 << " kiB" << endl;
+            if (count_refdataTOverlap)
+                cerr << "  refdataTOverlap: " << count_refdataTOverlap << "\t" << size_refdataTOverlap / 1024 << " kiB" << endl;
+            if (count_hapdata)
+                cerr << "  hapdata:         " << count_hapdata << "\t" << size_hapdata / 1024 << " kiB" << endl;
+            if (count_tgt_gt)
+                cerr << "  tgt_gt:          " << count_tgt_gt << "\t" << size_tgt_gt / 1024 << " kiB" << endl;
+            if (count_else)
+                cerr << "  other:           " << count_else << "\t" << size_else / 1024 << " kiB" << endl;
         }
     }
 
