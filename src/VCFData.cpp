@@ -523,22 +523,25 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         endChunkFlankIdx.clear();
 
         // we start with the first target index
-        size_t curridx = 0;
-        startChunkIdx.push_back(curridx);
-        startChunkFlankIdx.push_back(curridx);
-        for (int chunk = 1; chunk < nChunks; chunk++) {
-            // equally distribute variants
-            curridx += Mglob/nChunks + ((size_t)chunk < Mglob%nChunks ? 1 : 0); // add size of current chunk to get start index of next chunk
+//        size_t curridx = 0;
+        startChunkIdx.push_back(0);
+        startChunkFlankIdx.push_back(0);
+        // we only prepare preliminary limits for the next chunk, others will be generated on-the-fly
+//        for (int chunk = 1; chunk < nChunks; chunk++)
+        {
+//            // equally distribute variants
+//            curridx += Mglob/nChunks + ((size_t)chunk < Mglob%nChunks ? 1 : 0); // add size of current chunk to get start index of next chunk
+            size_t curridx = Mglob/nChunks; // add size of current chunk to get start index of next chunk
             startChunkIdx.push_back(curridx);
             startChunkFlankIdx.push_back(curridx - chunkflanksize); // as the chunk size will be larger than the flank size, this index will exist
             endChunkFlankIdx.push_back(curridx + chunkflanksize); // as the chunk size will be larger than the flank size, this index will exist as well
         }
         // calculate the maximum possible extension of a chunk TODO still required??
         maxChunkExtension = 0; //Mglob - startChunkFlankIdx.back() - 2*chunkflanksize;
-        // sentinel at the end
-        startChunkIdx.push_back(Mglob);
-        startChunkFlankIdx.push_back(Mglob); // important to have no overlap here!
-        endChunkFlankIdx.push_back(Mglob);
+//        // sentinel at the end
+//        startChunkIdx.push_back(Mglob);
+//        startChunkFlankIdx.push_back(Mglob); // important to have no overlap here!
+//        endChunkFlankIdx.push_back(Mglob);
 
         if (!createQRef) {
             StatusFile::addInfo("<p class='pinfo'>Data will be processed in " + to_string(nChunks) + " chunks" + (nChunks > 1 ? "." : " (no splitting required).</p>"), false);
@@ -647,15 +650,19 @@ void VCFData::processNextChunk() {
     // the statistics collected here are only for the current chunk and without the overlap from the previous chunk
     VCFStats lstats;
 
-    // reset maxChunkExtension for each chunk
-//    int64_t currMaxChunkExtension = maxChunkExtension;
-    int64_t currMaxChunkExtension = currChunk == nChunks-1 ? 0 : startChunkFlankIdx[currChunk+2] - endChunkFlankIdx[currChunk]; // zero for the last chunk
-    int64_t nextMaxChunkExtension = currChunk >= nChunks-2 ? 0 : startChunkFlankIdx[currChunk+3] - endChunkFlankIdx[currChunk+1]; // zero for the last two chunks
+//    // reset maxChunkExtension for each chunk
+////    int64_t currMaxChunkExtension = maxChunkExtension;
+//    int64_t currMaxChunkExtension = currChunk == nChunks-1 ? 0 : startChunkFlankIdx[currChunk+2] - endChunkFlankIdx[currChunk]; // zero for the last chunk
+//    int64_t nextMaxChunkExtension = currChunk >= nChunks-2 ? 0 : startChunkFlankIdx[currChunk+3] - endChunkFlankIdx[currChunk+1]; // zero for the last two chunks
+    // Chunk size at the beginning is determined from an equal distribution of tgt variants to reference variants.
+    // But as this is often not the case, we allow a chunk to be extended to maximum three times its original size.
+    int64_t currMaxChunkExtension = min(Mglob - endChunkFlankIdx[currChunk], 3 * (endChunkFlankIdx[currChunk]-startChunkFlankIdx[currChunk]));
 
     // determine Mpre for chunks:
     // Mpre is the number of target variants in the current chunk
     size_t Mpre = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk] + currMaxChunkExtension;
-    size_t Mprenext = currChunk < nChunks-1 ? endChunkFlankIdx[currChunk+1] - startChunkFlankIdx[currChunk+1] + nextMaxChunkExtension : 0;
+//    size_t Mprenext = currChunk < nChunks-1 ? endChunkFlankIdx[currChunk+1] - startChunkFlankIdx[currChunk+1] + nextMaxChunkExtension : 0;
+    size_t Mprenext = Mpre; // can potentially be the same size
 
     if (!createQRef) {
         cout << "\n----------------------------------------------------------------\n--- ";
@@ -871,7 +878,8 @@ void VCFData::processNextChunk() {
 
     // read data SNP-wise in positional sorted order from target and reference
     // the function also takes care that we only read the requested region
-    while ((currChunk == nChunks-1 || tgtlinesread < endChunkFlankIdx[currChunk]) && bcf_sr_next_line(sr)) {
+//    while ((currChunk == nChunks-1 || tgtlinesread < endChunkFlankIdx[currChunk]) && bcf_sr_next_line(sr)) { // need to stay in the loop after last tgt variant if we read a VCF reference
+    while (tgtlinesread < endChunkFlankIdx[currChunk] && bcf_sr_next_line(sr)) {
 
         bcf1_t *ref = NULL;
         bcf1_t *tgt = NULL;
@@ -912,7 +920,7 @@ void VCFData::processNextChunk() {
         if (!createQRef) {
             tgt = bcf_sr_get_line(sr, loadQuickRef ? 0 : 1); // read one line of target, if available at current position (otherwise NULL)
             if (tgt) {
-                if (tgtlinesread % 1024 == 0) { // TODO as the chunk size is (approximately) known, we can use this to better display the progress
+                if (tgtlinesread % 1024 == 0) { // TODO as the chunk size is (approximately) known, we can use this to better display the progress (i.e. change the modulus)
                     float progress = currChunk == 0 ? (tgtlinesread/(float)endChunkFlankIdx[0]) : ((tgtlinesread - endChunkFlankIdx[currChunk-1])/(float)(endChunkFlankIdx[currChunk]-endChunkFlankIdx[currChunk-1]));
                     int progresspercent = currChunk == 0 ? (100*tgtlinesread/endChunkFlankIdx[0]) : (100*(tgtlinesread - endChunkFlankIdx[currChunk-1])/(endChunkFlankIdx[currChunk]-endChunkFlankIdx[currChunk-1]));
                     StatusFile::updateStatus(progress);
@@ -933,7 +941,6 @@ void VCFData::processNextChunk() {
                     cerr << "*** At overlap! maxChunkExtension: " << currMaxChunkExtension << endl;
 
                     // if there's enough space left, extend this chunk by some sites
-                    // NOTE: if we are at the last chunk, we will never reach this point.
                     if (currMaxChunkExtension > 0) {
                         size_t chunksize = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk];
                         size_t memlimit = (maxchunkmem * (tgtlinesread - startChunkFlankIdx[currChunk])) / chunksize; // memory which may be used up by now
@@ -957,11 +964,6 @@ void VCFData::processNextChunk() {
                     size_t chunksize = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk];
                     size_t memlimit = (maxchunkmem * (chunksize - 2*chunkflanksize)) / chunksize; // memory which may be used up by now
                     if (MyMalloc::getCurrentAlloced() > memlimit) {
-                        // DEBUG
-                        if (currChunk == nChunks-1) {
-                            cerr << "XXX Oh, oh! Reduction of last chunk not possible!!" << endl;
-                        } else {
-                        // __DEBUG
                         int64_t reduction = startChunkFlankIdx[currChunk+1] - tgtlinesread; // difference to the previously calculated start of the overlap
                         startChunkFlankIdx[currChunk+1] -= reduction;
                         startChunkIdx[currChunk+1] -= reduction;
@@ -970,8 +972,6 @@ void VCFData::processNextChunk() {
                         inOverlap = true;
                         // DEBUG
                         cerr << "--- REDUCED chunk by " << reduction << " sites. (maxChunkExtension: " << currMaxChunkExtension << ")" << endl;
-                        }
-                        // __DEBUG
                     }
                 }
 
@@ -1495,14 +1495,27 @@ void VCFData::processNextChunk() {
     free(ref_gt);
     free(tgt_gt);
 
-    // if we are at the end of the last chunk and we loaded a Qref, the last ref-only variants have to be processed
-    if (loadQuickRef && currChunk == nChunks-1) {
-        while (qrefcurridxreg < Mrefreg) {
-            qRefLoadNextVariant();
-            isImputed.push_back(true); // this is the default and may change below if we found a common SNP here that will be phased
-            nextPidx.push_back(bcf_pout.size());
-            ptgtIdx.push_back(currM);
-            currMref++;
+    if (loadQuickRef) {
+        if (tgtlinesread == Mglob) { // if we are at the end of the last chunk and we loaded a Qref, the last ref-only variants have to be processed
+            // set the final number of chunks
+            nChunks = currChunk + 1;
+            while (qrefcurridxreg < Mrefreg) {
+                // TODO we have to check the memory here and break up if there are too many reference variants left!
+                qRefLoadNextVariant();
+                isImputed.push_back(true); // this is the default and may change below if we found a common SNP here that will be phased
+                nextPidx.push_back(bcf_pout.size());
+                ptgtIdx.push_back(currM);
+                currMref++;
+            }
+        } else { // there will be another chunk, prepare preliminary limits
+            // we assume the size of the next chunk to be as estimated for the current chunk as well
+            size_t offset = Mglob/nChunks; // equal distribution assumed
+            startChunkIdx.push_back(min(Mglob, startChunkIdx.back() + offset));
+            startChunkFlankIdx.push_back(min(Mglob, startChunkFlankIdx.back() + offset)); // as the chunk size will be larger than the flank size, this index will exist
+            endChunkFlankIdx.push_back(min(Mglob, endChunkFlankIdx.back() + offset)); // as the chunk size will be larger than the flank size, this index will exist as well
+            // if this was the last estimated chunk, we need to increase nChunks now
+            if (currChunk == nChunks-1)
+                nChunks++;
         }
     }
 
