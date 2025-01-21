@@ -720,10 +720,10 @@ void VCFData::processNextChunk() {
             endChunkBp = endRegionBp;
 
             // prepare metadata for first chunk
-            isPhased.reserve(maxChunkTgtVars);
-            alleleFreqsCommon.reserve(maxChunkTgtVars);
-            bcf_pout.reserve(maxChunkTgtVars);
-            cMs.reserve(maxChunkTgtVars);
+            isPhased.reset(maxChunkTgtVars);
+            alleleFreqsCommon.reset(maxChunkTgtVars);
+            bcf_pout.reset(maxChunkTgtVars);
+            cMs.reset(maxChunkTgtVars);
             // prepare target data
             for (auto &t : targets)
                 t.reserve(maxChunkTgtVars);
@@ -763,10 +763,10 @@ void VCFData::processNextChunk() {
             alleleFreqsCommon = move(alleleFreqsCommonOverlap);
             bcf_pout = move(bcf_poutOverlap);
             cMs = move(cMsOverlap);
-            isPhasedOverlap = move(vector<bool>());
-            alleleFreqsCommonOverlap = move(vector<float>());
-            bcf_poutOverlap = move(vector<bcf1_t*>());
-            cMsOverlap = move(vector<fp_type>());
+            isPhasedOverlap = move(RingBuffer<bool>());
+            alleleFreqsCommonOverlap = move(RingBuffer<float>());
+            bcf_poutOverlap = move(RingBuffer<bcf1_t*>());
+            cMsOverlap = move(RingBuffer<fp_type>());
             // target data
             for (size_t tidx = 0; tidx < Ntarget; tidx++) {
                 targets[tidx] = move(targetsOverlap[tidx]);
@@ -789,10 +789,10 @@ void VCFData::processNextChunk() {
         // prepare for next chunk as well
         // (in general if there will definitely be more than one chunk)
         if (minNChunks > 1) {
-            isPhasedOverlap.reserve(maxChunkTgtVars);
-            alleleFreqsCommonOverlap.reserve(maxChunkTgtVars);
-            bcf_poutOverlap.reserve(maxChunkTgtVars);
-            cMsOverlap.reserve(maxChunkTgtVars);
+            isPhasedOverlap.reset(maxChunkTgtVars);
+            alleleFreqsCommonOverlap.reset(maxChunkTgtVars);
+            bcf_poutOverlap.reset(maxChunkTgtVars);
+            cMsOverlap.reset(maxChunkTgtVars);
             for (auto &t : targetsOverlap)
                 t.reserve(maxChunkTgtVars);
             size_t capacitynext = roundToMultiple<size_t>(maxChunkTgtVars, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8; // space for maxChunkTgtVars SNPs
@@ -830,10 +830,10 @@ void VCFData::processNextChunk() {
             if (doImputation) // only required for imputation
                 referenceFullT.reserve(Mrefpre); // don't need to prepare data memory anymore, will be done on-the-fly
             // prepare metadata for first and already for next chunk
-            isImputed.reserve(Mrefpre);
-            indexToRefFull.reserve(maxChunkTgtVars);
-            nextPidx.reserve(Mrefpre);
-            ptgtIdx.reserve(Mrefpre);
+            isImputed.reset(Mrefpre);
+            indexToRefFull.reset(maxChunkTgtVars);
+            nextPidx.reset(Mrefpre);
+            ptgtIdx.reset(Mrefpre);
         } else { // currChunk > 0
 
             // beginning of current chunk relative to region (reference-based index)
@@ -857,16 +857,16 @@ void VCFData::processNextChunk() {
             indexToRefFull = move(indexToRefFullOverlap);
             nextPidx = move(nextPidxOverlap);
             ptgtIdx = move(ptgtIdxOverlap);
-            isImputedOverlap = move(vector<bool>());
-            indexToRefFullOverlap = move(vector<size_t>());
-            nextPidxOverlap = move(vector<size_t>());
-            ptgtIdxOverlap = move(vector<size_t>());
+            isImputedOverlap = move(RingBuffer<bool>());
+            indexToRefFullOverlap = move(RingBuffer<size_t>());
+            nextPidxOverlap = move(RingBuffer<size_t>());
+            ptgtIdxOverlap = move(RingBuffer<size_t>());
         }
         if (minNChunks > 1) {
-            isImputedOverlap.reserve(Mrefpre);
-            indexToRefFullOverlap.reserve(maxChunkTgtVars);
-            nextPidxOverlap.reserve(Mrefpre);
-            ptgtIdxOverlap.reserve(Mrefpre);
+            isImputedOverlap.reset(Mrefpre);
+            indexToRefFullOverlap.reset(maxChunkTgtVars);
+            nextPidxOverlap.reset(Mrefpre);
+            ptgtIdxOverlap.reset(Mrefpre);
         }
 
     } // end if(!createQRef)
@@ -1473,10 +1473,10 @@ void VCFData::processNextChunk() {
 //        }
 //        if (loadQuickRef) { // loaded quick ref
         // we need to change the imputation flag since it was initialized with "true"
-        isImputed.back() = false;
+        isImputed.set_back(false);
         indexToRefFull.push_back(isImputed.size()-1);
         if (inOverlap) {
-            isImputedOverlap.back() = false;
+            isImputedOverlap.set_back(false);
             indexToRefFullOverlap.push_back(isImputedOverlap.size()-1);
         }
         // nextPidx and ptgtIdx was already taken care of after loading the Qref
@@ -3030,7 +3030,7 @@ void VCFData::writeVCFPhased(const vector<BooleanVector> &phasedTargets) {
             }
         }
         bcf_destroy(*rec_it);
-        rec_it++;
+        ++rec_it;
     } // for
 
     MyMalloc::free(tgt_gt);

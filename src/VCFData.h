@@ -86,7 +86,7 @@ public:
     const vector<GenotypeVector> &getTargets() const { return targets; }
     const vector<vector<size_t>> &getTgtMissPos() const { return tgtmiss; }
     const vector<vector<bool>> &getTgtInPhases() const { return tgtinphase; }
-    const vector<fp_type> &getCMPos() const { return cMs; }
+    const RingBuffer<fp_type> &getCMPos() const { return cMs; }
     const vector<string> &getTargetIDs() const { return targetIDs; }
 
     // returns the number of reference haplotypes (NOTE: haploids are encoded as homozygous diploid!)
@@ -214,12 +214,12 @@ private:
     vector<vector<bool>> tgtinphase; // input target phases, true == mat:1 pat:0, false others (only stored if --skipPhasing is enabled)
     vector<vector<bool>> tgtinphaseOverlap; // input target phases, true == mat:1 pat:0, false others (only stored if --skipPhasing is enabled) (overlap region)
     vector<uint64_t> chrBpsReg; // base pair positions of target SNPs on target chromosome, size is Mreg
-    vector<fp_type> cMs; // size is M
-    vector<fp_type> cMsOverlap;
+    RingBuffer<fp_type> cMs; // size is M
+    RingBuffer<fp_type> cMsOverlap;
     fp_type cM0; // for the statistics: store first cM value
     vector<string> targetIDs; // identifier strings for target samples
-    vector<bool> isPhased; // size corresponds to the number of SNPs which will be written to phased output file in curr chunk (M if "!outputUnphased") and indicates if the entry is/will be phased or not
-    vector<bool> isPhasedOverlap; // same for overlap region
+    RingBuffer<bool> isPhased; // size corresponds to the number of SNPs which will be written to phased output file in curr chunk (M if "!outputUnphased") and indicates if the entry is/will be phased or not
+    RingBuffer<bool> isPhasedOverlap; // same for overlap region
     vector<bool> haploidsTgt; // flag for all samples in target that are haploid
     vector<bool> haploidsTgt_initialized; // flag for all samples if the information in haploidsTgt is valid, usually set after first target SNP (just in the case if the first genotype is missing, it will be set later)
     vector<size_t> haploidsTgtMap; // map index of any haplotype vector (indexed from where haploids are encoded as haploids) to index in target haps where haploids are encoded as homozygous diploid
@@ -228,25 +228,25 @@ private:
     vector<bool> haploidsRef_initialized; // flag for all samples if the information in haploidsRef is valid, usually set after first reference SNP (just in the case if the first genotype is missing, it will be set later)
     vector<size_t> haploidsRefMap; // map index of any haplotype vector (indexed from where haploids are encoded as haploids) to index in reference where haploids are encoded as homozygous diploid
     size_t       nHaploidsRef = 0; // number of haploid reference samples
-    vector<float> alleleFreqsCommon; // size corresponds to phased sites, contains the allele frequencies of each variant (-1.0 if unknown)
-    vector<float> alleleFreqsCommonOverlap; // for overlap
-    vector<bcf1_t*> bcf_pout; // all records w/o genotypes for phased output; if "outputUnphased" is set, this vector keeps the records of the unphased SNPs including genotypes as well; ensure to add copies only!
-    vector<bcf1_t*> bcf_poutOverlap; // same for overlap region
+    RingBuffer<float> alleleFreqsCommon; // size corresponds to phased sites, contains the allele frequencies of each variant (-1.0 if unknown)
+    RingBuffer<float> alleleFreqsCommonOverlap; // for overlap
+    RingBuffer<bcf1_t*> bcf_pout; // all records w/o genotypes for phased output; if "outputUnphased" is set, this vector keeps the records of the unphased SNPs including genotypes as well; ensure to add copies only!
+    RingBuffer<bcf1_t*> bcf_poutOverlap; // same for overlap region
     bcf_hdr_t *tgt_hdr_cpy; // copy of the target header used for the phased output file -> for imputation, the sample names are copied
 
-    vector<bool> isImputed; // size corresponds to imputation output of current chunk, indicates if the SNP is/will be imputed or not
-    vector<bool> isImputedOverlap; // overlap region
+    RingBuffer<bool> isImputed; // size corresponds to imputation output of current chunk, indicates if the SNP is/will be imputed or not
+    RingBuffer<bool> isImputedOverlap; // overlap region
     // for each analyzed target SNP the index in the full reference vector that corresponds to this SNP, size is M
-    vector<size_t> indexToRefFull;
-    vector<size_t> indexToRefFullOverlap; // for overlap region
+    RingBuffer<size_t> indexToRefFull;
+    RingBuffer<size_t> indexToRefFullOverlap; // for overlap region
     // for each reference SNP the index for the next common site in the the target, size as Mref
     // (index corresponds to position in targets vector if the current site is common, the index corresponds to the same site;
     // if no common index follows, the stored value is M)
-    vector<size_t> nextPidx;
-    vector<size_t> nextPidxOverlap;
+    RingBuffer<size_t> nextPidx;
+    RingBuffer<size_t> nextPidxOverlap;
     // for each reference SNP the index for the commonly analyzed target site (i.e. the index in phasedTarget), it points to the next common site if this site was not analyzed in phasing
-    vector<size_t> ptgtIdx;
-    vector<size_t> ptgtIdxOverlap;
+    RingBuffer<size_t> ptgtIdx;
+    RingBuffer<size_t> ptgtIdxOverlap;
 
     vector<int64_t> positionsFullRefRegion; // chromosome positions of complete reference in region
     vector<float> alleleFreqsFullRefRegion; // allele frequencies of each variant in complete reference in region

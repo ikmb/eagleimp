@@ -354,6 +354,9 @@ private:
 
 
 template<typename T>
+class RingBufferIterator;
+
+template<typename T>
 class RingBuffer {
 
 public:
@@ -363,35 +366,51 @@ public:
         reset(_capacity);
     }
 
-    ~RingBuffer(){}
+    ~RingBuffer() = default;
 
-    // no check if the capacity is reduced!
     void reset(size_t _capacity) {
         capacity = _capacity;
         buffer.resize(_capacity);
         clear();
     }
 
-    // insert an element at the end, no check if the end was reached. (faster!)
-    void push_back(T e) {
-        // DEBUG
+    // insert an element at the end, increase (double) capacity if required
+    void push_back(const T& e) {
+        // increase capacity if required
         if (len == capacity) {
-            cerr << "ERROR: RingBuffer: Tried to insert element in full buffer!";
-            return;
-        }
+            // DEBUG
+            cerr << "WARNING: RingBuffer: Increasing capacity to " << 2*capacity << "." << endl;
 
-        buffer[end] = e;
-        end++;
-        if (end == capacity)
-            end = 0;
+            buffer.resize(2*capacity); // we double here to ensure there's enough new space in case we need to copy the whole old vector now
+            // copy all elements from 0 to start to the new allocated area at the end of the old vector
+            // NOTE: at this point is last == start, and the old vector was full.
+            for (size_t i=0; i < start; i++) {
+                buffer[capacity+i] = buffer[i];
+            }
+            last = capacity + start;
+            capacity *= 2;
+        }
+        // insert element
+        buffer[last] = e;
+        last++;
+        if (last == capacity)
+            last = 0;
         len++;
     }
 
+    // as alternative to lvalue back(): modify the last element (no check for empty container!)
+    void set_back(const T& e) {
+        if (last > 0)
+            buffer[last-1] = e;
+        else
+            buffer[capacity-1] = e;
+    }
+
     // get an element, no check if this was already inserted. (faster!)
-    T at(size_t pos) {
+    T at(size_t pos) const {
         // DEBUG
         if (pos >= len)
-            cerr << "WARNING: RingBuffer: Accessing element out of range!";
+            cerr << "WARNING: RingBuffer: Accessing element out of range!" << endl;
 
         if (pos >= start)
             return buffer[pos-start];
@@ -399,17 +418,24 @@ public:
             return buffer[pos+start-capacity];
     }
 
-    T operator[](size_t pos) {
+    T back() const {
+        // DEBUG
+        if (len == 0)
+            cerr << "WARNING: RingBuffer: Accessing last element of empty buffer!" << endl;
+        return at(len-1);
+    }
+
+    T operator[](size_t pos) const {
         return at(pos);
     }
 
-    size_t size() {
+    size_t size() const {
         return len;
     }
 
     void clear() {
         start = 0;
-        end = 0;
+        last = 0;
         len = 0;
     }
 
@@ -420,17 +446,44 @@ public:
 
         if (n < len) {
             len = n;
-            start = end > n ? end-n : capacity+end-n;
+            start = last > n ? last-n : capacity+last-n;
         }
     }
 
+    typedef RingBufferIterator<T> iterator;
+
+    iterator begin() { return RingBufferIterator<T>(this, 0); }
+    iterator end() { return RingBufferIterator<T>(this, len); }
 
 private:
     vector<T> buffer;
     size_t capacity = 0;
     size_t start = 0; // inclusive
-    size_t end = 0;   // exclusive
+    size_t last = 0;   // exclusive
     size_t len = 0;
+};
+
+template<typename T>
+class RingBufferIterator {
+
+public:
+    RingBufferIterator() = delete;
+    RingBufferIterator(RingBuffer<T>* rb_, size_t it_ = 0) : rb(rb_), it(it_) {}
+    ~RingBufferIterator(){}
+    RingBufferIterator(const RingBufferIterator<T>&) = default;
+
+    //RingBufferIterator<T>& operator=(const RingBufferIterator<T>&) = default;
+
+    // no boundary check!
+    RingBufferIterator<T>& operator++() { it++; return (*this); }
+    // RingBufferIterator<T>& operator++(int) { auto temp(*this); it++; return temp; } // postfix ++
+    bool operator==(const RingBufferIterator<T>& other) const { return other.rb == rb && other.it == it; };
+    bool operator!=(const RingBufferIterator<T>& other) const { return other.rb != rb || other.it != it; };
+    T operator*() const { return rb->at(it); }
+
+protected:
+    RingBuffer<T>* rb;
+    size_t it;
 };
 
 

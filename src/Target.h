@@ -130,7 +130,7 @@ private:
 
     const vector<BooleanVector> &referenceFull; // full information of reference haps on tgt sites
     const vector<BooleanVector> &referenceFullT; // full information of reference haps on tgt sites (transposed)
-    const vector<fp_type> &cMpos;
+    const RingBuffer<fp_type> &cMpos;
     size_t NrefhapsAllDiploid; // number of reference haplotypes (if haploid is encoded hom. diploid)
     size_t NrefhapsCorrected; // number of really available reference haplotypes (NrefhapsAllDiploid minus number of haploid samples minus 2 for one target if we are in an iteration > 1)
     size_t MFull; // all sites (not only split sites)
