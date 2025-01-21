@@ -352,6 +352,88 @@ private:
     static const data_type HIGHESTPUSHBIT = 1ull << (8*sizeof(data_type)-1);
 };
 
+
+template<typename T>
+class RingBuffer {
+
+public:
+    RingBuffer(){}
+
+    RingBuffer(size_t _capacity) {
+        reset(_capacity);
+    }
+
+    ~RingBuffer(){}
+
+    // no check if the capacity is reduced!
+    void reset(size_t _capacity) {
+        capacity = _capacity;
+        buffer.resize(_capacity);
+        clear();
+    }
+
+    // insert an element at the end, no check if the end was reached. (faster!)
+    void push_back(T e) {
+        // DEBUG
+        if (len == capacity) {
+            cerr << "ERROR: RingBuffer: Tried to insert element in full buffer!";
+            return;
+        }
+
+        buffer[end] = e;
+        end++;
+        if (end == capacity)
+            end = 0;
+        len++;
+    }
+
+    // get an element, no check if this was already inserted. (faster!)
+    T at(size_t pos) {
+        // DEBUG
+        if (pos >= len)
+            cerr << "WARNING: RingBuffer: Accessing element out of range!";
+
+        if (pos >= start)
+            return buffer[pos-start];
+        else
+            return buffer[pos+start-capacity];
+    }
+
+    T operator[](size_t pos) {
+        return at(pos);
+    }
+
+    size_t size() {
+        return len;
+    }
+
+    void clear() {
+        start = 0;
+        end = 0;
+        len = 0;
+    }
+
+    void keepLast(size_t n) {
+        // DEBUG
+        if (n > len)
+            cerr << "WARNING: RingBuffer: Attempting to keep more elements than available." << endl;
+
+        if (n < len) {
+            len = n;
+            start = end > n ? end-n : capacity+end-n;
+        }
+    }
+
+
+private:
+    vector<T> buffer;
+    size_t capacity = 0;
+    size_t start = 0; // inclusive
+    size_t end = 0;   // exclusive
+    size_t len = 0;
+};
+
+
 ostream &operator<<(ostream&, const Haplotype&);
 ostream &operator<<(ostream&, const Genotype&);
 ostream &operator<<(ostream&, const Constraint&);

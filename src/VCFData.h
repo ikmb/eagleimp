@@ -281,8 +281,9 @@ private:
     // global region (end inclusive!)
     int64_t startRegionBp, endRegionBp;
     int64_t startFlankRegionBp, endFlankRegionBp; // including flanks
-    // this is the maximum size of a chunk in target variants
-    const uint64_t maxchunkmem, chunkflanksize;
+    // this is the maximum size of a chunk in bytes
+    const uint64_t maxchunkmem;
+    const uint64_t chunkflanksize; // number of tgt variants in the overlap to the left and to the right (total overlap = 2xchunkflanksize)
     // region for current chunk (without flanks) (end inclusive!)
     // set after reading the corresponding target data
     int64_t startChunkBp, endChunkBp;
@@ -353,10 +354,13 @@ private:
     bcf_srs_t *sr; // synchronized reader, for VCF/BCF
     bcf_hdr_t *ref_hdr; // header for reading reference VCF
     bcf_hdr_t *tgt_hdr; // header for reading target VCF
-    int nChunks = 1; // default
+    int nChunks = 1; // total number of chunks (immediate number, only valid after all data was read)
+    int minNChunks = 1; // minimum number of chunks the analysis is conducted with
+    size_t maxChunkTgtVars = ~0ull; // maximum number of tgt variants allowed in a chunk
     int currChunk = -1; // indicates the currently loaded chunk, -1 indicates "chunk not yet loaded"
-    size_t currChunkOffset; // index offset of current chunk's first local imputation index to reference index in current region
-    int64_t maxChunkExtension = 0; // max. possible extension of a chunk in target sites
+    size_t currChunkOffset = 0; // index offset of current chunk's first local imputation index to reference index in current region
+//    int64_t maxChunkExtension = 0; // max. possible extension of a chunk in target sites
+    size_t chunkReduction = 0;
 
     ofstream infofile; // imputation info file that contains information on each target variant
 

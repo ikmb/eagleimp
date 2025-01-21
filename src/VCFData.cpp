@@ -367,12 +367,11 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             }
         }
 
-        size_t Mrefpre = Mrefglob + Mrefglob/10; // 10% extra for multi-allelic splits
         // condensed references + PBWTs (estimated, if every third site is a call site, fwd+bck and ref+inc, no cref required when using FPGA,
         // but number corresponds to all FPGA pipelines times the capacity of the FPGA processor outqueue, which is fixed to 2)
         size_t reqphasecref = (skipPhasing ? 0 : (usefpga ? fpgaconfs[0].getNumPipelines() * 2 : numThreads)) * min(Nrefhapsmax, args.K) * (Mglob/3) / (usefpga ? 2 : 1);
         size_t reqphasedos = Ntarget * Mglob * 8; // phased dosages
-        size_t reqimpref = doImputation ? (Nrefhaps * Mrefpre) / 8 : 0ull; // required size in bytes for reference haplotypes
+        size_t reqimpref = doImputation ? (Nrefhaps * Mrefglob) / 8 : 0ull; // required size in bytes for reference haplotypes
         size_t reqimppbwt = doImputation ? Nrefhaps * Mglob : 0ull; // PBWT and refT of common reference (if every tgt site is also found in the reference)
         size_t reqimpabsp = doImputation ? Nrefhaps * Mglob * 4 : 0ull; // absolute permutation arrays for reference PBWT (if every tgt site is also found in the reference)
 
@@ -414,7 +413,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         }
         size_t reqsum_dyn = reqphasecref + reqphasedos + reqimpref + reqimppbwt + reqimpabsp;
         size_t reqsum_stat = reqimpbunchhaps + reqimpqueue;
-        size_t reqsafety = reqsum_dyn/4;
+        size_t reqsafety = reqsum_dyn/10;
         reqsum_dyn += reqsafety;
 
         if (!createQRef) { // give a short memory summary
@@ -426,7 +425,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
                 cout << "    Reference haps : " << divideRounded(reqimpref, 1024ul*1024ul) << " MiB" << endl;
                 cout << "    RefT + PBWT    : " << divideRounded(reqimppbwt, 1024ul*1024ul) << " MiB" << endl;
                 cout << "    PBWT absPerm   : " << divideRounded(reqimpabsp, 1024ul*1024ul) << " MiB" << endl;
-                cout << "    25% safety     : " << divideRounded(reqsafety, 1024ul*1024ul) << " MiB" << endl;
+                cout << "    10% safety     : " << divideRounded(reqsafety, 1024ul*1024ul) << " MiB" << endl;
                 cout << "  Static (chunk independent) memory:" << endl;
                 cout << "    Imputed haps   : " << divideRounded(reqimpbunchhaps, 1024ul*1024ul) << " MiB" << endl;
                 cout << "    Outqueue space : " << divideRounded(reqimpqueue, 1024ul*1024ul) << " MiB" << endl;
@@ -437,13 +436,15 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         }
 
 
-        // Determine number of chunks:
+        // Determine number of chunks: TODO check influence of region settings
         // If the user's set a region, we don't know how many variants are actually in that region,
         // so we generate chunk sizes as if no region was set, but reading the region will
         // start filling the first chunk and so on with risking the last chunks to be empty.
         // The last chunk with data will most likely not be filled completely, but the overlap
         // will ensure that data processing can still be done.
+
         if (createQRef) { // no chunking required for creating a Qref
+            minNChunks = 1;
             nChunks = 1;
         } else {
 //            if (overrideChunks) { // override chunk calculation
@@ -454,67 +455,90 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
 //                            "  Estimated maximum memory requirements per chunk: " + to_string(reqsum_dyn/nChunks+reqsum_stat) + " bytes.");
 //                }
 //            } else {
-                nChunks = divideRounded(reqsum_dyn, maxchunkmem-reqsum_stat); // a safety margin is already included in reqsum
-                if (nChunks > 1) {
-                    // recalculate memory requirements per chunk including overlap
-                    size_t reqsum_dyn_chunk = (Mglob/nChunks + 2*chunkflanksize) * reqsum_dyn / Mglob; // estimated from the relation Mchunk/Mglob
-                    while (reqsum_dyn_chunk > maxchunkmem-reqsum_stat && Mglob/nChunks >= chunkflanksize) {
-                        int nChunks_tmp = nChunks;
-                        nChunks = divideRounded(reqsum_dyn_chunk*nChunks, maxchunkmem-reqsum_stat);
-                        if (nChunks == nChunks_tmp) // to ensure an exit of the while loop
-                            nChunks++;
-                        reqsum_dyn_chunk = (Mglob/nChunks + 2*chunkflanksize) * reqsum_dyn / Mglob;
-                    }
 
-                }
+//                nChunks = divideRounded(reqsum_dyn, maxchunkmem-reqsum_stat); // a safety margin is already included in reqsum
+//                if (nChunks > 1) {
+//                    // recalculate memory requirements per chunk including overlap
+//                    size_t reqsum_dyn_chunk = (Mglob/nChunks + 2*chunkflanksize) * reqsum_dyn / Mglob; // estimated from the relation Mchunk/Mglob
+//                    while (reqsum_dyn_chunk > maxchunkmem-reqsum_stat && Mglob/nChunks >= chunkflanksize) {
+//                        int nChunks_tmp = nChunks;
+//                        nChunks = divideRounded(reqsum_dyn_chunk*nChunks, maxchunkmem-reqsum_stat);
+//                        if (nChunks == nChunks_tmp) // to ensure an exit of the while loop
+//                            nChunks++;
+//                        reqsum_dyn_chunk = (Mglob/nChunks + 2*chunkflanksize) * reqsum_dyn / Mglob;
+//                    }
+//
+//                }
+            // The number of tgt sites that are allowed in a chunk at max:
+            // required dynamic memory per site (assuming an equal distribution)
+            size_t reqpersite = reqsum_dyn/Mglob;
+            // additionally required dynamic memory per site if an overlap is required (more than one chunk, space for ref and refT on common sites is reserverd twice)
+            size_t reqperovsite = reqimppbwt/Mglob;
+            // max vars in a chunk adjusted for using overlaps and taking care of the required static memory
+            maxChunkTgtVars = divideRounded(maxchunkmem-reqsum_stat, reqpersite+reqperovsite);
+
+            cerr << "maxChunkTgtVars: " << maxChunkTgtVars << endl;
 
                 // check if this estimation is conform with the FPGA configuration
                 if (usefpga) {
-
-                    // determine number of chunks according to maximum supported sites
-                    int nChunks_old = nChunks;
-                    while (fpgaconfs[0].getMaxSites() < (Mglob/nChunks+2*chunkflanksize) && Mglob/nChunks >= chunkflanksize) { // the maximum number of supported sites is smaller than the sites in each chunk
-                        int nChunks_tmp = nChunks;
-                        nChunks = divideRounded((Mglob+2*nChunks*chunkflanksize), fpgaconfs[0].getMaxSites());
-                        if (nChunks == nChunks_tmp) // to ensure an exit of the while loop
-                            nChunks++;
-                    }
-                    if (nChunks != nChunks_old)
-                        StatusFile::addWarning("Increased number of chunks to " + to_string(nChunks) + " due to the FPGA's maximum number of sites restriction.");
-
-                    // check if FPGA memory is sufficient with the current number of chunks
-                    size_t maxKbytes = roundToMultiple(min(args.K, Nrefhapsmax), (size_t) 512) / 8;
-                    size_t maxMemPerSite = maxKbytes*4 * fpgaconfs[0].getNumPipelines(); // required memory on the FPGA if ~every 3rd site is a split site (fwd+bck and ref+inc per split site)
-                    size_t maxSites = (Mglob/nChunks + 2*chunkflanksize)/3; // if every third site is a split site
-                    int nChunks_old2 = nChunks;
-                    while (fpgaconfs[0].getAvailableRAM() < maxMemPerSite*maxSites && Mglob/nChunks >= chunkflanksize) {
-                        int nChunks_tmp = nChunks;
-                        nChunks = divideRounded(maxMemPerSite*(Mglob+2*nChunks*chunkflanksize)/3, fpgaconfs[0].getAvailableRAM());
-                        if (nChunks == nChunks_tmp) // to ensure an exit of the while loop
-                            nChunks++;
-                        maxSites = (Mglob/nChunks + 2*chunkflanksize)/3; // if every third site is a split site
-                    }
-                    if (nChunks != nChunks_old2)
-                        StatusFile::addWarning("Increased number of chunks to " + to_string(nChunks) + " due to the FPGA's available memory restriction.");
-
-                    // check, if we increased the number of chunks too much
-                    if (Mglob/nChunks < 2*chunkflanksize) {
-                        nChunks = nChunks_old;
-                        usefpga = false;
-                        StatusFile::addWarning("<b>Disabled FPGA:</b> Chunk size too small. Reverted number of chunks to " + to_string(nChunks) + " and continuing with CPU only.");
-                    }
+                    // TODO need correction for FPGA?
+//                    // determine number of chunks according to maximum supported sites
+//                    int nChunks_old = nChunks;
+//                    while (fpgaconfs[0].getMaxSites() < (Mglob/nChunks+2*chunkflanksize) && Mglob/nChunks >= chunkflanksize) { // the maximum number of supported sites is smaller than the sites in each chunk
+//                        int nChunks_tmp = nChunks;
+//                        nChunks = divideRounded((Mglob+2*nChunks*chunkflanksize), fpgaconfs[0].getMaxSites());
+//                        if (nChunks == nChunks_tmp) // to ensure an exit of the while loop
+//                            nChunks++;
+//                    }
+//                    if (nChunks != nChunks_old)
+//                        StatusFile::addWarning("Increased number of chunks to " + to_string(nChunks) + " due to the FPGA's maximum number of sites restriction.");
+//
+//                    // check if FPGA memory is sufficient with the current number of chunks
+//                    size_t maxKbytes = roundToMultiple(min(args.K, Nrefhapsmax), (size_t) 512) / 8;
+//                    size_t maxMemPerSite = maxKbytes*4 * fpgaconfs[0].getNumPipelines(); // required memory on the FPGA if ~every 3rd site is a split site (fwd+bck and ref+inc per split site)
+//                    size_t maxSites = (Mglob/nChunks + 2*chunkflanksize)/3; // if every third site is a split site
+//                    int nChunks_old2 = nChunks;
+//                    while (fpgaconfs[0].getAvailableRAM() < maxMemPerSite*maxSites && Mglob/nChunks >= chunkflanksize) {
+//                        int nChunks_tmp = nChunks;
+//                        nChunks = divideRounded(maxMemPerSite*(Mglob+2*nChunks*chunkflanksize)/3, fpgaconfs[0].getAvailableRAM());
+//                        if (nChunks == nChunks_tmp) // to ensure an exit of the while loop
+//                            nChunks++;
+//                        maxSites = (Mglob/nChunks + 2*chunkflanksize)/3; // if every third site is a split site
+//                    }
+//                    if (nChunks != nChunks_old2)
+//                        StatusFile::addWarning("Increased number of chunks to " + to_string(nChunks) + " due to the FPGA's available memory restriction.");
+//
+//                    // check, if we increased the number of chunks too much
+//                    if (Mglob/nChunks < 2*chunkflanksize) {
+//                        nChunks = nChunks_old;
+//                        usefpga = false;
+//                        StatusFile::addWarning("<b>Disabled FPGA:</b> Chunk size too small. Reverted number of chunks to " + to_string(nChunks) + " and continuing with CPU only.");
+//                    }
                 }
 //            }
 
+            // this is a rough estimation intended to be smaller than the final number of chunks!
+            minNChunks = divideRounded(Mglob, maxChunkTgtVars); // no overlaps, equal distribution
+
             // check if chunk size is large enough:
             // as an overlap will be defined on both ends of a chunk, chunk size must be at least two overlaps!
-            if (nChunks > 1 && Mglob/nChunks < 2*chunkflanksize) {
+            if (minNChunks > 1 && maxChunkTgtVars < 2*chunkflanksize) {
                 string serr("<b>Analysis not possible:</b> Too many chunks.");
 //                if (!overrideChunks)
                 serr += " If possible, try larger chunk memory size with --maxChunkMemory.";
                 StatusFile::addError(serr);
                 exit(EXIT_FAILURE);
             }
+
+            if (minNChunks > 1) {
+                // we calculated without overlap above, but with more than one chunk we need to consider overlaps now
+                int64_t remvars = Mglob - (minNChunks*maxChunkTgtVars - (minNChunks-1)*2*chunkflanksize);
+                if(remvars > 0) {
+                    minNChunks += divideRounded((size_t)remvars, maxChunkTgtVars-2*chunkflanksize);
+                }
+            }
+
+            nChunks = minNChunks; // might be increased!
         }
 
         // chunks are generated based on the number of target variants
@@ -527,24 +551,32 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         startChunkIdx.push_back(0);
         startChunkFlankIdx.push_back(0);
         // we only prepare preliminary limits for the next chunk, others will be generated on-the-fly
+        if (minNChunks == 1) { // memory estimation thinks we can handle the imputation without chunking -> and this calculation should be very resolute
+            startChunkIdx.push_back(Mglob);
+            startChunkFlankIdx.push_back(Mglob);
+            endChunkFlankIdx.push_back(Mglob);
+        } else {
+            startChunkIdx.push_back(maxChunkTgtVars-chunkflanksize);
+            startChunkFlankIdx.push_back(maxChunkTgtVars-2*chunkflanksize);
+            endChunkFlankIdx.push_back(maxChunkTgtVars);
+        }
 //        for (int chunk = 1; chunk < nChunks; chunk++)
-        {
+//        {
 //            // equally distribute variants
 //            curridx += Mglob/nChunks + ((size_t)chunk < Mglob%nChunks ? 1 : 0); // add size of current chunk to get start index of next chunk
-            size_t curridx = Mglob/nChunks; // add size of current chunk to get start index of next chunk
-            startChunkIdx.push_back(curridx);
-            startChunkFlankIdx.push_back(curridx - chunkflanksize); // as the chunk size will be larger than the flank size, this index will exist
-            endChunkFlankIdx.push_back(curridx + chunkflanksize); // as the chunk size will be larger than the flank size, this index will exist as well
-        }
-        // calculate the maximum possible extension of a chunk TODO still required??
-        maxChunkExtension = 0; //Mglob - startChunkFlankIdx.back() - 2*chunkflanksize;
+//            startChunkIdx.push_back(curridx);
+//            startChunkFlankIdx.push_back(curridx - chunkflanksize); // as the chunk size will be larger than the flank size, this index will exist
+//            endChunkFlankIdx.push_back(curridx + chunkflanksize); // as the chunk size will be larger than the flank size, this index will exist as well
+//        }
+//        // calculate the maximum possible extension of a chunk
+//        maxChunkExtension = 0; //Mglob - startChunkFlankIdx.back() - 2*chunkflanksize;
 //        // sentinel at the end
 //        startChunkIdx.push_back(Mglob);
 //        startChunkFlankIdx.push_back(Mglob); // important to have no overlap here!
 //        endChunkFlankIdx.push_back(Mglob);
 
         if (!createQRef) {
-            StatusFile::addInfo("<p class='pinfo'>Data will be processed in " + to_string(nChunks) + " chunks" + (nChunks > 1 ? "." : " (no splitting required).</p>"), false);
+            StatusFile::addInfo(string("<p class='pinfo'>Data will be processed in ").append(nChunks > 1 ? "at least " : "").append(to_string(nChunks)).append(" chunk").append(nChunks > 1 ? "s." : " (no splitting required).</p>"), false);
             if (yaml) {
                 StatusFile::addInfoYAML("Chunks", to_string(nChunks));
             }
@@ -650,19 +682,19 @@ void VCFData::processNextChunk() {
     // the statistics collected here are only for the current chunk and without the overlap from the previous chunk
     VCFStats lstats;
 
-//    // reset maxChunkExtension for each chunk
-////    int64_t currMaxChunkExtension = maxChunkExtension;
-//    int64_t currMaxChunkExtension = currChunk == nChunks-1 ? 0 : startChunkFlankIdx[currChunk+2] - endChunkFlankIdx[currChunk]; // zero for the last chunk
-//    int64_t nextMaxChunkExtension = currChunk >= nChunks-2 ? 0 : startChunkFlankIdx[currChunk+3] - endChunkFlankIdx[currChunk+1]; // zero for the last two chunks
-    // Chunk size at the beginning is determined from an equal distribution of tgt variants to reference variants.
-    // But as this is often not the case, we allow a chunk to be extended to maximum three times its original size.
-    int64_t currMaxChunkExtension = min(Mglob - endChunkFlankIdx[currChunk], 3 * (endChunkFlankIdx[currChunk]-startChunkFlankIdx[currChunk]));
-
-    // determine Mpre for chunks:
-    // Mpre is the number of target variants in the current chunk
-    size_t Mpre = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk] + currMaxChunkExtension;
-//    size_t Mprenext = currChunk < nChunks-1 ? endChunkFlankIdx[currChunk+1] - startChunkFlankIdx[currChunk+1] + nextMaxChunkExtension : 0;
-    size_t Mprenext = Mpre; // can potentially be the same size
+////    // reset maxChunkExtension for each chunk
+//////    int64_t currMaxChunkExtension = maxChunkExtension;
+////    int64_t currMaxChunkExtension = currChunk == nChunks-1 ? 0 : startChunkFlankIdx[currChunk+2] - endChunkFlankIdx[currChunk]; // zero for the last chunk
+////    int64_t nextMaxChunkExtension = currChunk >= nChunks-2 ? 0 : startChunkFlankIdx[currChunk+3] - endChunkFlankIdx[currChunk+1]; // zero for the last two chunks
+//    // Chunk size at the beginning is determined from an equal distribution of tgt variants to reference variants.
+//    // But as this is often not the case, we allow a chunk to be extended to maximum three times its original size.
+//    int64_t currMaxChunkExtension = min(Mglob - endChunkFlankIdx[currChunk], 3 * (endChunkFlankIdx[currChunk]-startChunkFlankIdx[currChunk]));
+//
+//    // determine Mpre for chunks:
+//    // Mpre is the number of target variants in the current chunk
+//    size_t Mpre = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk] + currMaxChunkExtension;
+////    size_t Mprenext = currChunk < nChunks-1 ? endChunkFlankIdx[currChunk+1] - startChunkFlankIdx[currChunk+1] + nextMaxChunkExtension : 0;
+//    size_t Mprenext = Mpre; // can potentially be the same size
 
     if (!createQRef) {
         cout << "\n----------------------------------------------------------------\n--- ";
@@ -688,28 +720,28 @@ void VCFData::processNextChunk() {
             endChunkBp = endRegionBp;
 
             // prepare metadata for first chunk
-            isPhased.reserve(Mpre);
-            alleleFreqsCommon.reserve(Mpre);
-            bcf_pout.reserve(Mpre);
-            cMs.reserve(Mpre);
+            isPhased.reserve(maxChunkTgtVars);
+            alleleFreqsCommon.reserve(maxChunkTgtVars);
+            bcf_pout.reserve(maxChunkTgtVars);
+            cMs.reserve(maxChunkTgtVars);
             // prepare target data
             for (auto &t : targets)
-                t.reserve(Mpre);
+                t.reserve(maxChunkTgtVars);
             if (skipPhasing) {
                 for (auto &tp : tgtinphase)
-                    tp.reserve(Mpre);
+                    tp.reserve(maxChunkTgtVars);
             }
             // prepare common reference data
-            size_t capacity = roundToMultiple<size_t>(Mpre, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8; // space for Mpre SNPs
+            size_t capacity = roundToMultiple<size_t>(maxChunkTgtVars, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8; // space for maxChunkTgtVars SNPs
             refdata = (BooleanVector::data_type*) MyMalloc::calloc(Nrefhapsmax*capacity, 1, string("refdata_c")+to_string(currChunk));
             size_t capacityT = roundToMultiple<size_t>(Nrefhapsmax, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8;
-            refdataT = (BooleanVector::data_type*) MyMalloc::calloc(Mpre*capacityT, 1, string("refdataT_c")+to_string(currChunk));
+            refdataT = (BooleanVector::data_type*) MyMalloc::calloc(maxChunkTgtVars*capacityT, 1, string("refdataT_c")+to_string(currChunk));
             if (!refdata || !refdataT) {
                 StatusFile::addError("Not enough memory for phasing reference!");
                 exit(EXIT_FAILURE);
             }
             reference = move(vector<BooleanVector>(Nrefhapsmax, BooleanVector(refdata, Nrefhapsmax*capacity, 0)));
-            referenceT = move(vector<BooleanVector>(Mpre, BooleanVector(refdataT, Mpre*capacityT, 0)));
+            referenceT = move(vector<BooleanVector>(maxChunkTgtVars, BooleanVector(refdataT, maxChunkTgtVars*capacityT, 0)));
             auto curr_data = refdata;
             for (auto &ref : reference) {
                 ref.setData(curr_data, capacity, 0);
@@ -755,25 +787,26 @@ void VCFData::processNextChunk() {
             referenceTOverlap = move(vector<BooleanVector>());
         }
         // prepare for next chunk as well
-        if (Mprenext) {
-            isPhasedOverlap.reserve(Mprenext);
-            alleleFreqsCommonOverlap.reserve(Mprenext);
-            bcf_poutOverlap.reserve(Mprenext);
-            cMsOverlap.reserve(Mprenext);
+        // (in general if there will definitely be more than one chunk)
+        if (minNChunks > 1) {
+            isPhasedOverlap.reserve(maxChunkTgtVars);
+            alleleFreqsCommonOverlap.reserve(maxChunkTgtVars);
+            bcf_poutOverlap.reserve(maxChunkTgtVars);
+            cMsOverlap.reserve(maxChunkTgtVars);
             for (auto &t : targetsOverlap)
-                t.reserve(Mprenext);
-            size_t capacitynext = roundToMultiple<size_t>(Mprenext, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8; // space for Mprenext SNPs
+                t.reserve(maxChunkTgtVars);
+            size_t capacitynext = roundToMultiple<size_t>(maxChunkTgtVars, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8; // space for maxChunkTgtVars SNPs
             refdataOverlap = (BooleanVector::data_type*) MyMalloc::realloc(refdataOverlap, Nrefhapsmax*capacitynext, "refdata_c" + to_string(currChunk+1));
             size_t capacityTnext = roundToMultiple<size_t>(Nrefhapsmax, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8;
-            refdataTOverlap = (BooleanVector::data_type*) MyMalloc::realloc(refdataTOverlap, Mprenext*capacityTnext, "refdataT_c" + to_string(currChunk+1));
+            refdataTOverlap = (BooleanVector::data_type*) MyMalloc::realloc(refdataTOverlap, maxChunkTgtVars*capacityTnext, "refdataT_c" + to_string(currChunk+1));
             if (!refdataOverlap || !refdataTOverlap) {
                 StatusFile::addError("Not enough memory for phasing reference!");
                 exit(EXIT_FAILURE);
             }
             memset(refdataOverlap, 0, Nrefhapsmax*capacitynext);
-            memset(refdataTOverlap, 0, Mprenext*capacityTnext);
+            memset(refdataTOverlap, 0, maxChunkTgtVars*capacityTnext);
             referenceOverlap = move(vector<BooleanVector>(Nrefhapsmax, BooleanVector(refdataOverlap, Nrefhapsmax*capacitynext, 0))); // hap and mat vector per reference sample
-            referenceTOverlap = move(vector<BooleanVector>(Mprenext, BooleanVector(refdataTOverlap, Mprenext*capacityTnext, 0)));
+            referenceTOverlap = move(vector<BooleanVector>(maxChunkTgtVars, BooleanVector(refdataTOverlap, maxChunkTgtVars*capacityTnext, 0)));
             auto curr_data = refdataOverlap;
             for (auto &ref : referenceOverlap) {
                 ref.setData(curr_data, capacitynext, 0);
@@ -786,57 +819,58 @@ void VCFData::processNextChunk() {
             }
         }
 
-    } // end if(!createQRef)
+        // determine Mrefpre for chunks:
+        // number of reference vars per chunk if tgt and ref vars are equally distributed
+        size_t Mrefpre = Mrefglob * maxChunkTgtVars/Mglob;
+        // ...increased by 10% to reduce the chance for required reallocation of the vectors below
+        Mrefpre += Mrefpre/10;
 
-    // determine Mrefpre for chunks
-    // size of Mrefpre is Mrefglob increased by 10% to leave some space for multi-allelic splits and naively divided by the number of chunks
-    // (should somehow make this more precise in the future)
-    size_t Mrefpre = Mrefglob + Mrefglob/10;
-    Mrefpre /= nChunks;
+        if (currChunk == 0) {
+            currChunkOffset = 0;
+            if (doImputation) // only required for imputation
+                referenceFullT.reserve(Mrefpre); // don't need to prepare data memory anymore, will be done on-the-fly
+            // prepare metadata for first and already for next chunk
+            isImputed.reserve(Mrefpre);
+            indexToRefFull.reserve(maxChunkTgtVars);
+            nextPidx.reserve(Mrefpre);
+            ptgtIdx.reserve(Mrefpre);
+        } else { // currChunk > 0
 
-    if (currChunk == 0) {
-        currChunkOffset = 0;
-        if (doImputation) // only required for imputation
-            referenceFullT.reserve(Mrefpre); // don't need to prepare data memory anymore, will be done on-the-fly
-        // prepare metadata for first and already for next chunk
-        isImputed.reserve(Mrefpre);
-        indexToRefFull.reserve(Mpre);
-        nextPidx.reserve(Mrefpre);
-        ptgtIdx.reserve(Mrefpre);
-    } else { // currChunk > 0
+            // beginning of current chunk relative to region (reference-based index)
+            // -> must be the element where the first element in the overlap region points to
+            currChunkOffset += isImputed.size()-isImputedOverlap.size();
 
-        // beginning of current chunk relative to region (reference-based index)
-        // -> must be the element where the first element in the overlap region points to
-        currChunkOffset += isImputed.size()-isImputedOverlap.size();
-
-        if (doImputation) { // only required for imputation
-            // free data from unrequired reference haps
-            for (size_t mref = 0; mref < isImputed.size()-isImputedOverlap.size(); mref++) {
-                MyMalloc::free(referenceFullT[mref].getData());
+            if (doImputation) { // only required for imputation
+                // free data from unrequired reference haps
+                for (size_t mref = 0; mref < isImputed.size()-isImputedOverlap.size(); mref++) {
+                    MyMalloc::free(referenceFullT[mref].getData());
+                }
+                // copy overlap region to beginning
+                for (size_t mref = isImputed.size()-isImputedOverlap.size(); mref < referenceFullT.size(); mref++) {
+                    referenceFullT[mref-(isImputed.size()-isImputedOverlap.size())] = move(referenceFullT[mref]);
+                }
+                referenceFullT.resize(referenceFullT.size()-(isImputed.size()-isImputedOverlap.size()));
             }
-            // copy overlap region to beginning
-            for (size_t mref = isImputed.size()-isImputedOverlap.size(); mref < referenceFullT.size(); mref++) {
-                referenceFullT[mref-(isImputed.size()-isImputedOverlap.size())] = move(referenceFullT[mref]);
-            }
-            referenceFullT.resize(referenceFullT.size()-(isImputed.size()-isImputedOverlap.size()));
+
+            // take over reference metadata for this chunk and prepare for next chunk
+            isImputed = move(isImputedOverlap);
+            indexToRefFull = move(indexToRefFullOverlap);
+            nextPidx = move(nextPidxOverlap);
+            ptgtIdx = move(ptgtIdxOverlap);
+            isImputedOverlap = move(vector<bool>());
+            indexToRefFullOverlap = move(vector<size_t>());
+            nextPidxOverlap = move(vector<size_t>());
+            ptgtIdxOverlap = move(vector<size_t>());
+        }
+        if (minNChunks > 1) {
+            isImputedOverlap.reserve(Mrefpre);
+            indexToRefFullOverlap.reserve(maxChunkTgtVars);
+            nextPidxOverlap.reserve(Mrefpre);
+            ptgtIdxOverlap.reserve(Mrefpre);
         }
 
-        // take over reference metadata for this chunk and prepare for next chunk
-        isImputed = move(isImputedOverlap);
-        indexToRefFull = move(indexToRefFullOverlap);
-        nextPidx = move(nextPidxOverlap);
-        ptgtIdx = move(ptgtIdxOverlap);
-        isImputedOverlap = move(vector<bool>());
-        indexToRefFullOverlap = move(vector<size_t>());
-        nextPidxOverlap = move(vector<size_t>());
-        ptgtIdxOverlap = move(vector<size_t>());
-    }
-    if (Mprenext) {
-        isImputedOverlap.reserve(Mrefpre);
-        indexToRefFullOverlap.reserve(Mprenext);
-        nextPidxOverlap.reserve(Mrefpre);
-        ptgtIdxOverlap.reserve(Mrefpre);
-    }
+    } // end if(!createQRef)
+
 
     // DEBUG
     MyMalloc::printSummary(string("intermediate before reading chunk ")+to_string(currChunk+1));
@@ -879,14 +913,16 @@ void VCFData::processNextChunk() {
     // read data SNP-wise in positional sorted order from target and reference
     // the function also takes care that we only read the requested region
 //    while ((currChunk == nChunks-1 || tgtlinesread < endChunkFlankIdx[currChunk]) && bcf_sr_next_line(sr)) { // need to stay in the loop after last tgt variant if we read a VCF reference
-    while (tgtlinesread < endChunkFlankIdx[currChunk] && bcf_sr_next_line(sr)) {
+    while ((createQRef || tgtlinesread < endChunkFlankIdx[currChunk]) && bcf_sr_next_line(sr)) {
 
         bcf1_t *ref = NULL;
         bcf1_t *tgt = NULL;
-        if (!loadQuickRef) {
+//        if (!loadQuickRef) {
+        if (createQRef) {
             ref = bcf_sr_get_line(sr, 0); // read one line of reference, if available at current position (otherwise NULL)
             if (ref) {
-                if (createQRef && reflinesread % 16384 == 0) {
+//                if (createQRef && reflinesread % 16384 == 0) {
+                if (reflinesread % 16384 == 0) {
                     StatusFile::updateStatus(reflinesread/(float)Mrefglob); // this is ok as long as Qrefs are created in one chunk
                     if (pgb == 3) { // print % after three dots
                         cout << (100*reflinesread/Mrefglob) << "%" << flush;
@@ -936,31 +972,8 @@ void VCFData::processNextChunk() {
                 inOverlap = tgtlinesread >= startChunkFlankIdx[currChunk+1]; // indicates if we entered the left flank of the border to the next chunk
 
                 // check, how we get along with our memory
-                if (tgtlinesread == startChunkFlankIdx[currChunk+1]) { // this is the first line of the overlap to the next chunk
-                    // DEBUG
-                    cerr << "*** At overlap! maxChunkExtension: " << currMaxChunkExtension << endl;
-
-                    // if there's enough space left, extend this chunk by some sites
-                    if (currMaxChunkExtension > 0) {
-                        size_t chunksize = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk];
-                        size_t memlimit = (maxchunkmem * (tgtlinesread - startChunkFlankIdx[currChunk])) / chunksize; // memory which may be used up by now
-                        // DEBUG
-                        cerr << "*** currAlloced: " << MyMalloc::getCurrentAlloced()/1024/1024 << " memlimit: " << memlimit/1024/1024 << endl;
-                        if (MyMalloc::getCurrentAlloced() < memlimit) {
-                            int64_t extension = currMaxChunkExtension; // max(currMaxChunkExtension/10, (int64_t)1); // 10% of available extension, at least one site
-                            startChunkFlankIdx[currChunk+1] += extension;
-                            startChunkIdx[currChunk+1] += extension;
-                            endChunkFlankIdx[currChunk] += extension;
-                            currMaxChunkExtension -= extension;
-                            inOverlap = false;
-                            // DEBUG
-                            cerr << "+++ EXTENDED chunk by " << extension << " sites. (maxChunkExtension: " << currMaxChunkExtension << ")" << endl;
-                        }
-                    }
-                } else if (!inOverlap) { // not yet reached the overlap
-//                } else if (!inOverlap && currChunk != nChunks-1) { // not yet reached the overlap (and not in the last chunk where we cannot reduce anymore)
+                if (!inOverlap) { // not yet reached the overlap
                     // if we already used up our available memory so far, we need to reduce this chunk now and start with the overlap
-                    // NOTE: reduction in last chunk is not possible, but should not be necessary anyway...
                     size_t chunksize = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk];
                     size_t memlimit = (maxchunkmem * (chunksize - 2*chunkflanksize)) / chunksize; // memory which may be used up by now
                     if (MyMalloc::getCurrentAlloced() > memlimit) {
@@ -968,10 +981,19 @@ void VCFData::processNextChunk() {
                         startChunkFlankIdx[currChunk+1] -= reduction;
                         startChunkIdx[currChunk+1] -= reduction;
                         endChunkFlankIdx[currChunk] -= reduction;
-                        currMaxChunkExtension += reduction;
+                        chunkReduction += reduction;
                         inOverlap = true;
                         // DEBUG
-                        cerr << "--- REDUCED chunk by " << reduction << " sites. (maxChunkExtension: " << currMaxChunkExtension << ")" << endl;
+                        cerr << "--- REDUCED chunk by " << reduction << " sites. (chunkReduction: " << chunkReduction << ")" << endl;
+                    }
+                } else if(tgtlinesread >= startChunkIdx[currChunk+1]) { // crossed the first half of the overlap
+                    // we allow the chunk to end here if we used up our available memory completely,
+                    // but we also reduce the overlap
+                    if (MyMalloc::getCurrentAlloced() > maxchunkmem) {
+                        // DEBUG
+                        cerr << "--- REDUCED chunk overlap by " << endChunkFlankIdx[currChunk]-tgtlinesread-1 << " sites." << endl;
+
+                        endChunkFlankIdx[currChunk] = tgtlinesread+1; // this will stop reading after this line
                     }
                 }
 
@@ -1508,14 +1530,19 @@ void VCFData::processNextChunk() {
                 currMref++;
             }
         } else { // there will be another chunk, prepare preliminary limits
-            // we assume the size of the next chunk to be as estimated for the current chunk as well
-            size_t offset = Mglob/nChunks; // equal distribution assumed
-            startChunkIdx.push_back(min(Mglob, startChunkIdx.back() + offset));
-            startChunkFlankIdx.push_back(min(Mglob, startChunkFlankIdx.back() + offset)); // as the chunk size will be larger than the flank size, this index will exist
-            endChunkFlankIdx.push_back(min(Mglob, endChunkFlankIdx.back() + offset)); // as the chunk size will be larger than the flank size, this index will exist as well
-            // if this was the last estimated chunk, we need to increase nChunks now
-            if (currChunk == nChunks-1)
+            size_t nextchunkend = min(Mglob, startChunkFlankIdx[currChunk+1] + maxChunkTgtVars);
+            endChunkFlankIdx.push_back(nextchunkend);
+            startChunkIdx.push_back(nextchunkend - chunkflanksize);
+            startChunkFlankIdx.push_back(nextchunkend - 2*chunkflanksize);
+            // depending on the potentially reduced chunk size, we can correct the number of chunks now
+            int64_t remvars = Mglob - (nChunks*maxChunkTgtVars - (nChunks-1)*2*chunkflanksize - chunkReduction);
+            if (remvars > 0) {
                 nChunks++;
+                chunkReduction -= maxChunkTgtVars-2*chunkflanksize;
+            }
+//            // if this was the last estimated chunk, we need to increase nChunks now
+//            if (currChunk == nChunks-1)
+//                nChunks++;
         }
     }
 
