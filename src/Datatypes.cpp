@@ -37,17 +37,14 @@ void GenotypeVector::push_back(const Genotype &g) {
             data.push_back(0ull); // is2
         }
 
-        nextpushword_is0 = &(data.data()[2*(len/DATATYPEBITS)]);
-        nextpushword_is2 = &(data.data()[2*(len/DATATYPEBITS)+1]);
+        nextpushword_is0 = data.data() + 2*(len/DATATYPEBITS);
+        nextpushword_is2 = data.data() + 2*(len/DATATYPEBITS) + 1;
         nextpushbit = 2ull; // had to be 1ull before
 
     } else {
         data_type bit0 = (g == Genotype::HomRef || g == Genotype::Miss) ? nextpushbit : 0ull;
         data_type bit2 = (g == Genotype::HomAlt || g == Genotype::Miss) ? nextpushbit : 0ull;
-//        // is0
-//        data[2*(len/DATATYPEBITS)] |= bit0 << (len % DATATYPEBITS); // ok if bit is zero
-//        // is2
-//        data[2*(len/DATATYPEBITS)+1] |= bit2 << (len % DATATYPEBITS); // because all is pre-initialized with zeros
+
         *nextpushword_is0 |= bit0;
         *nextpushword_is2 |= bit2;
         if(nextpushbit == HIGHESTPUSHBIT) {
@@ -128,6 +125,82 @@ void GenotypeVector::getInconsistencies(BooleanVector &inconret, const BooleanVe
         retdata[i] = tmp;
     }
 }
+
+// resizes the vector to keep only the last n elements
+// also takes care of the memory to be erased properly (i.e. now unused areas are set to zero again)
+void GenotypeVector::keepLast(size_t n) {
+    // DEBUG
+    if (n > len)
+        cerr << "WARNING: GenotypeVector: tried to keep more elements (" << n << ") than the current size (" << len << ")." << endl;
+
+    // keeping nothing is the same as clearing the vector
+    if (n == 0) {
+        clear();
+        return;
+    }
+
+    // only need to proceed if n is lower than the number of stored elements
+    if (n < len) {
+        size_t lastidx = (len-1) / DATATYPEBITS;
+        size_t lastbitidx = (len-1) % DATATYPEBITS;
+        size_t new_lastidx = (n-1) / DATATYPEBITS;
+        size_t new_lastbitidx = (n-1) % DATATYPEBITS;
+        size_t worddiff = lastidx - new_lastidx; // will be positive or zero
+
+        // shift data words to align kept data correctly
+        if (new_lastbitidx < lastbitidx) { // need a right shift
+            size_t shift = lastbitidx - new_lastbitidx;
+            data_type mask = (1ull << shift)-1; // to mask the carry-over bits
+            data_type carry_is0 = 0; // for the bits to shift in
+            data_type carry_is2 = 0; // for the bits to shift in
+            for (size_t i = lastidx; i >= worddiff; i--) {
+                // store the bits that will be shifted out
+                data_type new_carry_is0 = data[2*i] & mask;
+                data_type new_carry_is2 = data[2*i+1] & mask;
+                data[2*i] = (data[2*i] >> shift) | (carry_is0 << (DATATYPEBITS-shift));
+                data[2*i+1] = (data[2*i+1] >> shift) | (carry_is2 << (DATATYPEBITS-shift));
+                carry_is0 = new_carry_is0;
+                carry_is2 = new_carry_is2;
+            }
+        } else if (new_lastbitidx > lastbitidx) { // need a left shift
+            size_t shift = new_lastbitidx - lastbitidx;
+            data_type mask = ((1ull << shift)-1) << (DATATYPEBITS-shift); // to mask the carry-over bits
+            data_type carry_is0 = data[2*(worddiff-1)] & mask; // directly take the carry bits for the first word (note that worddiff will be positive here)
+            data_type carry_is2 = data[2*(worddiff-1)+1] & mask; // directly take the carry bits for the first word (note that worddiff will be positive here)
+            for (size_t i = worddiff; i <= lastidx; i++) {
+                // store the bits that will be shifted out
+                data_type new_carry_is0 = data[2*i] & mask;
+                data_type new_carry_is2 = data[2*i+1] & mask;
+                data[2*i] = (data[2*i] << shift) | (carry_is0 >> (DATATYPEBITS-shift));
+                data[2*i+1] = (data[2*i+1] << shift) | (carry_is2 >> (DATATYPEBITS-shift));
+                carry_is0 = new_carry_is0;
+                carry_is2 = new_carry_is2;
+            }
+        } // else: new_lastbitidx == lastbitidx: no shift required
+
+        // copy kept data to the front and erase previously used area (only if necessary)
+        if (worddiff) {
+            // copy
+            for (size_t d = 0, s = worddiff; d <= new_lastidx; d++,s++) {
+                data[2*d] = data[2*s];
+                data[2*d+1] = data[2*s+1];
+            }
+            // erase == resize vector + extend to a complete unit
+            data.resize(2*(new_lastidx+1));
+            for (size_t i = (new_lastidx%GVUNITWORDS)+1; i < GVUNITWORDS; i++) {
+                data.push_back(0ull); // is0
+                data.push_back(0ull); // is2
+            }
+        }
+
+        // update
+        len = n;
+        nextpushbit = 1ull << (n % DATATYPEBITS);
+        nextpushword_is0 = data.data() + 2*(len/DATATYPEBITS);
+        nextpushword_is2 = data.data() + 2*(len/DATATYPEBITS) + 1;
+    }
+}
+
 
 ostream &operator<<(ostream &o, const Haplotype &hap) {
     o << (hap == Haplotype::Ref ? 0 : 1);

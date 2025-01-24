@@ -804,9 +804,30 @@ void VCFData::processNextChunk() {
             if (!skipPhasing)
                 cMsOverlap.clear();
             // target data
+            // DEBUG
+            {
+            cerr << "CHECKTGT: ";
+            bool ok = true;
+            size_t cnt = 0;
+            // __DEBUG
             for (size_t tidx = 0; tidx < Ntarget; tidx++) {
-                targets[tidx] = move(targetsOverlap[tidx]);
-                targetsOverlap[tidx] = move(GenotypeVector());
+//                targets[tidx] = move(targetsOverlap[tidx]);
+//                targetsOverlap[tidx] = move(GenotypeVector());
+                targets[tidx].keepLast(currMOverlap);
+
+                // DEBUG
+                const auto& t = targets[tidx];
+                const auto& tov = targetsOverlap[tidx];
+                if (t.size() != tov.size()) {
+                    cerr << tidx << ": SUBSIZES DON'T MATCH! " << t.size() << " != " << tov.size() << endl;
+                } else {
+                    for (size_t i=0; i<t.size(); i++, cnt++)
+                        ok = ok && t[i] == tov[i];
+                }
+                // __DEBUG
+
+                targetsOverlap[tidx].clear();
+
                 tgtmiss[tidx] = move(tgtmissOverlap[tidx]);
                 tgtmissOverlap[tidx] = move(vector<size_t>());
                 if (skipPhasing) {
@@ -814,6 +835,11 @@ void VCFData::processNextChunk() {
                     tgtinphaseOverlap[tidx].clear();
                 }
             }
+            // DEBUG
+            cerr << (ok ? "ok" : "NOT OK!") << " checked " << cnt << " genotypes." << endl;
+            }
+            // __DEBUG
+
             // reference data
 //            swap(refdata, refdataOverlap); // swap data pointers
 //            reference = move(referenceOverlap);
@@ -823,6 +849,7 @@ void VCFData::processNextChunk() {
 //            referenceTOverlap = move(vector<BooleanVector>());
             for (auto& ref : reference)
                 ref.keepLast(currMOverlap);
+
             // DEBUG
             {
                 cerr << "CHECKPHASEREF: ";
@@ -971,7 +998,7 @@ void VCFData::processNextChunk() {
 //            nextPidxOverlap = move(RingBuffer<size_t>());
 //            ptgtIdxOverlap = move(RingBuffer<size_t>());
             size_t redref = indexToRefFull[indexToRefFull.size()-currMOverlap-1]+1;
-            size_t n = currMrefOverlap;
+            size_t n = currMrefOverlap; // later set to indexToRefFull.back()+1 AFTER REDUCTION!
             isImputed.keepLast(n);
             indexToRefFull.keepLast(currMOverlap);
             nextPidx.keepLast(n);
@@ -990,7 +1017,8 @@ void VCFData::processNextChunk() {
                                << ptgtIdxOverlap.back() << " / " << ptgtIdx.back() << endl;
             cerr << "currMOverlap: " << currMOverlap << " currMrefOverlap: " << currMrefOverlap
                  << " redref: " << redref
-                 << " redtgt: " << ptgtIdx[0] << endl;
+                 << " redtgt1: " << nextPidx[0]
+                 << " redtgt2: " << ptgtIdx[0] << endl;
             // __DEBUG
 
             indexToRefFull.sub(redref);
@@ -998,7 +1026,7 @@ void VCFData::processNextChunk() {
             ptgtIdx.sub(ptgtIdx[0]);
 
             // DEBUG
-            cerr << "CHECKTGT: " << endl;
+            cerr << "CHECKTGTMAP: " << endl;
             bool ok = true;
             for (size_t i=0; i<indexToRefFull.size(); i++) {
                 ok = ok && indexToRefFull[i] == indexToRefFullOverlap[i];
@@ -1008,7 +1036,18 @@ void VCFData::processNextChunk() {
             }
             if (ok)
                 cerr << "ok" << endl;
-            cerr << "CHECKREF: ";
+            cerr << "CHECKREFMAP1: ";
+            ok = true;
+            for (size_t i=0; i<nextPidx.size(); i++) {
+                ok = ok && nextPidx[i] == nextPidxOverlap[i];
+                if (!ok) {
+                    cerr << "first diff at " << i << ": " << nextPidx[i] << " != " << nextPidxOverlap[i] << endl;
+                    break;
+                }
+            }
+            if (ok)
+                cerr << "ok" << endl;
+            cerr << "CHECKREFMAP2: ";
             ok = true;
             for (size_t i=0; i<ptgtIdx.size(); i++) {
                 ok = ok && ptgtIdx[i] == ptgtIdxOverlap[i];

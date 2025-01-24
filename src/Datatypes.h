@@ -399,6 +399,10 @@ public:
     // returns a BooleanVector indicating all inconsistent sites in inconret. The vector must at least have the capacity of hapvec size.
     void getInconsistencies(BooleanVector &inconret, const BooleanVector &hapvec) const;
 
+    // resizes the vector to keep only the last n elements
+    // also takes care of the memory to be erased properly (i.e. now unused areas are set to zero again)
+    void keepLast(size_t n);
+
     // returns the data in the following encoding: even words are "is0", odd words are "is2".
     const vector<data_type> &getData() const { return data; }
 
