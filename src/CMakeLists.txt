@@ -31,6 +31,7 @@ set(cpp_sources
     MinMaxHeap.h
     StatusFile.h
     Datatypes.cpp
+    RingBuffer.cpp
     History.h
     BooleanHistory.cpp
     HaplotypeHistory.h

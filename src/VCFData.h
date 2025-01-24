@@ -33,6 +33,7 @@
 
 #include "Args.h"
 #include "Datatypes.h"
+#include "RingBuffer.h"
 #include "MapInterpolater.h"
 #include "FPGAConfigurationEagleImp.h"
 
@@ -79,13 +80,13 @@ public:
     void processNextChunk();
 
     const vector<BooleanVector> &getReference_const() const { return reference; }
-    const vector<BooleanVector> &getReferenceT_const() const { return referenceT; }
+    const RingBuffer<BooleanVector> &getReferenceT_const() const { return referenceT; }
     vector<BooleanVector> &getReference() { return reference; }
-    vector<BooleanVector> &getReferenceT() { return referenceT; }
+    RingBuffer<BooleanVector> &getReferenceT() { return referenceT; }
     const vector<BooleanVector> &getReferenceFullT() const { return referenceFullT; }
     const vector<GenotypeVector> &getTargets() const { return targets; }
     const vector<vector<size_t>> &getTgtMissPos() const { return tgtmiss; }
-    const vector<vector<bool>> &getTgtInPhases() const { return tgtinphase; }
+    const vector<RingBufferBool> &getTgtInPhases() const { return tgtinphase; }
     const RingBuffer<fp_type> &getCMPos() const { return cMs; }
     const vector<string> &getTargetIDs() const { return targetIDs; }
 
@@ -195,8 +196,8 @@ private:
     vector<BooleanVector> referenceOverlap;
     BooleanVector::data_type *refdata = 0;
     BooleanVector::data_type *refdataOverlap = 0;
-    vector<BooleanVector> referenceT; // reference haplotypes on target sites (transposed), size MxNrefhaps (capacity: MxNrefhapsmax), haploids are encoded homozygous diploid!
-    vector<BooleanVector> referenceTOverlap;
+    RingBuffer<BooleanVector> referenceT; // reference haplotypes on target sites (transposed), size MxNrefhaps (capacity: MxNrefhapsmax), haploids are encoded homozygous diploid!
+    RingBuffer<BooleanVector> referenceTOverlap;
     BooleanVector::data_type *refdataT = 0;
     BooleanVector::data_type *refdataTOverlap = 0;
 
@@ -211,15 +212,15 @@ private:
     vector<GenotypeVector> targetsOverlap; // target genotypes (0 = hom ref, 1 = het, 2 = hom alt, 9 = missing), size is Ntarget
     vector<vector<size_t>> tgtmiss; // positions of missings in targets
     vector<vector<size_t>> tgtmissOverlap; // positions of missings in targets (overlap region)
-    vector<vector<bool>> tgtinphase; // input target phases, true == mat:1 pat:0, false others (only stored if --skipPhasing is enabled)
-    vector<vector<bool>> tgtinphaseOverlap; // input target phases, true == mat:1 pat:0, false others (only stored if --skipPhasing is enabled) (overlap region)
+    vector<RingBufferBool> tgtinphase; // input target phases, true == mat:1 pat:0, false others (only stored if --skipPhasing is enabled)
+    vector<RingBufferBool> tgtinphaseOverlap; // input target phases, true == mat:1 pat:0, false others (only stored if --skipPhasing is enabled) (overlap region)
     vector<uint64_t> chrBpsReg; // base pair positions of target SNPs on target chromosome, size is Mreg
     RingBuffer<fp_type> cMs; // size is M
     RingBuffer<fp_type> cMsOverlap;
     fp_type cM0; // for the statistics: store first cM value
     vector<string> targetIDs; // identifier strings for target samples
-    RingBuffer<bool> isPhased; // size corresponds to the number of SNPs which will be written to phased output file in curr chunk (M if "!outputUnphased") and indicates if the entry is/will be phased or not
-    RingBuffer<bool> isPhasedOverlap; // same for overlap region
+    RingBufferBool isPhased; // size corresponds to the number of SNPs which will be written to phased output file in curr chunk (M if "!outputUnphased") and indicates if the entry is/will be phased or not
+    RingBufferBool isPhasedOverlap; // same for overlap region
     vector<bool> haploidsTgt; // flag for all samples in target that are haploid
     vector<bool> haploidsTgt_initialized; // flag for all samples if the information in haploidsTgt is valid, usually set after first target SNP (just in the case if the first genotype is missing, it will be set later)
     vector<size_t> haploidsTgtMap; // map index of any haplotype vector (indexed from where haploids are encoded as haploids) to index in target haps where haploids are encoded as homozygous diploid
@@ -234,8 +235,8 @@ private:
     RingBuffer<bcf1_t*> bcf_poutOverlap; // same for overlap region
     bcf_hdr_t *tgt_hdr_cpy; // copy of the target header used for the phased output file -> for imputation, the sample names are copied
 
-    RingBuffer<bool> isImputed; // size corresponds to imputation output of current chunk, indicates if the SNP is/will be imputed or not
-    RingBuffer<bool> isImputedOverlap; // overlap region
+    RingBufferBool isImputed; // size corresponds to imputation output of current chunk, indicates if the SNP is/will be imputed or not
+    RingBufferBool isImputedOverlap; // overlap region
     // for each analyzed target SNP the index in the full reference vector that corresponds to this SNP, size is M
     RingBuffer<size_t> indexToRefFull;
     RingBuffer<size_t> indexToRefFullOverlap; // for overlap region

@@ -108,7 +108,7 @@ private:
     // identify all call locations (het + non-mono) plus split sites and make vectors with condensed information
     void findCallLocs();
     // create condensed transposed reference
-    void condensedReferenceT(vector<BooleanVector> &referenceT, vector<int> *count0);
+    void condensedReferenceT(RingBuffer<BooleanVector> &referenceT, vector<int> *count0);
 //    // for each reference in bestHaps mark the sites that are inconsistent with the target plus IBD check
 //    void findInconsAndCheckIBD(vector<BooleanVector>& inconsT);
     // merge inconsistencies to dest found by comparing genotype g to the haplotype data in src
@@ -129,7 +129,7 @@ private:
     bool useExtArch;
 
     const vector<BooleanVector> &referenceFull; // full information of reference haps on tgt sites
-    const vector<BooleanVector> &referenceFullT; // full information of reference haps on tgt sites (transposed)
+    const RingBuffer<BooleanVector> &referenceFullT; // full information of reference haps on tgt sites (transposed)
     const RingBuffer<fp_type> &cMpos;
     size_t NrefhapsAllDiploid; // number of reference haplotypes (if haploid is encoded hom. diploid)
     size_t NrefhapsCorrected; // number of really available reference haplotypes (NrefhapsAllDiploid minus number of haploid samples minus 2 for one target if we are in an iteration > 1)

@@ -723,13 +723,14 @@ void VCFData::processNextChunk() {
             isPhased.reset(maxChunkTgtVars);
             alleleFreqsCommon.reset(maxChunkTgtVars);
             bcf_pout.reset(maxChunkTgtVars);
-            cMs.reset(maxChunkTgtVars);
+            if (!skipPhasing)
+                cMs.reset(maxChunkTgtVars);
             // prepare target data
             for (auto &t : targets)
                 t.reserve(maxChunkTgtVars);
             if (skipPhasing) {
                 for (auto &tp : tgtinphase)
-                    tp.reserve(maxChunkTgtVars);
+                    tp.reset(maxChunkTgtVars);
             }
             // prepare common reference data
             size_t capacity = roundToMultiple<size_t>(maxChunkTgtVars, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8; // space for maxChunkTgtVars SNPs
@@ -740,13 +741,15 @@ void VCFData::processNextChunk() {
                 StatusFile::addError("Not enough memory for phasing reference!");
                 exit(EXIT_FAILURE);
             }
-            reference = move(vector<BooleanVector>(Nrefhapsmax, BooleanVector(refdata, Nrefhapsmax*capacity, 0)));
-            referenceT = move(vector<BooleanVector>(maxChunkTgtVars, BooleanVector(refdataT, maxChunkTgtVars*capacityT, 0)));
+//            reference = move(vector<BooleanVector>(Nrefhapsmax, BooleanVector(refdata, Nrefhapsmax*capacity, 0)));
+//            referenceT = move(vector<BooleanVector>(maxChunkTgtVars, BooleanVector(refdataT, maxChunkTgtVars*capacityT, 0)));
+            reference.resize(Nrefhapsmax);
             auto curr_data = refdata;
             for (auto &ref : reference) {
                 ref.setData(curr_data, capacity, 0);
                 curr_data += capacity / sizeof(BooleanVector::data_type);
             }
+            referenceT.reset(maxChunkTgtVars, maxChunkTgtVars); // also set initial size here
             auto curr_dataT = refdataT;
             for (auto &refT : referenceT) {
                 refT.setData(curr_dataT, capacityT, 0);
@@ -758,15 +761,48 @@ void VCFData::processNextChunk() {
             startChunkBp = endChunkBp+1;
             endChunkBp = endRegionBp; // set to region end first, will be updated, if there are more chunks
 
+            // DEBUG
+            cerr << "LENGTHS: " << endl;
+            cerr << isPhased.size() << "/"
+                 << alleleFreqsCommon.size() << "/"
+                 << bcf_pout.size() << "/"
+                 << cMs.size() << endl;
+            cerr << isPhasedOverlap.size() << "/"
+                 << alleleFreqsCommonOverlap.size() << "/"
+                 << bcf_poutOverlap.size() << "/"
+                 << cMsOverlap.size() << endl;
+            cerr << "tgt0: " << targets[0].size() << "/" << tgtmiss[0].size() << endl;
+            for (size_t tidx = 1; tidx < Ntarget; tidx++) {
+                if (targets[tidx].size() != targets[0].size())
+                    cerr << "target sizes not equal!" << endl;
+            }
+            cerr << "tgt0ov: " << targetsOverlap[0].size() << "/" << tgtmissOverlap[0].size() << endl;
+            for (size_t tidx = 1; tidx < Ntarget; tidx++) {
+                if (targetsOverlap[tidx].size() != targetsOverlap[0].size())
+                    cerr << "target overlap sizes not equal!" << endl;
+            }
+            // __DEBUG
+
             // take over target metadata for this chunk and prepare for next chunk
-            isPhased = move(isPhasedOverlap);
-            alleleFreqsCommon = move(alleleFreqsCommonOverlap);
-            bcf_pout = move(bcf_poutOverlap);
-            cMs = move(cMsOverlap);
-            isPhasedOverlap = move(RingBuffer<bool>());
-            alleleFreqsCommonOverlap = move(RingBuffer<float>());
-            bcf_poutOverlap = move(RingBuffer<bcf1_t*>());
-            cMsOverlap = move(RingBuffer<fp_type>());
+//            isPhased = move(isPhasedOverlap);
+//            alleleFreqsCommon = move(alleleFreqsCommonOverlap);
+//            bcf_pout = move(bcf_poutOverlap);
+//            cMs = move(cMsOverlap);
+//            isPhasedOverlap = move(RingBufferBool());
+//            alleleFreqsCommonOverlap = move(RingBuffer<float>());
+//            bcf_poutOverlap = move(RingBuffer<bcf1_t*>());
+//            cMsOverlap = move(RingBuffer<fp_type>());
+            size_t n = currMOverlap;
+            isPhased.keepLast(n); // TODO this is not correct if outputUnphased == true !! n + number of unphased sites in overlap
+            alleleFreqsCommon.keepLast(n);
+            bcf_pout.keepLast(n); // TODO this is not correct if outputUnphased == true !! n + number of unphased sites in overlap
+            if (!skipPhasing)
+                cMs.keepLast(n);
+            isPhasedOverlap.clear();
+            alleleFreqsCommonOverlap.clear();
+            bcf_poutOverlap.clear();
+            if (!skipPhasing)
+                cMsOverlap.clear();
             // target data
             for (size_t tidx = 0; tidx < Ntarget; tidx++) {
                 targets[tidx] = move(targetsOverlap[tidx]);
@@ -774,25 +810,84 @@ void VCFData::processNextChunk() {
                 tgtmiss[tidx] = move(tgtmissOverlap[tidx]);
                 tgtmissOverlap[tidx] = move(vector<size_t>());
                 if (skipPhasing) {
-                    tgtinphase[tidx] = move(tgtinphaseOverlap[tidx]);
-                    tgtinphaseOverlap[tidx] = move(vector<bool>());
+                    tgtinphase[tidx].keepLast(n);
+                    tgtinphaseOverlap[tidx].clear();
                 }
             }
             // reference data
-            swap(refdata, refdataOverlap); // swap data pointers
-            reference = move(referenceOverlap);
-            referenceOverlap = move(vector<BooleanVector>());
-            swap(refdataT, refdataTOverlap);
-            referenceT = move(referenceTOverlap);
-            referenceTOverlap = move(vector<BooleanVector>());
+//            swap(refdata, refdataOverlap); // swap data pointers
+//            reference = move(referenceOverlap);
+//            referenceOverlap = move(vector<BooleanVector>());
+//            swap(refdataT, refdataTOverlap);
+//            referenceT = move(referenceTOverlap);
+//            referenceTOverlap = move(vector<BooleanVector>());
+            for (auto& ref : reference)
+                ref.keepLast(currMOverlap);
+            // DEBUG
+            {
+                cerr << "CHECKPHASEREF: ";
+                bool ok = true;
+                size_t cnt = 0;
+                if (reference.size() != referenceOverlap.size())
+                    cerr << "SIZES DON'T MATCH!" << endl;
+                else {
+                    for (size_t r = 0; r < reference.size(); r++) {
+                        const auto& ref = reference[r];
+                        const auto& refov = referenceOverlap[r];
+                        if (ref.size() != refov.size()) {
+                            cerr << r << ": SUBSIZES DON'T MATCH! " << ref.size() << " != " << refov.size() << endl;
+//                        } else {
+//                            for (size_t i=0; i<ref.size(); i++, cnt++)
+//                                ok = ok && ref[i] == refov[i];
+                        }
+                    }
+                    cerr << (ok ? "ok" : "NOT OK!") << " checked " << cnt << " bools." << endl;
+                }
+            }
+            // __DEBUG
+            referenceOverlap.clear();
+            referenceT.keepLast(currMOverlap); // reduces the size but does not destroy the data!
+            referenceT.setSize(maxChunkTgtVars); // restores the previous size and also the underlying BooleanVectors
+            for (size_t i = currMOverlap; i < maxChunkTgtVars; i++) // need to clear the underlying BooleanVectors, but keep their memory assignments!
+                referenceT[i].clear();
+            // DEBUG
+            {
+                cerr << "CHECKPHASEREFT: ";
+                bool ok = true;
+                size_t cnt = 0;
+                if (referenceT.size() != referenceTOverlap.size())
+                    cerr << "SIZES DON'T MATCH!" << endl;
+                else {
+                    for (size_t r = 0; r < referenceT.size(); r++) {
+                        const auto& ref = referenceT[r];
+                        const auto& refov = referenceTOverlap[r];
+                        if (ref.size() != refov.size()) {
+                            cerr << r << ": SUBSIZES DON'T MATCH! " << ref.size() << " != " << refov.size() << endl;
+//                        } else {
+//                            for (size_t i=0; i<ref.size(); i++, cnt++)
+//                                ok = ok && ref[i] == refov[i];
+                        }
+                    }
+                    cerr << (ok ? "ok" : "NOT OK!") << " checked " << cnt << " bools." << endl;
+                }
+            }
+            // __DEBUG
+            referenceTOverlap.clear();
         }
         // prepare for next chunk as well
         // (in general if there will definitely be more than one chunk)
         if (minNChunks > 1) {
-            isPhasedOverlap.reset(maxChunkTgtVars);
-            alleleFreqsCommonOverlap.reset(maxChunkTgtVars);
-            bcf_poutOverlap.reset(maxChunkTgtVars);
-            cMsOverlap.reset(maxChunkTgtVars);
+            if (currChunk == 0) { // need only for the first time now
+                isPhasedOverlap.reset(maxChunkTgtVars);
+                alleleFreqsCommonOverlap.reset(maxChunkTgtVars);
+                bcf_poutOverlap.reset(maxChunkTgtVars);
+                if (!skipPhasing)
+                    cMsOverlap.reset(maxChunkTgtVars);
+                if (skipPhasing) {
+                    for (auto &tp : tgtinphaseOverlap)
+                        tp.reset(maxChunkTgtVars);
+                }
+            }
             for (auto &t : targetsOverlap)
                 t.reserve(maxChunkTgtVars);
             size_t capacitynext = roundToMultiple<size_t>(maxChunkTgtVars, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8; // space for maxChunkTgtVars SNPs
@@ -805,13 +900,15 @@ void VCFData::processNextChunk() {
             }
             memset(refdataOverlap, 0, Nrefhapsmax*capacitynext);
             memset(refdataTOverlap, 0, maxChunkTgtVars*capacityTnext);
-            referenceOverlap = move(vector<BooleanVector>(Nrefhapsmax, BooleanVector(refdataOverlap, Nrefhapsmax*capacitynext, 0))); // hap and mat vector per reference sample
-            referenceTOverlap = move(vector<BooleanVector>(maxChunkTgtVars, BooleanVector(refdataTOverlap, maxChunkTgtVars*capacityTnext, 0)));
+//            referenceOverlap = move(vector<BooleanVector>(Nrefhapsmax, BooleanVector(refdataOverlap, Nrefhapsmax*capacitynext, 0)));
+//            referenceTOverlap = move(vector<BooleanVector>(maxChunkTgtVars, BooleanVector(refdataTOverlap, maxChunkTgtVars*capacityTnext, 0)));
+            referenceOverlap.resize(Nrefhapsmax);
             auto curr_data = refdataOverlap;
             for (auto &ref : referenceOverlap) {
                 ref.setData(curr_data, capacitynext, 0);
                 curr_data += capacitynext / sizeof(BooleanVector::data_type);
             }
+            referenceTOverlap.reset(maxChunkTgtVars, maxChunkTgtVars);
             auto curr_dataT = refdataTOverlap;
             for (auto &refT : referenceTOverlap) {
                 refT.setData(curr_dataT, capacityTnext, 0);
@@ -852,17 +949,84 @@ void VCFData::processNextChunk() {
                 referenceFullT.resize(referenceFullT.size()-(isImputed.size()-isImputedOverlap.size()));
             }
 
+            // DEBUG
+            cerr << "REFLENGTHS: " << endl;
+            cerr << isImputed.size() << "/"
+                 << indexToRefFull.size() << "/"
+                 << nextPidx.size() << "/"
+                 << ptgtIdx.size() << endl;
+            cerr << isImputedOverlap.size() << "/"
+                 << indexToRefFullOverlap.size() << "/"
+                 << nextPidxOverlap.size() << "/"
+                 << ptgtIdxOverlap.size() << endl;
+            // __DEBUG
+
             // take over reference metadata for this chunk and prepare for next chunk
-            isImputed = move(isImputedOverlap);
-            indexToRefFull = move(indexToRefFullOverlap);
-            nextPidx = move(nextPidxOverlap);
-            ptgtIdx = move(ptgtIdxOverlap);
-            isImputedOverlap = move(RingBuffer<bool>());
-            indexToRefFullOverlap = move(RingBuffer<size_t>());
-            nextPidxOverlap = move(RingBuffer<size_t>());
-            ptgtIdxOverlap = move(RingBuffer<size_t>());
+//            isImputed = move(isImputedOverlap);
+//            indexToRefFull = move(indexToRefFullOverlap);
+//            nextPidx = move(nextPidxOverlap);
+//            ptgtIdx = move(ptgtIdxOverlap);
+//            isImputedOverlap = move(RingBufferBool());
+//            indexToRefFullOverlap = move(RingBuffer<size_t>());
+//            nextPidxOverlap = move(RingBuffer<size_t>());
+//            ptgtIdxOverlap = move(RingBuffer<size_t>());
+            size_t redref = indexToRefFull[indexToRefFull.size()-currMOverlap-1]+1;
+            size_t n = currMrefOverlap;
+            isImputed.keepLast(n);
+            indexToRefFull.keepLast(currMOverlap);
+            nextPidx.keepLast(n);
+            ptgtIdx.keepLast(n);
+
+            // need to correct some index mappings now
+            // DEBUG
+            cerr << "diffs: " << indexToRefFull.back() - indexToRefFullOverlap.back() << " / "
+                              << nextPidx.back() - nextPidxOverlap.back() << " / "
+                              << ptgtIdx.back() - ptgtIdxOverlap.back() << endl;
+            cerr << "idx0: " << indexToRefFullOverlap[0] << " / " << indexToRefFull[0] << " --- "
+                             << nextPidxOverlap[0] << " / " << nextPidx[0] << " --- "
+                             << ptgtIdxOverlap[0] << " / " << ptgtIdx[0] << endl;
+            cerr << "idxbck: " << indexToRefFullOverlap.back() << " / " << indexToRefFull.back() << " --- "
+                               << nextPidxOverlap.back() << " / " << nextPidx.back() << " --- "
+                               << ptgtIdxOverlap.back() << " / " << ptgtIdx.back() << endl;
+            cerr << "currMOverlap: " << currMOverlap << " currMrefOverlap: " << currMrefOverlap
+                 << " redref: " << redref
+                 << " redtgt: " << ptgtIdx[0] << endl;
+            // __DEBUG
+
+            indexToRefFull.sub(redref);
+            nextPidx.sub(nextPidx[0]);
+            ptgtIdx.sub(ptgtIdx[0]);
+
+            // DEBUG
+            cerr << "CHECKTGT: " << endl;
+            bool ok = true;
+            for (size_t i=0; i<indexToRefFull.size(); i++) {
+                ok = ok && indexToRefFull[i] == indexToRefFullOverlap[i];
+                if (!ok) {
+                    cerr << i << ": " << indexToRefFull[i] << " / " << indexToRefFullOverlap[i] << endl;
+                }
+            }
+            if (ok)
+                cerr << "ok" << endl;
+            cerr << "CHECKREF: ";
+            ok = true;
+            for (size_t i=0; i<ptgtIdx.size(); i++) {
+                ok = ok && ptgtIdx[i] == ptgtIdxOverlap[i];
+                if (!ok) {
+                    cerr << "first diff at " << i << ": " << ptgtIdx[i] << " != " << ptgtIdxOverlap[i] << endl;
+                    break;
+                }
+            }
+            if (ok)
+                cerr << "ok" << endl;
+            // __DEBUG
+
+            isImputedOverlap.clear();
+            indexToRefFullOverlap.clear();
+            nextPidxOverlap.clear();
+            ptgtIdxOverlap.clear();
         }
-        if (minNChunks > 1) {
+        if (minNChunks > 1 && currChunk == 0) { // need only for the first time now
             isImputedOverlap.reset(Mrefpre);
             indexToRefFullOverlap.reset(maxChunkTgtVars);
             nextPidxOverlap.reset(Mrefpre);
@@ -1524,7 +1688,7 @@ void VCFData::processNextChunk() {
             while (qrefcurridxreg < Mrefreg) {
                 // TODO we have to check the memory here and break up if there are too many reference variants left!
                 qRefLoadNextVariant();
-                isImputed.push_back(true); // this is the default and may change below if we found a common SNP here that will be phased
+                isImputed.push_back(true);
                 nextPidx.push_back(bcf_pout.size());
                 ptgtIdx.push_back(currM);
                 currMref++;
@@ -1553,8 +1717,8 @@ void VCFData::processNextChunk() {
     lstats.Mref = currMref - lstats.Mref; // we have to remove the overlap size from previous chunk as it is contained in currMref
     lstats.MrefMultiAllreg = MrefMultiAllreg;
 
-    // resize transposed reference according to the number of variants we inserted
-    referenceT.resize(M);
+    // reduce transposed reference according to the number of variants we inserted
+    referenceT.setSize(M);
 
     // set the map for haploid samples
     if (currChunk == 0 && !createQRef) {
@@ -1897,17 +2061,18 @@ inline void VCFData::processReferenceOnlySNP(bcf1_t *ref, void **ref_gt, int *mr
     if (multiallelic)
         MrefMultiAllreg++;
 
-//    bcf_update_genotypes(ref_hdr, ref, NULL, 0); // remove genotypes
-    isImputed.push_back(true);
-    nextPidx.push_back(bcf_pout.size()); // will point to the next common index or the end, if there will be no more common sites
-    ptgtIdx.push_back(currM);
     currMref++;
-    if (inOverlap) {
-        isImputedOverlap.push_back(true);
-        nextPidxOverlap.push_back(bcf_poutOverlap.size()); // will point to the next common index or the end, if there will be no more common sites
-        ptgtIdxOverlap.push_back(currMOverlap);
-        currMrefOverlap++;
-    }
+
+    // not required anymore as this function is called only when creating a Qref
+//    isImputed.push_back(true);
+//    nextPidx.push_back(bcf_pout.size()); // will point to the next common index or the end, if there will be no more common sites
+//    ptgtIdx.push_back(currM);
+//    if (inOverlap) {
+//        isImputedOverlap.push_back(true);
+//        nextPidxOverlap.push_back(bcf_poutOverlap.size()); // will point to the next common index or the end, if there will be no more common sites
+//        ptgtIdxOverlap.push_back(currMOverlap);
+//        currMrefOverlap++;
+//    }
 }
 
 inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, int *mref_gt,

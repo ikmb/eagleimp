@@ -254,7 +254,7 @@ void Target::phase() {
     size_t capacity = roundToMultiple(K, UNITWORDS * sizeof(BooleanVector::data_type) * 8) / 8;
     BooleanVector::data_type *refincdata = (BooleanVector::data_type*) MyMalloc::calloc(M * capacity, 1, string("refincdata_t")+to_string(ntarget)); // init complete area with false
 
-    vector<BooleanVector> refincT(M, BooleanVector());
+    RingBuffer<BooleanVector> refincT(M,M);
     auto curr_data = refincdata;
     for (auto &ref : refincT) {
         ref.setData(curr_data, capacity, K); // init with size K
@@ -950,7 +950,7 @@ void Target::findCallLocs() {
 }
 
 // this is the second most computationally expensive part of the phasing!
-void Target::condensedReferenceT(vector<BooleanVector> &refincT, vector<int> *count0) {
+void Target::condensedReferenceT(RingBuffer<BooleanVector> &refincT, vector<int> *count0) {
 
     const auto &csplits(splitsites);
 
@@ -986,7 +986,7 @@ void Target::condensedReferenceT(vector<BooleanVector> &refincT, vector<int> *co
             }
             *c0it = K - count1;
             c0it++;
-            currrefincTit++; // points to ref (odd) part now
+            ++currrefincTit; // points to ref (odd) part now
 
             // clean incon data for next segment
             memset(inconFulldataT, 0, inconFullTcap);
@@ -1006,7 +1006,7 @@ void Target::condensedReferenceT(vector<BooleanVector> &refincT, vector<int> *co
             }
             *c0it = K - count1;
             c0it++;
-            currrefincTit++; // points to incon (even) part now
+            ++currrefincTit; // points to incon (even) part now
 
             // find next split site
             nextsplit = csplitit == csplits.cend() ? ~0ull : *csplitit++;

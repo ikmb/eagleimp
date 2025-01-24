@@ -264,6 +264,67 @@ public:
     /* no length check for speed reasons!! */
     inline bool operator[](size_t pos) const { return at(pos); }
 
+    // resizes the vector to keep only the last n elements
+    // also takes care of the memory to be erased properly (i.e. now unused areas are set to zero again)
+    inline void keepLast(size_t n) {
+        // DEBUG
+        if (n > len)
+            cerr << "WARNING: BooleanVector: tried to keep more elements (" << n << ") than the current size (" << len << ")." << endl;
+
+        // keeping nothing is the same as clearing the vector
+        if (n == 0) {
+            clear();
+            return;
+        }
+
+        // only need to proceed if n is lower than the number of stored elements
+        if (n < len) {
+            size_t lastidx = (len-1) / DATATYPEBITS;
+            size_t lastbitidx = (len-1) % DATATYPEBITS;
+            size_t new_lastidx = (n-1) / DATATYPEBITS;
+            size_t new_lastbitidx = (n-1) % DATATYPEBITS;
+            size_t worddiff = lastidx - new_lastidx; // will be positive or zero
+
+            // shift data words to align kept data correctly
+            if (new_lastbitidx < lastbitidx) { // need a right shift
+                size_t shift = lastbitidx - new_lastbitidx;
+                data_type mask = (1ull << shift)-1; // to mask the carry-over bits
+                data_type carry = 0; // for the bits to shift in
+                for (size_t i = lastidx; i >= worddiff; i--) {
+                    // store the bits that will be shifted out
+                    data_type new_carry = data[i] & mask;
+                    data[i] = (data[i] >> shift) | (carry << (DATATYPEBITS-shift));
+                    carry = new_carry;
+                }
+            } else if (new_lastbitidx > lastbitidx) { // need a left shift
+                size_t shift = new_lastbitidx - lastbitidx;
+                data_type mask = ((1ull << shift)-1) << (DATATYPEBITS-shift); // to mask the carry-over bits
+                data_type carry = data[worddiff-1] & mask; // directly take the carry bits for the first word (note that worddiff will be positive here)
+                for (size_t i = worddiff; i <= lastidx; i++) {
+                    // store the bits that will be shifted out
+                    data_type new_carry = data[i] & mask;
+                    data[i] = (data[i] << shift) | (carry >> (DATATYPEBITS-shift));
+                    carry = new_carry;
+                }
+            } // else: new_lastbitidx == lastbitidx: no shift required
+
+            // copy kept data to the front and erase previously used area (only if necessary)
+            if (worddiff) {
+                // copy
+                for (size_t d = 0, s = worddiff; d <= new_lastidx; d++,s++)
+                    data[d] = data[s];
+                // erase
+                for (size_t i = new_lastidx+1; i <= lastidx; i++)
+                    data[i] = 0;
+            }
+
+            // update
+            len = n;
+            nextpushbit = 1ull << (n % DATATYPEBITS);
+            nextpushword = data + (n / DATATYPEBITS);
+        }
+    }
+
     inline void dump(ostream &out) const {
         size_t ac = 0;
         for (size_t i = 0; i < len; i++) {
@@ -351,141 +412,6 @@ private:
     data_type *nextpushword_is2;
     static const data_type HIGHESTPUSHBIT = 1ull << (8*sizeof(data_type)-1);
 };
-
-
-template<typename T>
-class RingBufferIterator;
-
-template<typename T>
-class RingBuffer {
-
-public:
-    RingBuffer(){}
-
-    RingBuffer(size_t _capacity) {
-        reset(_capacity);
-    }
-
-    ~RingBuffer() = default;
-
-    void reset(size_t _capacity) {
-        capacity = _capacity;
-        buffer.resize(_capacity);
-        clear();
-    }
-
-    // insert an element at the end, increase (double) capacity if required
-    void push_back(const T& e) {
-        // increase capacity if required
-        if (len == capacity) {
-            // DEBUG
-            cerr << "WARNING: RingBuffer: Increasing capacity to " << 2*capacity << "." << endl;
-
-            buffer.resize(2*capacity); // we double here to ensure there's enough new space in case we need to copy the whole old vector now
-            // copy all elements from 0 to start to the new allocated area at the end of the old vector
-            // NOTE: at this point is last == start, and the old vector was full.
-            for (size_t i=0; i < start; i++) {
-                buffer[capacity+i] = buffer[i];
-            }
-            last = capacity + start;
-            capacity *= 2;
-        }
-        // insert element
-        buffer[last] = e;
-        last++;
-        if (last == capacity)
-            last = 0;
-        len++;
-    }
-
-    // as alternative to lvalue back(): modify the last element (no check for empty container!)
-    void set_back(const T& e) {
-        if (last > 0)
-            buffer[last-1] = e;
-        else
-            buffer[capacity-1] = e;
-    }
-
-    // get an element, no check if this was already inserted. (faster!)
-    T at(size_t pos) const {
-        // DEBUG
-        if (pos >= len)
-            cerr << "WARNING: RingBuffer: Accessing element out of range!" << endl;
-
-        if (pos >= start)
-            return buffer[pos-start];
-        else
-            return buffer[pos+start-capacity];
-    }
-
-    T back() const {
-        // DEBUG
-        if (len == 0)
-            cerr << "WARNING: RingBuffer: Accessing last element of empty buffer!" << endl;
-        return at(len-1);
-    }
-
-    T operator[](size_t pos) const {
-        return at(pos);
-    }
-
-    size_t size() const {
-        return len;
-    }
-
-    void clear() {
-        start = 0;
-        last = 0;
-        len = 0;
-    }
-
-    void keepLast(size_t n) {
-        // DEBUG
-        if (n > len)
-            cerr << "WARNING: RingBuffer: Attempting to keep more elements than available." << endl;
-
-        if (n < len) {
-            len = n;
-            start = last > n ? last-n : capacity+last-n;
-        }
-    }
-
-    typedef RingBufferIterator<T> iterator;
-
-    iterator begin() { return RingBufferIterator<T>(this, 0); }
-    iterator end() { return RingBufferIterator<T>(this, len); }
-
-private:
-    vector<T> buffer;
-    size_t capacity = 0;
-    size_t start = 0; // inclusive
-    size_t last = 0;   // exclusive
-    size_t len = 0;
-};
-
-template<typename T>
-class RingBufferIterator {
-
-public:
-    RingBufferIterator() = delete;
-    RingBufferIterator(RingBuffer<T>* rb_, size_t it_ = 0) : rb(rb_), it(it_) {}
-    ~RingBufferIterator(){}
-    RingBufferIterator(const RingBufferIterator<T>&) = default;
-
-    //RingBufferIterator<T>& operator=(const RingBufferIterator<T>&) = default;
-
-    // no boundary check!
-    RingBufferIterator<T>& operator++() { it++; return (*this); }
-    // RingBufferIterator<T>& operator++(int) { auto temp(*this); it++; return temp; } // postfix ++
-    bool operator==(const RingBufferIterator<T>& other) const { return other.rb == rb && other.it == it; };
-    bool operator!=(const RingBufferIterator<T>& other) const { return other.rb != rb || other.it != it; };
-    T operator*() const { return rb->at(it); }
-
-protected:
-    RingBuffer<T>* rb;
-    size_t it;
-};
-
 
 ostream &operator<<(ostream&, const Haplotype&);
 ostream &operator<<(ostream&, const Genotype&);

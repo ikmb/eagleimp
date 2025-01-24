@@ -30,7 +30,7 @@
 #include "Stopwatch.h"
 #endif
 
-PBWT::PBWT(const vector<BooleanVector> *dataraw_, vector<int> *gCount0_, int ntarget_)
+PBWT::PBWT(const RingBuffer<BooleanVector> *dataraw_, vector<int> *gCount0_, int ntarget_)
     : K((*dataraw_)[0].size()),
 //      Kwords(4*roundToMultiple((size_t)K, UNITWORDS * sizeof(BooleanVector::data_type) * 8) / (8 * sizeof(BooleanVector::data_type))),
       Kwords(2*divideRounded(K,32)),
@@ -50,7 +50,7 @@ PBWT::PBWT(const vector<BooleanVector> *dataraw_, vector<int> *gCount0_, int nta
 //    dump(ntarget, true);
 }
 
-PBWT::PBWT(const vector<BooleanVector> *dataraw_, bool refPBWT_, int ntarget_)
+PBWT::PBWT(const RingBuffer<BooleanVector> *dataraw_, bool refPBWT_, int ntarget_)
     : K((*dataraw_)[0].size()),
       Kwords(2*divideRounded(K,32)),
       Kinv(1.0/(fp_type)K),

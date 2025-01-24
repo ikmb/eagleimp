@@ -49,10 +49,11 @@ void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets) 
 
         // allocate memory and create vector structure for transposed reference
         size_t capacity = roundToMultiple(K, UNITWORDS * sizeof(BooleanVector::data_type) * 8) / 8;
-        BooleanVector::data_type *refdata = (BooleanVector::data_type*) MyMalloc::malloc(M * capacity, string("refdata")); // pre-initialization below
+        BooleanVector::data_type *refdata = (BooleanVector::data_type*) MyMalloc::calloc(M * capacity, 1, string("refdata")); // initialized with 'false'
 
         // transposed reference reduced to target sites (used as base for PBWT)
-        vector<BooleanVector> refT = vector<BooleanVector>(M, BooleanVector(refdata, M * capacity, 0, false)); // init complete area with false
+//        vector<BooleanVector> refT = vector<BooleanVector>(M, BooleanVector(refdata, M * capacity, 0, false)); // init complete area with false
+        RingBuffer<BooleanVector> refT(M,M);
 
         auto curr_data = refdata;
         for (auto &ref : refT) {

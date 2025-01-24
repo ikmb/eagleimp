@@ -25,6 +25,7 @@
 #include <iostream>
 
 #include "Datatypes.h"
+#include "RingBuffer.h"
 #include "PBWTInterval.h"
 
 #include "MyMalloc.h"
@@ -36,8 +37,8 @@ public:
 
     // constructor that creates a PBWT from a vector of boolean vectors (natural order)
     // all fields had to be preinitialized with zeros!!!
-    PBWT(const vector<BooleanVector> *dataraw, vector<int> *gCount0, int ntarget = -1);
-    PBWT(const vector<BooleanVector> *dataraw, bool refPBWT, int ntarget = -1);
+    PBWT(const RingBuffer<BooleanVector> *dataraw, vector<int> *gCount0, int ntarget = -1);
+    PBWT(const RingBuffer<BooleanVector> *dataraw, bool refPBWT, int ntarget = -1);
 
     // constructor that takes a preliminary created compressed PBWT as input, that is generated without count0 information (also not in the raw data!)
     PBWT(uint32_t* comprPBWTraw, int K, int Kwords, int M, int ntarget = -1);
@@ -94,7 +95,7 @@ private:
     const int Kwords; // number of 32 bit words used for one site (i.e. at least 2*ceil(K/32), may include padding): used for offsets in the compressed PBWT when jumping to a specific site
     const fp_type Kinv; // inverted number of conditioning haps (1/K)
     const int M; // PBWT width (2*number of sites in the condensed reference + 1)
-    const vector<BooleanVector> *dataraw; // condensed reference information of conditioning haps at split sites (transposed)
+    const RingBuffer<BooleanVector> *dataraw; // condensed reference information of conditioning haps at split sites (transposed)
     uint32_t *comprPBWT;
     bool reversePBWT;
     int curr_m; // current cursor
