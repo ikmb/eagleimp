@@ -45,7 +45,7 @@ TargetImp::TargetImp(size_t hap_id_, const VCFData& vcfdata_, const PBWT &pbwt_,
     currms.clear();
     mmaps.clear();
     idx0s.clear();
-    miss_its.clear();
+    miss_idxs.clear();
     nextmisss.clear();
     mrefs.clear();
 
@@ -54,12 +54,12 @@ TargetImp::TargetImp(size_t hap_id_, const VCFData& vcfdata_, const PBWT &pbwt_,
     mmaps.resize(num_blocks, vcfdata.getSNPIndexToFullRef(0)); // NEXT common site mapped to index in full reference
     idx0s.resize(num_blocks, 0); // points to the first match probably including mref (i.e. the end > m, should be the case for the first match)
 
-    miss_its.resize(num_blocks, misspos.cbegin());
+    miss_idxs.resize(num_blocks, 0);
     nextmisss.resize(num_blocks, ~0ull);
     for (unsigned block = 0; block < num_blocks; block++) {
-        if (miss_its[block] != misspos.cend()) {
-            nextmisss[block] = *(miss_its[block]);
-            miss_its[block]++;
+        if (miss_idxs[block] < misspos.size()) {
+            nextmisss[block] = misspos[miss_idxs[block]];
+            miss_idxs[block]++;
         }
     }
     mrefs.resize(num_blocks, 0);
@@ -82,11 +82,11 @@ void TargetImp::calcSMMatches() {
 
     // get position of first missing hap
     const auto &curr_misspos = misspos;
-    auto missit = curr_misspos.cbegin();
+    size_t missidx = 0;
     size_t nextmiss = ~0ull;
-    if (missit != curr_misspos.cend()) {
-        nextmiss = *missit;
-        missit++;
+    if (missidx < curr_misspos.size()) {
+        nextmiss = misspos[missidx];
+        missidx++;
     }
 
     // iterate over all target sites
@@ -96,16 +96,12 @@ void TargetImp::calcSMMatches() {
         bool missing = m == nextmiss;
         if (missing) {
             // find next missing
-            if (missit == curr_misspos.cend())
+            if (missidx >= curr_misspos.size())
                 nextmiss = ~0ull;
             else {
-                nextmiss = *missit;
-                missit++;
+                nextmiss = curr_misspos[missidx];
+                missidx++;
             }
-//                // DEBUG set missing allele according to RefPanelAF and still use as anchor, as in original PBWT
-//                missing = false;
-//                curr_hap = vcfdata.getAlleleFreqFullRef(vcfdata.getSNPIndexToFullRef(m)) > 0.5;
-//                // __DEBUG
         }
 
         // process the history tree:
@@ -262,7 +258,7 @@ void TargetImp::calcSMMatches() {
         currms[block] = currms[block-1];
         mmaps[block] = mmaps[block-1];
         idx0s[block] = idx0s[block-1];
-        miss_its[block] = miss_its[block-1];
+        miss_idxs[block] = miss_idxs[block-1];
         nextmisss[block] = nextmisss[block-1];
         mrefs[block] = mrefs[block-1];
 
@@ -424,11 +420,11 @@ void TargetImp::forwardBlock(unsigned block, size_t nsites) {
         bool missing = currms[block] == nextmisss[block];
         if (missing && mrefs[block] == mmaps[block]) {
             // find next missing
-            if (miss_its[block] == misspos.cend())
+            if (miss_idxs[block] >= misspos.size())
                 nextmisss[block] = ~0ull;
             else {
-                nextmisss[block] = *miss_its[block];
-                miss_its[block]++;
+                nextmisss[block] = misspos[miss_idxs[block]];
+                miss_idxs[block]++;
             }
         }
 
@@ -460,11 +456,11 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
         bool missing = currms[block] == nextmisss[block];
         if (missing && mrefs[block] == mmaps[block]) {
             // find next missing
-            if (miss_its[block] == misspos.cend())
+            if (miss_idxs[block] >= misspos.size())
                 nextmisss[block] = ~0ull;
             else {
-                nextmisss[block] = *miss_its[block];
-                miss_its[block]++;
+                nextmisss[block] = misspos[miss_idxs[block]];
+                miss_idxs[block]++;
             }
         }
 

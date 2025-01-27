@@ -85,7 +85,7 @@ public:
     RingBuffer<BooleanVector> &getReferenceT() { return referenceT; }
     const vector<BooleanVector> &getReferenceFullT() const { return referenceFullT; }
     const vector<GenotypeVector> &getTargets() const { return targets; }
-    const vector<vector<size_t>> &getTgtMissPos() const { return tgtmiss; }
+    const vector<RingBuffer<size_t>> &getTgtMissPos() const { return tgtmiss; }
     const vector<RingBufferBool> &getTgtInPhases() const { return tgtinphase; }
     const RingBuffer<fp_type> &getCMPos() const { return cMs; }
     const vector<string> &getTargetIDs() const { return targetIDs; }
@@ -210,8 +210,8 @@ private:
 
     vector<GenotypeVector> targets; // target genotypes (0 = hom ref, 1 = het, 2 = hom alt, 9 = missing), size is Ntarget
     vector<GenotypeVector> targetsOverlap; // target genotypes (0 = hom ref, 1 = het, 2 = hom alt, 9 = missing), size is Ntarget
-    vector<vector<size_t>> tgtmiss; // positions of missings in targets
-    vector<vector<size_t>> tgtmissOverlap; // positions of missings in targets (overlap region)
+    vector<RingBuffer<size_t>> tgtmiss; // positions of missings in targets
+    vector<RingBuffer<size_t>> tgtmissOverlap; // positions of missings in targets (overlap region)
     vector<RingBufferBool> tgtinphase; // input target phases, true == mat:1 pat:0, false others (only stored if --skipPhasing is enabled)
     vector<RingBufferBool> tgtinphaseOverlap; // input target phases, true == mat:1 pat:0, false others (only stored if --skipPhasing is enabled) (overlap region)
     vector<uint64_t> chrBpsReg; // base pair positions of target SNPs on target chromosome, size is Mreg

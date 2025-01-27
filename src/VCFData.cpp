@@ -845,8 +845,24 @@ void VCFData::processNextChunk() {
 
                 targetsOverlap[tidx].clear();
 
-                tgtmiss[tidx] = move(tgtmissOverlap[tidx]);
-                tgtmissOverlap[tidx] = move(vector<size_t>());
+                // keep only missings from overlap, reduce index accordingly
+//                tgtmiss[tidx] = move(tgtmissOverlap[tidx]);
+//                tgtmissOverlap[tidx] = move(vector<size_t>());
+                if (tgtmiss[tidx].size()) { // only if not empty
+                    size_t red = currM - currMOverlap; // index reduction
+                    size_t keep = 0;
+                    for (int i = tgtmiss[tidx].size()-1; i >= 0; i--) { // backwards
+                        if (tgtmiss[tidx][i] < red) // this missing one is not in the overlap
+                            break; // further ones will neither be in the overlap
+                        // else: in overlap
+                        keep++;
+                    }
+                    tgtmiss[tidx].keepLast(keep);
+                    tgtmiss[tidx].sub(red);
+                    tgtmissOverlap[tidx].clear();
+                }
+
+
                 if (skipPhasing) {
                     tgtinphase[tidx].keepLast(currMOverlap);
                     tgtinphaseOverlap[tidx].clear();
@@ -855,6 +871,19 @@ void VCFData::processNextChunk() {
             // DEBUG
             cerr << (ok ? "ok" : "NOT OK!") << " checked " << cnt << " genotypes." << endl;
             }
+            // __DEBUG
+
+            // DEBUG
+            cerr << "MISSINGS new (reverse):" << endl;
+            ti = 0;
+            cerr << ti << ": tm  :";
+            for (int i = tgtmiss[ti].size()-1; i >= 0; i--)
+                cerr << "\t" << tgtmiss[ti][i];
+            cerr << endl;
+            cerr << ti << ": tmov:";
+            for (int i = tgtmissOverlap[ti].size()-1; i >= 0; i--)
+                cerr << "\t" << tgtmissOverlap[ti][i];
+            cerr << endl;
             // __DEBUG
 
             // reference data

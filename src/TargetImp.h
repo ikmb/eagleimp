@@ -24,6 +24,7 @@
 #include "VCFData.h"
 #include "PBWT.h"
 #include "Datatypes.h"
+#include "RingBuffer.h"
 
 //// DEBUG
 //#define COUNTSMMATCHES
@@ -119,8 +120,8 @@ private:
     vector<size_t> currms; // last common site (frame index) if beforefirstcommon == false
     vector<size_t> mmaps; // NEXT common site mapped to index in full reference
     vector<size_t> idx0s; // points to the first match probably including mref (i.e. the end > m, should be the case for the first match)
-    const vector<size_t> &misspos;
-    vector<vector<size_t>::const_iterator> miss_its;
+    const RingBuffer<size_t> &misspos;
+    vector<size_t> miss_idxs;
     vector<size_t> nextmisss;
     vector<size_t> mrefs; // curr position (in reference) for imputation
 
