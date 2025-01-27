@@ -112,7 +112,6 @@ class BooleanVector {
 public:
     using data_type = std::uint64_t;
     static const size_t DATATYPEBITS = sizeof(data_type) * 8;
-//    static const size_t UNITWORDS = 8; // number of data_type words to present one unit (here: 512 bit = FPGA RAM bus word width)
 
     BooleanVector() : len(0), capacity(0), data(NULL), nextpushbit(1ull), nextpushword(NULL) {};
 
@@ -154,13 +153,6 @@ public:
 
     // only works if capacity is set large enough and memory is preinitialized with zero! otherwise you risk a segfault or undefined behaviour, no length check!!!
     inline void push_back_withPreInit(bool b) {
-//        data_type bit = b ? 1ull : 0ull;
-//        if (len % DATATYPEBITS == 0) {
-//            data[len/DATATYPEBITS] = bit;
-//        } else if (b) {
-//            data_type &curr = data[len/DATATYPEBITS];
-//            curr |= bit << (len % DATATYPEBITS);
-//        }
         if (b)
             *nextpushword |= nextpushbit;
 
