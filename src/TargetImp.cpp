@@ -265,6 +265,41 @@ void TargetImp::calcSMMatches() {
         // forward state by number of sites in PREVIOUS block
         forwardBlock(block, num_sites_per_block[block-1]);
     }
+
+    // DEBUG
+    if (hap_id == 0) {
+        cerr << "Mref:\t" << Mref << endl;
+        cerr << "M:\t" << M << endl;
+        cerr << "numsites:";
+        for (size_t n = 0; n < num_blocks; n++)
+            cerr << "\t" << num_sites_per_block[n];
+        cerr << endl;
+        cerr << "mrefs:\t";
+        for (size_t n = 0; n < num_blocks; n++)
+            cerr << "\t" << mrefs[n];
+        cerr << endl;
+        cerr << "currms:\t";
+        for (size_t n = 0; n < num_blocks; n++)
+            cerr << "\t" << currms[n];
+        cerr << endl;
+        cerr << "mmaps:\t";
+        for (size_t n = 0; n < num_blocks; n++)
+            cerr << "\t" << mmaps[n];
+        cerr << endl;
+        cerr << "idx0s:\t";
+        for (size_t n = 0; n < num_blocks; n++)
+            cerr << "\t" << idx0s[n];
+        cerr << endl;
+        cerr << "missidx:";
+        for (size_t n = 0; n < num_blocks; n++)
+            cerr << "\t" << miss_idxs[n];
+        cerr << endl;
+        cerr << "nextmiss:";
+        for (size_t n = 0; n < num_blocks; n++)
+            cerr << "\t" << nextmisss[n];
+        cerr << endl;
+    }
+    // __DEBUG
 }
 
 #ifdef COUNTSMMATCHES
@@ -441,14 +476,6 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
     // all sm matches that cover the current site (i.e. curr >= start && curr <= end-1) are used for imputation
     for (size_t nbunch = 0; nbunch < nsites && mrefs[block] < Mref; nbunch++, mrefs[block]++) {
 
-        // DEBUG
-        bool dbg = false;
-        if (hap_id == 0 && (mrefs[block] == 488395 || mrefs[block] == 491113 || mrefs[block] == 72270 || mrefs[block] == 74988)) {
-            dbg = true;
-            cerr << "XXX: block: " << block << " nsites: " << nsites << " nbunch: " << nbunch << " varidx: " << mrefs[block];
-        }
-        // __DEBUG
-
         if (mrefs[block] == mmaps[block]) { // found common site
             if (beforefirstcommons[block]) {
                 // special case: we haven't had a common site yet (first segment), so m needs to stay zero for one more segment
@@ -476,20 +503,9 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
         // impute only if required
         if (mrefs[block] != mmaps[block] || missing || imputeCalls) {
 
-            // DEBUG
-            if (dbg && missing) {
-                cerr << " (missing)";
-            }
-            // __DEBUG
-
             if (idx0s[block] >= sm_matches.size() || sm_matches[idx0s[block]].start > currms[block]) { // m points to LAST common site!
                 // this site is not covered: As in PBWT we take the reference allele frequency later and count this as a "conflict"
                 imputedDosageBunch[nbunch] = DOSAGE_CONFLICT;
-                // DEBUG
-                if (dbg) {
-                    cerr << " (NOT covered)";
-                }
-                // __DEBUG
             } else {
 
                 // iterate over matches that include the first site
@@ -530,28 +546,12 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
                     imputedTargetBunch.setWithPreInit(nbunch, true);
                 imputedDosageBunch[nbunch] = (float)(((double) score) / ((double) sum)); // Why double precision first? -> sum and score can get very large!
 
-                // DEBUG
-                if (dbg) {
-                    cerr << " (covered)";
-                }
-                // __DEBUG
             }
         }
 
         if (mrefs[block] == mmaps[block]) { // need to update the mapping for the next common site if we are at a common site
             mmaps[block] = (currms[block]+1) < M ? vcfdata.getSNPIndexToFullRef(currms[block]+1) : Mref;
-
-            // DEBUG
-            if (dbg) {
-                cerr << " (common)";
-            }
-            // __DEBUG
         }
 
-        // DEBUG
-        if (dbg) {
-            cerr << " dosage: " << imputedDosageBunch[nbunch] << endl;
-        }
-        // __DEBUG
     }
 }

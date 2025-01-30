@@ -375,7 +375,10 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         if (doImputation) {
             num_workers = max(1u, args.num_threads - args.num_files);
             num_files = args.num_files;
-            // bunchsize in number of variants
+
+            // (preliminary) bunchsize in number of variants:
+            // estimated from user parameter and memory requirements, assumption based on equally distributed variants;
+            // will be adapted to real chunk size later
             bunchsize = max((size_t)1, (args.ibunchsize*(size_t)1000) / Ntarget); // minimum bunch size is 1
             bunchsize = roundToMultiple(bunchsize, (size_t)num_workers); // important to have an equal load on all worker threads
 
@@ -698,8 +701,8 @@ void VCFData::processNextChunk() {
         // determine Mrefpre for chunks:
         // number of reference vars per chunk if tgt and ref vars are equally distributed
         size_t Mrefpre = Mrefglob * maxChunkTgtVars/Mglob;
-        // ...increased by 10% to reduce the chance for required reallocation of the vectors below
-        Mrefpre += Mrefpre/10;
+        // ...increased by 20% to reduce the chance for required reallocation of the vectors below
+        Mrefpre += Mrefpre/5;
 
         if (currChunk == 0) {
             // initialize chunk region with complete region first (without flanks)
@@ -869,9 +872,6 @@ void VCFData::processNextChunk() {
             nextPidx.keepLast(keeplastref);
             ptgtIdx.keepLast(keeplastref);
 
-            // DEBUG
-            cerr << "XXX: Removing idxs: " << (currChunkOffset-redref) << "-" << (currChunkOffset-1) << " refpos: " << positionsFullRefRegion[currChunkOffset-redref] << "-" << positionsFullRefRegion[currChunkOffset-1] << endl;
-
             size_t keeplastisphased = isPhased.size()-nextPidx[0]; // contains overlap size + unphased sites in overlap
             isPhased.keepLast(keeplastisphased); // if outputUnphased == true -> currMOverlap + number of unphased sites in overlap
             bcf_pout.keepLast(keeplastisphased); // if outputUnphased == true -> currMOverlap + number of unphased sites in overlap
@@ -1024,8 +1024,9 @@ void VCFData::processNextChunk() {
 //                    endChunkBp = tgt->pos; // should be position minus 1, but tgt->pos is zero-based, and we are 1-based, so this is ok.
 //                }
                 // check, how we get along with our memory:
-                // if we already used up our available memory, we need to stop this chunk now
-                if (MyMalloc::getCurrentAlloced() > maxchunkmem) {
+                // if we already used up ~97% of our available memory, we stop this chunk now
+                // NOTE: we still load the reference variants between the last and this tgt site
+                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
                     // TODO maybe adjust currMOverlap here, if the chunk is too small
                     int64_t reduction = endChunkFlankIdx[currChunk] - tgtlinesread - 1; // difference to the previously calculated end of chunk
                     startChunkFlankIdx[currChunk+1] -= reduction;
@@ -1084,8 +1085,8 @@ void VCFData::processNextChunk() {
                         }
                     }
                 }
-            }
-        }
+            } // END if (tgt)
+        } // END if (!createQref)
 
         if (useExclude && bcf_sr_get_line(sr, loadQuickRef ? 1 : 2)) { // SNP is in exclude file -> skip
           if (tgt) {
@@ -3491,11 +3492,13 @@ void VCFData::writeVCFImputedBunch(
             // equations as in minimac4, calculation optimized
             double r2 = 1.0;
             double af = 0.0;
+            double evar = 0.0;
+            double ovar = 0.0;
             if (nval) { // values for r2 calculation exist
                 af = adsum / nval;
-                double evar = af * (1.0 - af);
-                double ovar = (ad2sum - adsum * af) / nval;
-                if (evar > 0.0)
+                evar = af * (1.0 - af);
+                ovar = (ad2sum - adsum * af) / nval;
+                if (evar > 0.0 && ovar > 0.0)
                     r2 = ovar / evar;
                 else
                     r2 = 0.0;
@@ -3555,7 +3558,9 @@ void VCFData::writeVCFImputedBunch(
             } // END filter
 
         } else { // not in output region or skipped multi-allelic
+
             recqs[block][(startidx+bidx) % num_workers].push(NULL);
+
         } // END if not in output region
 
     } // END through all sites from bunch

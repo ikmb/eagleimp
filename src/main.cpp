@@ -414,17 +414,25 @@ int main(int argc, char *argv[]) {
             Stopwatch swimp("Imputation+Write");
 
             unsigned num_workers = max(1u, args.num_threads - args.num_files);
-            // get bunch size in number of variants
-            size_t bunchsize = vcfdata.getBunchSize();
+            // get preliminary bunch size in number of variants
+            size_t bunchsize = vcfdata.getPreliminaryBunchSize();
             // test if bunch size is appropriate with current chunk
-            if (bunchsize > vcfdata.getNSNPsFullRef()) { // don't exceed the total number of reference variants in current chunk
-                bunchsize = vcfdata.getNSNPsFullRef();
-                // only set to multiple of num_workers if the memory increase would not be too much!
-                if (bunchsize > 4*num_workers)
-                    bunchsize = roundToMultiple(bunchsize, (size_t)num_workers);
+            if (bunchsize > divideRounded(vcfdata.getNSNPsFullRef(), (size_t)args.num_files)) { // don't exceed the total number of reference variants in current chunk
+                bunchsize = divideRounded(vcfdata.getNSNPsFullRef(), (size_t)args.num_files);
             }
-            size_t icapacity = roundToMultiple(bunchsize, UNITWORDS*8*sizeof(BooleanVector::data_type)) / 8;
+            size_t nbunches = divideRounded(vcfdata.getNSNPsFullRef(), bunchsize * args.num_files);
+            // DEBUG
+            cerr << "BUNCHES (pre) nb / size: " << nbunches << " / " << bunchsize << endl;
+            // optimize bunchsize to have an equal load on all bunches (i.e. reducing the bunchsize to have all bunches approximately the same size)
+            bunchsize = divideRounded(vcfdata.getNSNPsFullRef(), nbunches * args.num_files);
+            // only set to multiple of num_workers if the memory increase would not be too much!
+            if (bunchsize > 4*num_workers)
+                bunchsize = roundToMultiple(bunchsize, (size_t)num_workers);
+            nbunches = divideRounded(vcfdata.getNSNPsFullRef(), bunchsize * args.num_files); // don't know if this is required, but it doesn't hurt
+            // DEBUG
+            cerr << "BUNCHES (post) nb / size: " << nbunches << " / " << bunchsize << endl;
 
+            size_t icapacity = roundToMultiple(bunchsize, UNITWORDS*8*sizeof(BooleanVector::data_type)) / 8;
 //            BooleanVector::data_type *idata = (BooleanVector::data_type*) MyMalloc::malloc(2*vcfdata.getNTarget()*icapacity, string("idata_c")+to_string(chunk)); // pre-initialization below
 //            vector<BooleanVector> imputedTargets(2*vcfdata.getNTarget(), BooleanVector(idata, 2*vcfdata.getNTarget()*icapacity, 0, toBool(Haplotype::Ref)));
             BooleanVector::data_type *idata = (BooleanVector::data_type*) MyMalloc::calloc(2*vcfdata.getNTarget()*icapacity, 1, string("idata_c")+to_string(chunk)); // pre-initialization below
@@ -446,7 +454,6 @@ int main(int argc, char *argv[]) {
             vcfdata.writeVCFImputedPrepare(bunchsize);
 
             // alternating imputation and writing of bunches
-            size_t nbunches = divideRounded(vcfdata.getNSNPsFullRef(), bunchsize * args.num_files);
             size_t startidx = 0;
             cout << "Imputing: 0%" << flush;
             int pgb = 0; // for progress bar

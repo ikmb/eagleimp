@@ -107,7 +107,7 @@ public:
     size_t getNHaploidsRef() const { return nHaploidsRef; }
     // returns the number of haploid samples in the target
     size_t getNHaploidsTgt() const { return nHaploidsTgt; }
-    size_t getBunchSize() const { return bunchsize; }
+    size_t getPreliminaryBunchSize() const { return bunchsize; }
 
     // determines the start phases for the next chunk from the phasing results of the current chunk
     void determineStartPhases(const vector<BooleanVector> &phasedTargets);
