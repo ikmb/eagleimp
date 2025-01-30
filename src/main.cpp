@@ -425,8 +425,10 @@ int main(int argc, char *argv[]) {
             }
             size_t icapacity = roundToMultiple(bunchsize, UNITWORDS*8*sizeof(BooleanVector::data_type)) / 8;
 
-            BooleanVector::data_type *idata = (BooleanVector::data_type*) MyMalloc::malloc(2*vcfdata.getNTarget()*icapacity, string("idata_c")+to_string(chunk)); // pre-initialization below
-            vector<BooleanVector> imputedTargets(2*vcfdata.getNTarget(), BooleanVector(idata, 2*vcfdata.getNTarget()*icapacity, 0, toBool(Haplotype::Ref)));
+//            BooleanVector::data_type *idata = (BooleanVector::data_type*) MyMalloc::malloc(2*vcfdata.getNTarget()*icapacity, string("idata_c")+to_string(chunk)); // pre-initialization below
+//            vector<BooleanVector> imputedTargets(2*vcfdata.getNTarget(), BooleanVector(idata, 2*vcfdata.getNTarget()*icapacity, 0, toBool(Haplotype::Ref)));
+            BooleanVector::data_type *idata = (BooleanVector::data_type*) MyMalloc::calloc(2*vcfdata.getNTarget()*icapacity, 1, string("idata_c")+to_string(chunk)); // pre-initialization below
+            vector<BooleanVector> imputedTargets(2*vcfdata.getNTarget());
             {
                 auto currdata = idata;
                 for (auto &t : imputedTargets) {

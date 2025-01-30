@@ -245,16 +245,10 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         // framework for target data
         targets.clear();
         targets.resize(Ntarget);
-        targetsOverlap.clear();
-        targetsOverlap.resize(Ntarget);
         tgtmiss.clear();
         tgtmiss.resize(Ntarget);
-        tgtmissOverlap.clear();
-        tgtmissOverlap.resize(Ntarget);
         tgtinphase.clear();
         tgtinphase.resize(Ntarget);
-        tgtinphaseOverlap.clear();
-        tgtinphaseOverlap.resize(Ntarget);
 
         chunkStartPhase.clear();
         chunkStartPhase.resize(Ntarget, false); // w.l.o.g. the first starting phase is the reference allele for the maternal path
@@ -758,22 +752,11 @@ void VCFData::processNextChunk() {
             isPhased.reset(maxChunkTgtVars);
             bcf_pout.reset(maxChunkTgtVars);
 
-            if (minNChunks > 1) {
-                alleleFreqsCommonOverlap.reset(maxChunkTgtVars);
-                if (!skipPhasing)
-                    cMsOverlap.reset(maxChunkTgtVars);
-                if (skipPhasing) {
-                    for (auto &tp : tgtinphaseOverlap)
-                        tp.reset(maxChunkTgtVars);
-                }
-                indexToRefFullOverlap.reset(maxChunkTgtVars);
-                isImputedOverlap.reset(Mrefpre);
-                nextPidxOverlap.reset(Mrefpre);
-                ptgtIdxOverlap.reset(Mrefpre);
+            currM = 0;
+            currMref = 0;
 
-                isPhasedOverlap.reset(maxChunkTgtVars);
-                bcf_poutOverlap.reset(maxChunkTgtVars);
-            }
+            lstats.M = 0;
+            lstats.Mref = 0;
 
         } else { // currChunk > 0
 
@@ -788,19 +771,10 @@ void VCFData::processNextChunk() {
                  << alleleFreqsCommon.size() << "/"
                  << bcf_pout.size() << "/"
                  << cMs.size() << endl;
-            cerr << isPhasedOverlap.size() << "/"
-                 << alleleFreqsCommonOverlap.size() << "/"
-                 << bcf_poutOverlap.size() << "/"
-                 << cMsOverlap.size() << endl;
             cerr << "tgt0: " << targets[0].size() << "/" << tgtmiss[0].size() << endl;
             for (size_t tidx = 1; tidx < Ntarget; tidx++) {
                 if (targets[tidx].size() != targets[0].size())
                     cerr << "target sizes not equal!" << endl;
-            }
-            cerr << "tgt0ov: " << targetsOverlap[0].size() << "/" << tgtmissOverlap[0].size() << endl;
-            for (size_t tidx = 1; tidx < Ntarget; tidx++) {
-                if (targetsOverlap[tidx].size() != targetsOverlap[0].size())
-                    cerr << "target overlap sizes not equal!" << endl;
             }
             cerr << "MISSINGS (reverse):" << endl;
             size_t ti = 0;
@@ -808,46 +782,20 @@ void VCFData::processNextChunk() {
             for (int i = tgtmiss[ti].size()-1; i >= 0; i--)
                 cerr << "\t" << tgtmiss[ti][i];
             cerr << endl;
-            cerr << ti << ": tmov:";
-            for (int i = tgtmissOverlap[ti].size()-1; i >= 0; i--)
-                cerr << "\t" << tgtmissOverlap[ti][i];
-            cerr << endl;
             // __DEBUG
+
+            // NOTE: currentMOverlap is the number of tgt sites to take over from the last chunk as overlap
 
             // take over target metadata for this chunk and prepare for next chunk
             // isPhased and bcf_pout potentially carry information for non-phased tgt varianst, so they are taken care of below
             alleleFreqsCommon.keepLast(currMOverlap);
             if (!skipPhasing)
                 cMs.keepLast(currMOverlap);
-            alleleFreqsCommonOverlap.clear();
-            if (!skipPhasing)
-                cMsOverlap.clear();
             // target data
-            // DEBUG
-            {
-            cerr << "CHECKTGT: ";
-            bool ok = true;
-            size_t cnt = 0;
-            // __DEBUG
             for (size_t tidx = 0; tidx < Ntarget; tidx++) {
                 targets[tidx].keepLast(currMOverlap);
 
-                // DEBUG
-                const auto& t = targets[tidx];
-                const auto& tov = targetsOverlap[tidx];
-                if (t.size() != tov.size()) {
-                    cerr << tidx << ": SUBSIZES DON'T MATCH! " << t.size() << " != " << tov.size() << endl;
-                } else {
-                    for (size_t i=0; i<t.size(); i++, cnt++)
-                        ok = ok && t[i] == tov[i];
-                }
-                // __DEBUG
-
-                targetsOverlap[tidx].clear();
-
                 // keep only missings from overlap, reduce index accordingly
-//                tgtmiss[tidx] = move(tgtmissOverlap[tidx]);
-//                tgtmissOverlap[tidx] = move(vector<size_t>());
                 if (tgtmiss[tidx].size()) { // only if not empty
                     size_t red = currM - currMOverlap; // index reduction
                     size_t keep = 0;
@@ -859,19 +807,12 @@ void VCFData::processNextChunk() {
                     }
                     tgtmiss[tidx].keepLast(keep);
                     tgtmiss[tidx].sub(red);
-                    tgtmissOverlap[tidx].clear();
                 }
-
 
                 if (skipPhasing) {
                     tgtinphase[tidx].keepLast(currMOverlap);
-                    tgtinphaseOverlap[tidx].clear();
                 }
             }
-            // DEBUG
-            cerr << (ok ? "ok" : "NOT OK!") << " checked " << cnt << " genotypes." << endl;
-            }
-            // __DEBUG
 
             // DEBUG
             cerr << "MISSINGS new (reverse):" << endl;
@@ -880,82 +821,25 @@ void VCFData::processNextChunk() {
             for (int i = tgtmiss[ti].size()-1; i >= 0; i--)
                 cerr << "\t" << tgtmiss[ti][i];
             cerr << endl;
-            cerr << ti << ": tmov:";
-            for (int i = tgtmissOverlap[ti].size()-1; i >= 0; i--)
-                cerr << "\t" << tgtmissOverlap[ti][i];
-            cerr << endl;
             // __DEBUG
 
             // reference data
             for (auto& ref : reference)
                 ref.keepLast(currMOverlap);
 
-            // DEBUG
-            {
-                cerr << "CHECKPHASEREF: ";
-                bool ok = true;
-                size_t cnt = 0;
-                if (reference.size() != referenceOverlap.size())
-                    cerr << "SIZES DON'T MATCH!" << endl;
-                else {
-                    for (size_t r = 0; r < reference.size(); r++) {
-                        const auto& ref = reference[r];
-                        const auto& refov = referenceOverlap[r];
-                        if (ref.size() != refov.size()) {
-                            cerr << r << ": SUBSIZES DON'T MATCH! " << ref.size() << " != " << refov.size() << endl;
-//                        } else {
-//                            for (size_t i=0; i<ref.size(); i++, cnt++)
-//                                ok = ok && ref[i] == refov[i];
-                        }
-                    }
-                    cerr << (ok ? "ok" : "NOT OK!") << " checked " << cnt << " bools." << endl;
-                }
-            }
-            // __DEBUG
-            referenceOverlap.clear();
             referenceT.keepLast(currMOverlap); // reduces the size but does not destroy the data!
             referenceT.setSize(maxChunkTgtVars); // restores the previous size and also the underlying BooleanVectors
             for (size_t i = currMOverlap; i < maxChunkTgtVars; i++) // need to clear the underlying BooleanVectors, but keep their memory assignments!
                 referenceT[i].clear();
-            // DEBUG
-            {
-                cerr << "CHECKPHASEREFT: ";
-                bool ok = true;
-                size_t cnt = 0;
-                if (referenceT.size() != referenceTOverlap.size())
-                    cerr << "SIZES DON'T MATCH!" << endl;
-                else {
-                    for (size_t r = 0; r < referenceT.size(); r++) {
-                        const auto& ref = referenceT[r];
-                        const auto& refov = referenceTOverlap[r];
-                        if (ref.size() != refov.size()) {
-                            cerr << r << ": SUBSIZES DON'T MATCH! " << ref.size() << " != " << refov.size() << endl;
-//                        } else {
-//                            for (size_t i=0; i<ref.size(); i++, cnt++)
-//                                ok = ok && ref[i] == refov[i];
-                        }
-                    }
-                    cerr << (ok ? "ok" : "NOT OK!") << " checked " << cnt << " bools." << endl;
-                }
-            }
-            // __DEBUG
-            referenceTOverlap.clear();
+
+            // number of reference variants the current chunk is reduced of to keep only variants in the overlap,
+            // equals former isImputed.size()-isImputedOverlap.size()
+            size_t redref = indexToRefFull[indexToRefFull.size()-currMOverlap-1]+1;
+            size_t keeplastref = referenceFullT.size()-redref; // == currMrefOverlap
 
             // beginning of current chunk relative to region (reference-based index)
             // -> must be the element where the first element in the overlap region points to
-            currChunkOffset += isImputed.size()-isImputedOverlap.size();
-
-            if (doImputation) { // only required for imputation
-                // free data from unrequired reference haps
-                for (size_t mref = 0; mref < isImputed.size()-isImputedOverlap.size(); mref++) {
-                    MyMalloc::free(referenceFullT[mref].getData());
-                }
-                // copy overlap region to beginning
-                for (size_t mref = isImputed.size()-isImputedOverlap.size(); mref < referenceFullT.size(); mref++) {
-                    referenceFullT[mref-(isImputed.size()-isImputedOverlap.size())] = move(referenceFullT[mref]);
-                }
-                referenceFullT.resize(referenceFullT.size()-(isImputed.size()-isImputedOverlap.size()));
-            }
+            currChunkOffset += redref;
 
             // DEBUG
             cerr << "REFLENGTHS: " << endl;
@@ -963,19 +847,30 @@ void VCFData::processNextChunk() {
                  << indexToRefFull.size() << "/"
                  << nextPidx.size() << "/"
                  << ptgtIdx.size() << endl;
-            cerr << isImputedOverlap.size() << "/"
-                 << indexToRefFullOverlap.size() << "/"
-                 << nextPidxOverlap.size() << "/"
-                 << ptgtIdxOverlap.size() << endl;
+            cerr << "refFullT.size(): " << referenceFullT.size() << " minus redref: " << (referenceFullT.size()-redref) << endl;
             // __DEBUG
 
+            // like referenceFullT.keepLast(currMrefOverlap)
+            if (doImputation) { // only required for imputation
+                // free data from unrequired reference haps
+                for (size_t mref = 0; mref < redref; mref++) {
+                    MyMalloc::free(referenceFullT[mref].getData());
+                }
+                // copy overlap region to beginning
+                for (size_t mref = redref; mref < referenceFullT.size(); mref++) {
+                    referenceFullT[mref-redref] = move(referenceFullT[mref]);
+                }
+                referenceFullT.resize(referenceFullT.size()-redref);
+            }
+
             // take over reference metadata for this chunk and prepare for next chunk
-            size_t redref = indexToRefFull[indexToRefFull.size()-currMOverlap-1]+1;
             indexToRefFull.keepLast(currMOverlap);
-            size_t keeplastref = indexToRefFull.back()+1-redref; // == currMrefOverlap
             isImputed.keepLast(keeplastref);
             nextPidx.keepLast(keeplastref);
             ptgtIdx.keepLast(keeplastref);
+
+            // DEBUG
+            cerr << "XXX: Removing idxs: " << (currChunkOffset-redref) << "-" << (currChunkOffset-1) << " refpos: " << positionsFullRefRegion[currChunkOffset-redref] << "-" << positionsFullRefRegion[currChunkOffset-1] << endl;
 
             size_t keeplastisphased = isPhased.size()-nextPidx[0]; // contains overlap size + unphased sites in overlap
             isPhased.keepLast(keeplastisphased); // if outputUnphased == true -> currMOverlap + number of unphased sites in overlap
@@ -983,107 +878,34 @@ void VCFData::processNextChunk() {
 
             // need to correct some index mappings now
             // DEBUG
-            cerr << "diffs: " << indexToRefFull.back() - indexToRefFullOverlap.back() << " / "
-                              << nextPidx.back() - nextPidxOverlap.back() << " / "
-                              << ptgtIdx.back() - ptgtIdxOverlap.back() << endl;
-            cerr << "idx0: " << indexToRefFullOverlap[0] << " / " << indexToRefFull[0] << " --- "
-                             << nextPidxOverlap[0] << " / " << nextPidx[0] << " --- "
-                             << ptgtIdxOverlap[0] << " / " << ptgtIdx[0] << endl;
-            cerr << "idxbck: " << indexToRefFullOverlap.back() << " / " << indexToRefFull.back() << " --- "
-                               << nextPidxOverlap.back() << " / " << nextPidx.back() << " --- "
-                               << ptgtIdxOverlap.back() << " / " << ptgtIdx.back() << endl;
-            cerr << "currMOverlap: " << currMOverlap << " currMrefOverlap: " << currMrefOverlap
+            cerr << "idx0: " << indexToRefFull[0] << " --- "
+                             << nextPidx[0] << " --- "
+                             << ptgtIdx[0] << endl;
+            cerr << "idxbck: " << indexToRefFull.back() << " --- "
+                               << nextPidx.back() << " --- "
+                               << ptgtIdx.back() << endl;
+            cerr << "currMOverlap: " << currMOverlap
                  << " keeplastref: " << keeplastref
                  << " redref: " << redref
                  << " redtgt1: " << nextPidx[0]
                  << " redtgt2: " << ptgtIdx[0] << endl;
-
-            size_t nUnphased = 0;
-            for (auto p : isPhasedOverlap)
-                nUnphased += p ? 0 : 1;
-            cerr << "ASSUMPTIONS:" << endl;
-            cerr << "  keeplastref == currMrefOverlap: " << keeplastref << " == " << currMrefOverlap << " " << (keeplastref == currMrefOverlap ? "YES" : "NO!!!") << endl;
-            cerr << "  ptgtIdx[0] == currM-currMOverlap: " << ptgtIdx[0] << " == " << (currM - currMOverlap) << " " << (ptgtIdx[0] == (currM - currMOverlap) ? "YES" : "NO!!!") << endl;
-            cerr << "  keeplastisphased == currMOverlap+nUnphased in overlap: " << keeplastisphased << " == " << (currMOverlap + nUnphased) << " " << (keeplastisphased == (currMOverlap + nUnphased) ? "YES" : "NO!!!") << endl;
             // __DEBUG
 
             indexToRefFull.sub(redref);
             nextPidx.sub(nextPidx[0]);
             ptgtIdx.sub(currM-currMOverlap);
 
-            // DEBUG
-            cerr << "CHECKTGTMAP: " << endl;
-            bool ok = true;
-            for (size_t i=0; i<indexToRefFull.size(); i++) {
-                ok = ok && indexToRefFull[i] == indexToRefFullOverlap[i];
-                if (!ok) {
-                    cerr << i << ": " << indexToRefFull[i] << " / " << indexToRefFullOverlap[i] << endl;
-                }
-            }
-            if (ok)
-                cerr << "ok" << endl;
-            cerr << "CHECKREFMAP1: ";
-            ok = true;
-            for (size_t i=0; i<nextPidx.size(); i++) {
-                ok = ok && nextPidx[i] == nextPidxOverlap[i];
-                if (!ok) {
-                    cerr << "first diff at " << i << ": " << nextPidx[i] << " != " << nextPidxOverlap[i] << endl;
-                    break;
-                }
-            }
-            if (ok)
-                cerr << "ok" << endl;
-            cerr << "CHECKREFMAP2: ";
-            ok = true;
-            for (size_t i=0; i<ptgtIdx.size(); i++) {
-                ok = ok && ptgtIdx[i] == ptgtIdxOverlap[i];
-                if (!ok) {
-                    cerr << "first diff at " << i << ": " << ptgtIdx[i] << " != " << ptgtIdxOverlap[i] << endl;
-                    break;
-                }
-            }
-            if (ok)
-                cerr << "ok" << endl;
-            // __DEBUG
-
-            indexToRefFullOverlap.clear();
-            isImputedOverlap.clear();
-            nextPidxOverlap.clear();
-            ptgtIdxOverlap.clear();
-
-            isPhasedOverlap.clear();
-            bcf_poutOverlap.clear();
+            // take over the values from the overlap from last chunk
+            currM = currMOverlap; // 0 for first chunk, considered overlap for subsequent chunks
+            currMref = keeplastref; // 0 for first chunk or if no imputation is done, considered overlap for subsequent chunks
+            // lstats should contain the stats for the current chunk without the overlap from the previous chunk,
+            // so, we store the overlap here temporarily to remove it later to set the correct number
+            lstats.M = currMOverlap;
+            lstats.Mref = keeplastref;
 
         } // END currChunk > 0
 
-        // prepare for next chunk as well
-        // (in general if there will definitely be more than one chunk)
-        if (minNChunks > 1) {
-            for (auto &t : targetsOverlap)
-                t.reserve(maxChunkTgtVars);
-            size_t capacitynext = roundToMultiple<size_t>(maxChunkTgtVars, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8; // space for maxChunkTgtVars SNPs
-            refdataOverlap = (BooleanVector::data_type*) MyMalloc::realloc(refdataOverlap, Nrefhapsmax*capacitynext, "refdata_c" + to_string(currChunk+1));
-            size_t capacityTnext = roundToMultiple<size_t>(Nrefhapsmax, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8;
-            refdataTOverlap = (BooleanVector::data_type*) MyMalloc::realloc(refdataTOverlap, maxChunkTgtVars*capacityTnext, "refdataT_c" + to_string(currChunk+1));
-            if (!refdataOverlap || !refdataTOverlap) {
-                StatusFile::addError("Not enough memory for phasing reference!");
-                exit(EXIT_FAILURE);
-            }
-            memset(refdataOverlap, 0, Nrefhapsmax*capacitynext);
-            memset(refdataTOverlap, 0, maxChunkTgtVars*capacityTnext);
-            referenceOverlap.resize(Nrefhapsmax);
-            auto curr_data = refdataOverlap;
-            for (auto &ref : referenceOverlap) {
-                ref.setData(curr_data, capacitynext, 0);
-                curr_data += capacitynext / sizeof(BooleanVector::data_type);
-            }
-            referenceTOverlap.reset(maxChunkTgtVars, maxChunkTgtVars);
-            auto curr_dataT = refdataTOverlap;
-            for (auto &refT : referenceTOverlap) {
-                refT.setData(curr_dataT, capacityTnext, 0);
-                curr_dataT += capacityTnext / sizeof(BooleanVector::data_type);
-            }
-        } // END minNChunks > 1
+        currMOverlap = 2*chunkflanksize; // set initial intended overlap size to next chunk, may be subject to change!
 
     } // END if(!createQRef)
 
@@ -1112,19 +934,6 @@ void VCFData::processNextChunk() {
     int mtgt_gt = 0; void *tgt_gt = NULL; // will be allocated once in bcf_get_genotypes() and then reused for each marker (need void* because of htslib)
 
     size_t qridx = qrefcurridxreg; // quick reference index set to where the last chunk stopped
-
-    bool inOverlap = false;
-
-    // take over the values from the overlap from last chunk
-    currM = currMOverlap; // 0 for first chunk, considered overlap for subsequent chunks
-    currMref = currMrefOverlap; // 0 for first chunk or if no imputation is done, considered overlap for subsequent chunks
-    // lstats should contain the stats for the current chunk without the overlap from the previous chunk,
-    // so, we store the overlap here temporarily to remove it later to set the correct number
-    lstats.M = currMOverlap;
-    lstats.Mref = currMrefOverlap;
-    // reset current overlap
-    currMOverlap = 0;
-    currMrefOverlap = 0;
 
     // read data SNP-wise in positional sorted order from target and reference
     // the function also takes care that we only read the requested region
@@ -1185,39 +994,71 @@ void VCFData::processNextChunk() {
                     }
                 }
 
-                inOverlap = tgtlinesread >= startChunkFlankIdx[currChunk+1]; // indicates if we entered the left flank of the border to the next chunk
+//                // check, how we get along with our memory
+//                if (!inOverlap) { // not yet reached the overlap
+//                    // if we already used up our available memory so far, we need to reduce this chunk now and start with the overlap
+//                    size_t chunksize = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk];
+//                    size_t memlimit = (maxchunkmem * (chunksize - 2*chunkflanksize)) / chunksize; // memory which may be used up by now
+//                    if (MyMalloc::getCurrentAlloced() > memlimit) {
+//                        int64_t reduction = startChunkFlankIdx[currChunk+1] - tgtlinesread; // difference to the previously calculated start of the overlap
+//                        startChunkFlankIdx[currChunk+1] -= reduction;
+//                        startChunkIdx[currChunk+1] -= reduction;
+//                        endChunkFlankIdx[currChunk] -= reduction;
+//                        chunkReduction += reduction;
+//                        inOverlap = true;
+//                        // DEBUG
+//                        cerr << "--- REDUCED chunk by " << reduction << " sites. (chunkReduction: " << chunkReduction << ")" << endl;
+//                    }
+//                } else if(tgtlinesread >= startChunkIdx[currChunk+1]) { // crossed the first half of the overlap
+//                    // we allow the chunk to end here if we used up our available memory completely,
+//                    // but we also reduce the overlap
+//                    if (MyMalloc::getCurrentAlloced() > maxchunkmem) {
+//                        // DEBUG
+//                        cerr << "--- REDUCED chunk overlap by " << endChunkFlankIdx[currChunk]-tgtlinesread-1 << " sites." << endl;
+//
+//                        endChunkFlankIdx[currChunk] = tgtlinesread+1; // this will stop reading after this line
+//                    }
+//                }
+//
+//                if (tgtlinesread == startChunkIdx[currChunk+1]) { // we just entered the next chunk (right flank of the border to next chunk)
+//                    endChunkBp = tgt->pos; // should be position minus 1, but tgt->pos is zero-based, and we are 1-based, so this is ok.
+//                }
+                // check, how we get along with our memory:
+                // if we already used up our available memory, we need to stop this chunk now
+                if (MyMalloc::getCurrentAlloced() > maxchunkmem) {
+                    // TODO maybe adjust currMOverlap here, if the chunk is too small
+                    int64_t reduction = endChunkFlankIdx[currChunk] - tgtlinesread - 1; // difference to the previously calculated end of chunk
+                    startChunkFlankIdx[currChunk+1] -= reduction;
+                    startChunkIdx[currChunk+1] -= reduction;
+                    endChunkFlankIdx[currChunk] -= reduction; // this will also stop reading after this line
+                    chunkReduction += reduction;
 
-                // check, how we get along with our memory
-                if (!inOverlap) { // not yet reached the overlap
-                    // if we already used up our available memory so far, we need to reduce this chunk now and start with the overlap
-                    size_t chunksize = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk];
-                    size_t memlimit = (maxchunkmem * (chunksize - 2*chunkflanksize)) / chunksize; // memory which may be used up by now
-                    if (MyMalloc::getCurrentAlloced() > memlimit) {
-                        int64_t reduction = startChunkFlankIdx[currChunk+1] - tgtlinesread; // difference to the previously calculated start of the overlap
-                        startChunkFlankIdx[currChunk+1] -= reduction;
-                        startChunkIdx[currChunk+1] -= reduction;
-                        endChunkFlankIdx[currChunk] -= reduction;
-                        chunkReduction += reduction;
-                        inOverlap = true;
-                        // DEBUG
+                    // DEBUG
+                    if (reduction)
                         cerr << "--- REDUCED chunk by " << reduction << " sites. (chunkReduction: " << chunkReduction << ")" << endl;
-                    }
-                } else if(tgtlinesread >= startChunkIdx[currChunk+1]) { // crossed the first half of the overlap
-                    // we allow the chunk to end here if we used up our available memory completely,
-                    // but we also reduce the overlap
-                    if (MyMalloc::getCurrentAlloced() > maxchunkmem) {
-                        // DEBUG
-                        cerr << "--- REDUCED chunk overlap by " << endChunkFlankIdx[currChunk]-tgtlinesread-1 << " sites." << endl;
-
-                        endChunkFlankIdx[currChunk] = tgtlinesread+1; // this will stop reading after this line
-                    }
                 }
 
-                if (tgtlinesread == startChunkIdx[currChunk+1]) { // we just entered the next chunk (right flank of the border to next chunk)
-                    endChunkBp = tgt->pos; // should be position minus 1, but tgt->pos is zero-based, and we are 1-based, so this is ok.
-                }
-
+//                if (tgtlinesread == startChunkIdx[currChunk+1]) { // we just entered the next chunk (right flank of the border to next chunk)
+//                    endChunkBp = tgt->pos; // should be position minus 1, but tgt->pos is zero-based, and we are 1-based, so this is ok.
+//                }
                 tgtlinesread++;
+                if (tgtlinesread == endChunkFlankIdx[currChunk]) { // we just finished the current chunk
+                    if (tgtlinesread == Mglob) { // if this was the last tgt line
+                        endChunkBp = positionsFullRefRegion.back()+1; // set to last var (inclusive, endChunkBp is 1-based, pos is 0-based)
+                        // DEBUG
+                        cerr << "endChunkBp: " << endChunkBp << " -- " << bcf_pout[currM-1]->pos << " / " << tgt->pos << endl;
+                        // no more chunks
+                        startChunkFlankIdx[currChunk+1] = endChunkFlankIdx[currChunk];
+                        startChunkIdx[currChunk+1] = endChunkFlankIdx[currChunk];
+                        currMOverlap = 0;
+                    } else {
+                        // set to bp position of first var in next chunk
+                        endChunkBp = positionsFullRefRegion[currChunkOffset+indexToRefFull[currM-(endChunkFlankIdx[currChunk]-startChunkIdx[currChunk+1])]]; // should be position minus 1, but ref->pos is zero-based, and we are 1-based, so this is ok.
+                        // DEBUG
+                        cerr << "endChunkBp: " << endChunkBp << " -- " << bcf_pout[currM-chunkflanksize-1]->pos << " / " << bcf_pout[currM-chunkflanksize]->pos << " / " << bcf_pout[currM-chunkflanksize+1]->pos << endl;
+                    }
+                }
+
 
                 // check, if the target contains the same chromosome as the chosen reference
                 if (!checkedChrom) {
@@ -1252,10 +1093,6 @@ void VCFData::processNextChunk() {
               if (outputUnphased) { // this SNP is explicitly excluded so it will be untouched for phasing, but if the user decides to "outputUnphased" it will be copied to the output files
                   bcf_pout.push_back(bcf_dup(tgt));
                   isPhased.push_back(false);
-                  if (inOverlap) {
-                      bcf_poutOverlap.push_back(bcf_dup(tgt));
-                      isPhasedOverlap.push_back(false);
-                  }
                   lstats.Munphased++;
               }
               addToInfoFileExcluded(tgt, "exclude file");
@@ -1279,15 +1116,8 @@ void VCFData::processNextChunk() {
                 isImputed.push_back(true); // this is the default and may change below if we found a common SNP here that will be phased
                 nextPidx.push_back(bcf_pout.size());
                 ptgtIdx.push_back(currM);
-                if (inOverlap) {
-                    isImputedOverlap.push_back(true);
-                    nextPidxOverlap.push_back(bcf_poutOverlap.size());
-                    ptgtIdxOverlap.push_back(currMOverlap);
-                }
             }
             currMref += qridx - qrold;
-            if (inOverlap)
-                currMrefOverlap += qridx - qrold;
         }
 
         if ((!ref && !qfound) || (tgt && !loadQuickRef && ref->n_allele == 1)) { // SNP is not in reference (thus, it has to be in target only), or ref is mono but SNP is also in target
@@ -1302,10 +1132,6 @@ void VCFData::processNextChunk() {
             if (outputUnphased) { // this SNP cannot be used for phasing and imputation, but if the user decides to "outputUnphased" it will be copied to the phased output file
                 bcf_pout.push_back(bcf_dup(tgt));
                 isPhased.push_back(false);
-                if (inOverlap) {
-                    bcf_poutOverlap.push_back(bcf_dup(tgt));
-                    isPhasedOverlap.push_back(false);
-                }
                 lstats.Munphased++;
             }
             continue;
@@ -1318,7 +1144,7 @@ void VCFData::processNextChunk() {
                 int numMissing, numUnphased;
                 if (ref->n_allele <= 2) {
 
-                    processReferenceOnlySNP(ref, &ref_gt, &mref_gt, numMissing, numUnphased, inOverlap, false);
+                    processReferenceOnlySNP(ref, &ref_gt, &mref_gt, numMissing, numUnphased, false);
                     if (numMissing)
                         lstats.MmissingRefOnly++;
                     if (numUnphased)
@@ -1332,7 +1158,7 @@ void VCFData::processNextChunk() {
                     if (!excludeMultiAllRef || createQRef) { // multi-allelic: split and keep only if the user does not exclude multi-allelic SNPs
                         vector<bcf1_t*> masplits;
                         splitSNP(ref, &ref_gt, &mref_gt, masplits, lstats.MmultiSplittedRefOnly, lstats.GmultiFilledRefOnly);
-                        processReferenceOnlySNP(ref, &ref_gt, &mref_gt, numMissing, numUnphased, inOverlap, true);
+                        processReferenceOnlySNP(ref, &ref_gt, &mref_gt, numMissing, numUnphased, true);
                         if (numMissing)
                             lstats.MmissingRefOnly++;
                         if (numUnphased)
@@ -1343,7 +1169,7 @@ void VCFData::processNextChunk() {
                         for (auto splitit = masplits.begin(); splitit != masplits.end(); splitit++) {
                             if (doImputation || createQRef) {
                                 lstats.MrefOnly++;
-                                processReferenceOnlySNP(*splitit, &ref_gt, &mref_gt, numMissing, numUnphased, inOverlap, true);
+                                processReferenceOnlySNP(*splitit, &ref_gt, &mref_gt, numMissing, numUnphased, true);
                                 if (numMissing)
                                     lstats.MmissingRefOnly++;
                                 if (numUnphased)
@@ -1374,10 +1200,6 @@ void VCFData::processNextChunk() {
             if (outputUnphased) {
                 bcf_pout.push_back(bcf_dup(tgt));
                 isPhased.push_back(false);
-                if (inOverlap) {
-                    bcf_poutOverlap.push_back(bcf_dup(tgt));
-                    isPhasedOverlap.push_back(false);
-                }
                 lstats.Munphased++;
             }
             addToInfoFileExcluded(tgt, "multi-allelic target");
@@ -1395,10 +1217,6 @@ void VCFData::processNextChunk() {
                 if (outputUnphased) {
                     bcf_pout.push_back(bcf_dup(tgt));
                     isPhased.push_back(false);
-                    if (inOverlap) {
-                        bcf_poutOverlap.push_back(bcf_dup(tgt));
-                        isPhasedOverlap.push_back(false);
-                    }
                     lstats.Munphased++;
                 }
                 addToInfoFileExcluded(tgt, "multi-allelic reference");
@@ -1547,10 +1365,6 @@ void VCFData::processNextChunk() {
             if (outputUnphased) {
                 bcf_pout.push_back(bcf_dup(tgt));
                 isPhased.push_back(false);
-                if (inOverlap) {
-                    bcf_poutOverlap.push_back(bcf_dup(tgt));
-                    isPhasedOverlap.push_back(false);
-                }
                 lstats.Munphased++;
             }
             addToInfoFileExcluded(tgt->pos, tgt->d.id, tref, talt, "ref/alt error");
@@ -1580,8 +1394,6 @@ void VCFData::processNextChunk() {
         chrBpsReg.push_back((uint64_t)(tgt->pos + 1));
         if (!skipPhasing) { // only required (and available) for phasing
             cMs.push_back(mapint.interp(chrBpsReg.back()));
-            if (inOverlap)
-                cMsOverlap.push_back(mapint.interp(chrBpsReg.back()));
         }
 
 //        // split reference SNP into several SNPs if multi-allelic (if we wanted to exclude multi-allelics, we would have done already)
@@ -1641,15 +1453,9 @@ void VCFData::processNextChunk() {
         // copy ref information for phasing
         af = alleleFreqsFullRefRegion[qfoundidx];
         referenceT[currM].setSize(Nrefhaps); // size will be the number of haps to add
-        if (inOverlap)
-            referenceTOverlap[currMOverlap].setSize(Nrefhaps);
         for (size_t i = 0; i < Nrefhaps; i++) {
             reference[i].push_back_withPreInit(referenceFullT[qfoundidx-currChunkOffset][i]);
             referenceT[currM].setWithPreInit(i, referenceFullT[qfoundidx-currChunkOffset][i]);
-            if (inOverlap) {
-                referenceOverlap[i].push_back_withPreInit(referenceFullT[qfoundidx-currChunkOffset][i]);
-                referenceTOverlap[currMOverlap].setWithPreInit(i, referenceFullT[qfoundidx-currChunkOffset][i]);
-            }
         }
 //        } else { // !loadQuickRef
 //            processReferenceSNP(Nref, ref, &ref_gt, &mref_gt, inOverlap, numMissing, numUnphased, af, true);
@@ -1663,7 +1469,7 @@ void VCFData::processNextChunk() {
 //        }
 
         // process target genotypes: append Ntarget entries (0/1/2/9) to genosTarget[]
-        processTargetSNP(Ntarget, ntgt_gt, reinterpret_cast<int*>(tgt_gt), refaltswap, inOverlap, numMissing, tgt->pos);
+        processTargetSNP(Ntarget, ntgt_gt, reinterpret_cast<int*>(tgt_gt), refaltswap, numMissing, tgt->pos);
         lstats.GmissingTarget += numMissing;
 
 //        // keep the record's information
@@ -1691,26 +1497,15 @@ void VCFData::processNextChunk() {
         // we need to change the imputation flag since it was initialized with "true"
         isImputed.set_back(false);
         indexToRefFull.push_back(isImputed.size()-1);
-        if (inOverlap) {
-            isImputedOverlap.set_back(false);
-            indexToRefFullOverlap.push_back(isImputedOverlap.size()-1);
-        }
         // nextPidx and ptgtIdx was already taken care of after loading the Qref
 //        }
 
         // remove genotypes (will be phased)
         bcf_update_genotypes(tgt_hdr, tgt, NULL, 0);
         isPhased.push_back(true);
-        if (inOverlap)
-            isPhasedOverlap.push_back(true);
         bcf_pout.push_back(bcf_dup(tgt));
         alleleFreqsCommon.push_back(af);
         currM++;
-        if (inOverlap) {
-            bcf_poutOverlap.push_back(bcf_dup(tgt));
-            alleleFreqsCommonOverlap.push_back(af);
-            currMOverlap++;
-        }
         string infoexpl;
         if (refaltswap && strandflip)
             infoexpl = "ref/alt swap + strand flip";
@@ -1829,6 +1624,11 @@ void VCFData::processNextChunk() {
 //        if (loadQuickRef)
         lstats.MmultiAllelicRefOnly = MrefMultiAllreg - lstats.MmultiAllelicRefTgt;
 
+        // number of reference variants the current chunk is reduced of to keep only variants in the overlap,
+        // equals former isImputed.size()-isImputedOverlap.size()
+        size_t redref = indexToRefFull[indexToRefFull.size()-currMOverlap-1]+1;
+        size_t keeplastref = indexToRefFull.back()+1-redref; // == currMrefOverlap
+
         stringstream stmp;
         stmp << "<p class='pinfo'><b>" << M << " variants in both target and reference are used for phasing.</b>";
         if (currChunk+1 < nChunks)
@@ -1838,10 +1638,10 @@ void VCFData::processNextChunk() {
         if (doImputation) {
             stmp << "\n<p class='pinfo'>" << (Mreftmp-M) << " variants exclusively in reference will be imputed.<br>\n";
             if (currChunk+1 < nChunks)
-                stmp << "  (Of these are " << (currMrefOverlap - currMOverlap) << " variants in the overlap to next chunk.)<br>\n";
+                stmp << "  (Of these are " << (keeplastref - currMOverlap) << " variants in the overlap to next chunk.)<br>\n";
             stmp << "<b>Imputation output will contain " << Mreftmp << " variants.</b>";
             if (currChunk+1 < nChunks)
-                stmp << "<br>\n  (" << currMrefOverlap << " in the overlap to next chunk.)";
+                stmp << "<br>\n  (" << keeplastref << " in the overlap to next chunk.)";
              stmp << "</p>";
         }
         StatusFile::addInfo(stmp.str(), false);
@@ -1856,10 +1656,10 @@ void VCFData::processNextChunk() {
         if (doImputation) {
             yamlinfo << "    Exclusive reference variants: " << (Mreftmp - M) << "\n";
             if (currChunk+1 < nChunks)
-                yamlinfo << "    Exclusive reference variants in overlap: " << (currMrefOverlap - currMOverlap) << "\n";
+                yamlinfo << "    Exclusive reference variants in overlap: " << (keeplastref - currMOverlap) << "\n";
             yamlinfo << "    Imputation output variants: " << Mreftmp << "\n";
             if (currChunk+1 < nChunks)
-                yamlinfo << "    Imputation output variants in overlap: " << currMrefOverlap << "\n";
+                yamlinfo << "    Imputation output variants in overlap: " << keeplastref << "\n";
         }
 
         // determine SNP rate (only if we do phasing)
@@ -2094,10 +1894,10 @@ void VCFData::processNextChunk() {
 }
 
 // keep SNP for imputation
-inline void VCFData::processReferenceOnlySNP(bcf1_t *ref, void **ref_gt, int *mref_gt, int &numMissing, int &numUnphased, bool inOverlap, bool multiallelic) {
+inline void VCFData::processReferenceOnlySNP(bcf1_t *ref, void **ref_gt, int *mref_gt, int &numMissing, int &numUnphased, bool multiallelic) {
     float af;
 //    int nref_gt = bcf_get_genotypes(ref_hdr, ref, ref_gt, mref_gt);
-    processReferenceSNP(Nref, ref, ref_gt, mref_gt, inOverlap, numMissing, numUnphased, af, false);
+    processReferenceSNP(Nref, ref, ref_gt, mref_gt, numMissing, numUnphased, af, false);
 //    cout << "SNP: " << Mref << " Nref: " << Nref << " nref_gt: " << nref_gt << " nMiss: " << numMissing << " nUnph: " << numUnphased << endl;
     alleleFreqsFullRefRegion.push_back(af);
     // store position information of variant
@@ -2125,7 +1925,7 @@ inline void VCFData::processReferenceOnlySNP(bcf1_t *ref, void **ref_gt, int *mr
 }
 
 inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, int *mref_gt,
-		bool inOverlap, int &numMissing, int &numUnphased, float &af, bool addForPhasing) {
+		int &numMissing, int &numUnphased, float &af, bool addForPhasing) {
     numMissing = numUnphased = 0;
 
     // reserve space for haplotype data
@@ -2140,8 +1940,6 @@ inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, 
     // set size of current variant in transposed reference to the number of haps to be added
     if (addForPhasing) {
         referenceT[currM].setSize(2*nsmpl);
-        if (inOverlap)
-            referenceTOverlap[currM].setSize(2*nsmpl);
     }
 
     // fetch haplotypes
@@ -2311,11 +2109,6 @@ inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, 
             reference[2*i].push_back_withPreInit(toBool(haps[0]));
             reference[2*i+1].push_back_withPreInit(toBool(haps[1]));
             referenceT[currM].setPairWithPreInit(2*i, toBool(haps[0]), toBool(haps[1]));
-            if (inOverlap) {
-                referenceOverlap[2*i].push_back_withPreInit(toBool(haps[0]));
-                referenceOverlap[2*i+1].push_back_withPreInit(toBool(haps[1]));
-                referenceTOverlap[currM].setPairWithPreInit(2*i, toBool(haps[0]), toBool(haps[1]));
-            }
         }
         if (doImputation || createQRef) {
             referenceFullT.back().setPairWithPreInit(2*i, toBool(haps[0]), toBool(haps[1]));
@@ -2336,7 +2129,7 @@ inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, 
     }
 }
 
-inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, bool refAltSwap, bool inOverlap, int &numMissing, size_t tgtvariantpos) {
+inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, bool refAltSwap, int &numMissing, size_t tgtvariantpos) {
     numMissing = 0;
     if (ngt != 2 * nsmpl && ngt != nsmpl) {
         cout << endl;
@@ -2362,8 +2155,6 @@ inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, boo
                 g = Genotype::Miss;
                 if (noImpMissing) { // will only be required if we are not going to impute missings during phasing
                     tgtmiss[i].push_back(targets[i].size()); // store position of missing genotype
-                    if (inOverlap)
-                        tgtmissOverlap[i].push_back(targetsOverlap[i].size());
                 }
                 numMissing++;
             } else if (*(ptr+1) == bcf_int32_vector_end) { // haploid sample!
@@ -2429,8 +2220,6 @@ inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, boo
                 g = Genotype::Miss;
                 if (noImpMissing) { // will only be required if we are not going to impute missings during phasing
                     tgtmiss[i].push_back(targets[i].size()); // store position of missing genotype
-                    if (inOverlap)
-                        tgtmissOverlap[i].push_back(targetsOverlap[i].size());
                 }
                 numMissing++;
             } else { // encode as homozygous diploid and mark as haploid
@@ -2465,12 +2254,8 @@ inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, boo
         }
 
         targets[i].push_back(g);
-        if (inOverlap)
-            targetsOverlap[i].push_back(g);
         if (skipPhasing) { // store phase
             tgtinphase[i].push_back(phase);
-            if (inOverlap)
-                tgtinphaseOverlap[i].push_back(phase);
         }
     }
 }
@@ -3326,8 +3111,11 @@ void VCFData::writeVCFImputedPrepare(size_t local_bunchsize) {
     vector<size_t> num_sites_per_file(num_files);
     for (unsigned f = 0; f < num_files; f++) {
         // num sites per file
-        size_t nspf = roundToMultiple(isImputed.size(), (size_t) num_files) / num_files;
-        if (isImputed.size() % num_files && f >= isImputed.size() % num_files)
+//        size_t nspf = roundToMultiple(isImputed.size(), (size_t) num_files) / num_files;
+//        if (isImputed.size() % num_files && f >= isImputed.size() % num_files)
+//            nspf--; // evenly distribute
+        size_t nspf = roundToMultiple(Mref, (size_t) num_files) / num_files;
+        if (Mref % num_files && f >= Mref % num_files)
             nspf--; // evenly distribute
         site_offsets[f+1] = site_offsets[f] + nspf;
         num_sites_per_file[f] = nspf;
@@ -3820,7 +3608,6 @@ inline void VCFData::appendVersionToBCFHeader(bcf_hdr_t *hdr) const {
         command << " " << command_argv[i];
     command << endl;
     bcf_hdr_append(hdr, command.str().c_str());
-
 }
 
 inline void VCFData::concatFiles(const vector<string>& filenames) const {
@@ -3829,22 +3616,8 @@ inline void VCFData::concatFiles(const vector<string>& filenames) const {
         ifstream src(filenames[f].c_str(), ios_base::binary);
         dest << src.rdbuf();
         src.close(); // append to first file
-        remove(filenames[f].c_str()); // delete temporary file
     }
     dest.close();
-//    const unsigned tmpbufsize = 32768; // empirically
-//    char buf[tmpbufsize];
-//    ofstream dest(filenames[0].c_str(), ofstream::app); // open for appending
-//    for (unsigned f = 1; f < filenames.size(); f++) {
-//        ifstream src(filenames[f].c_str());
-//        while (src) {
-//            src.read(buf, tmpbufsize);
-//            dest.write(buf, src.gcount()); // only write as many bytes as were read before
-//        }
-//        src.close();
-//        remove(filenames[f].c_str()); // delete temporary file
-//    }
-//    dest.close();
 }
 
 inline string VCFData::getOutputSuffix() {

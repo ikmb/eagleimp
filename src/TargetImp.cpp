@@ -440,6 +440,15 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
 
     // all sm matches that cover the current site (i.e. curr >= start && curr <= end-1) are used for imputation
     for (size_t nbunch = 0; nbunch < nsites && mrefs[block] < Mref; nbunch++, mrefs[block]++) {
+
+        // DEBUG
+        bool dbg = false;
+        if (hap_id == 0 && (mrefs[block] == 488395 || mrefs[block] == 491113 || mrefs[block] == 72270 || mrefs[block] == 74988)) {
+            dbg = true;
+            cerr << "XXX: block: " << block << " nsites: " << nsites << " nbunch: " << nbunch << " varidx: " << mrefs[block];
+        }
+        // __DEBUG
+
         if (mrefs[block] == mmaps[block]) { // found common site
             if (beforefirstcommons[block]) {
                 // special case: we haven't had a common site yet (first segment), so m needs to stay zero for one more segment
@@ -467,9 +476,20 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
         // impute only if required
         if (mrefs[block] != mmaps[block] || missing || imputeCalls) {
 
+            // DEBUG
+            if (dbg && missing) {
+                cerr << " (missing)";
+            }
+            // __DEBUG
+
             if (idx0s[block] >= sm_matches.size() || sm_matches[idx0s[block]].start > currms[block]) { // m points to LAST common site!
                 // this site is not covered: As in PBWT we take the reference allele frequency later and count this as a "conflict"
                 imputedDosageBunch[nbunch] = DOSAGE_CONFLICT;
+                // DEBUG
+                if (dbg) {
+                    cerr << " (NOT covered)";
+                }
+                // __DEBUG
             } else {
 
                 // iterate over matches that include the first site
@@ -510,11 +530,28 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
                     imputedTargetBunch.setWithPreInit(nbunch, true);
                 imputedDosageBunch[nbunch] = (float)(((double) score) / ((double) sum)); // Why double precision first? -> sum and score can get very large!
 
+                // DEBUG
+                if (dbg) {
+                    cerr << " (covered)";
+                }
+                // __DEBUG
             }
         }
 
-        if (mrefs[block] == mmaps[block]) // need to update the mapping for the next common site if we are at a common site
+        if (mrefs[block] == mmaps[block]) { // need to update the mapping for the next common site if we are at a common site
             mmaps[block] = (currms[block]+1) < M ? vcfdata.getSNPIndexToFullRef(currms[block]+1) : Mref;
 
+            // DEBUG
+            if (dbg) {
+                cerr << " (common)";
+            }
+            // __DEBUG
+        }
+
+        // DEBUG
+        if (dbg) {
+            cerr << " dosage: " << imputedDosageBunch[nbunch] << endl;
+        }
+        // __DEBUG
     }
 }
