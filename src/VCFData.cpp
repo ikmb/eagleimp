@@ -994,54 +994,24 @@ void VCFData::processNextChunk() {
                     }
                 }
 
-//                // check, how we get along with our memory
-//                if (!inOverlap) { // not yet reached the overlap
-//                    // if we already used up our available memory so far, we need to reduce this chunk now and start with the overlap
-//                    size_t chunksize = endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk];
-//                    size_t memlimit = (maxchunkmem * (chunksize - 2*chunkflanksize)) / chunksize; // memory which may be used up by now
-//                    if (MyMalloc::getCurrentAlloced() > memlimit) {
-//                        int64_t reduction = startChunkFlankIdx[currChunk+1] - tgtlinesread; // difference to the previously calculated start of the overlap
-//                        startChunkFlankIdx[currChunk+1] -= reduction;
-//                        startChunkIdx[currChunk+1] -= reduction;
-//                        endChunkFlankIdx[currChunk] -= reduction;
-//                        chunkReduction += reduction;
-//                        inOverlap = true;
-//                        // DEBUG
-//                        cerr << "--- REDUCED chunk by " << reduction << " sites. (chunkReduction: " << chunkReduction << ")" << endl;
-//                    }
-//                } else if(tgtlinesread >= startChunkIdx[currChunk+1]) { // crossed the first half of the overlap
-//                    // we allow the chunk to end here if we used up our available memory completely,
-//                    // but we also reduce the overlap
-//                    if (MyMalloc::getCurrentAlloced() > maxchunkmem) {
-//                        // DEBUG
-//                        cerr << "--- REDUCED chunk overlap by " << endChunkFlankIdx[currChunk]-tgtlinesread-1 << " sites." << endl;
-//
-//                        endChunkFlankIdx[currChunk] = tgtlinesread+1; // this will stop reading after this line
-//                    }
-//                }
-//
-//                if (tgtlinesread == startChunkIdx[currChunk+1]) { // we just entered the next chunk (right flank of the border to next chunk)
-//                    endChunkBp = tgt->pos; // should be position minus 1, but tgt->pos is zero-based, and we are 1-based, so this is ok.
-//                }
                 // check, how we get along with our memory:
                 // if we already used up ~97% of our available memory, we stop this chunk now
                 // NOTE: we still load the reference variants between the last and this tgt site
+                // DEBUG
                 if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
-                    // TODO maybe adjust currMOverlap here, if the chunk is too small
+//                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/4) { // see if increasing nchunks works
+
+                    // TODO maybe adjust currMOverlap here, if the chunk is too small -> but this needs to be considered for the calculation of the total number of chunks later!!
                     int64_t reduction = endChunkFlankIdx[currChunk] - tgtlinesread - 1; // difference to the previously calculated end of chunk
                     startChunkFlankIdx[currChunk+1] -= reduction;
                     startChunkIdx[currChunk+1] -= reduction;
                     endChunkFlankIdx[currChunk] -= reduction; // this will also stop reading after this line
-                    chunkReduction += reduction;
 
                     // DEBUG
                     if (reduction)
-                        cerr << "--- REDUCED chunk by " << reduction << " sites. (chunkReduction: " << chunkReduction << ")" << endl;
+                        cerr << "--- REDUCED chunk by " << reduction << " sites." << endl;
                 }
 
-//                if (tgtlinesread == startChunkIdx[currChunk+1]) { // we just entered the next chunk (right flank of the border to next chunk)
-//                    endChunkBp = tgt->pos; // should be position minus 1, but tgt->pos is zero-based, and we are 1-based, so this is ok.
-//                }
                 tgtlinesread++;
                 if (tgtlinesread == endChunkFlankIdx[currChunk]) { // we just finished the current chunk
                     if (tgtlinesread == Mglob) { // if this was the last tgt line
@@ -1547,11 +1517,17 @@ void VCFData::processNextChunk() {
             startChunkIdx.push_back(nextchunkend - chunkflanksize);
             startChunkFlankIdx.push_back(nextchunkend - 2*chunkflanksize);
             // depending on the potentially reduced chunk size, we can correct the number of chunks now
-            int64_t remvars = Mglob - (nChunks*maxChunkTgtVars - (nChunks-1)*2*chunkflanksize - chunkReduction);
+            int remChunks = nChunks-currChunk-1; // how many chunks are still planned after this chunk
+            int64_t remvars = Mglob - startChunkFlankIdx[currChunk+1]; // variants that still have to be processed (including the current overlap)
+            remvars -= remChunks * maxChunkTgtVars; // how many vars are spanned by this chunk...
+            if (remChunks) // ...with consideration of overlaps
+                remvars += (nChunks-currChunk-2)*2*chunkflanksize;
             if (remvars > 0) {
                 nChunks++;
-                chunkReduction -= maxChunkTgtVars-2*chunkflanksize;
             }
+            // DEBUG
+            cerr << "Remvars: " << remvars << endl;
+            // _DEBUG
         }
     }
 
@@ -3621,6 +3597,7 @@ inline void VCFData::concatFiles(const vector<string>& filenames) const {
         ifstream src(filenames[f].c_str(), ios_base::binary);
         dest << src.rdbuf();
         src.close(); // append to first file
+        remove(filenames[f].c_str()); // delete temporary file
     }
     dest.close();
 }

@@ -267,15 +267,17 @@ int main(int argc, char *argv[]) {
     }
 
     // set total number of steps for StatusFile
-    unsigned steps;
-    if (args.createQuickRef)
-        steps = 1;
-    else {
-        steps = args.skipImputation ? 1 : 2; // reading + imputation steps
-        steps += args.iters; // phasing iterations (even if phasing is skipped, we count this step)
+    {
+        unsigned steps;
+        if (args.createQuickRef)
+            steps = 1;
+        else {
+            steps = args.skipImputation ? 1 : 2; // reading + imputation steps
+            steps += args.iters; // phasing iterations (even if phasing is skipped, we count this step)
+        }
+        steps *= vcfdata.getNChunks(); // all steps repeated for each chunk
+        StatusFile::updateSteps(0,steps);
     }
-    steps *= vcfdata.getNChunks(); // all steps repeated for each chunk
-    StatusFile::updateSteps(0,steps);
 
     // DEBUG
     MyMalloc::printSummary(string("before chunks"));

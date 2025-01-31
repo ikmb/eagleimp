@@ -343,8 +343,6 @@ private:
     size_t maxChunkTgtVars = ~0ull; // maximum number of tgt variants allowed in a chunk
     int currChunk = -1; // indicates the currently loaded chunk, -1 indicates "chunk not yet loaded"
     size_t currChunkOffset = 0; // index offset of current chunk's first local imputation index to reference index in current region
-//    int64_t maxChunkExtension = 0; // max. possible extension of a chunk in target sites
-    size_t chunkReduction = 0;
 
     ofstream infofile; // imputation info file that contains information on each target variant
 
