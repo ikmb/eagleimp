@@ -123,6 +123,7 @@ VCFData::VCFData(const Args& args, int argc, char** argv, const vector<FPGAConfi
         // open output stream for variants
         qrefvarsofs.open(qreffilename+".vars", ios_base::binary);
     }
+
 }
 
 inline void VCFData::processMeta(const string &refFile, const string &vcfTarget, const string &vcfExclude, const Args &args, const vector<FPGAConfigurationEagleImp> &fpgaconfs) {
@@ -373,8 +374,14 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         size_t reqimpqueue = 0ull;
 
         if (doImputation) {
-            num_workers = max(1u, args.num_threads - args.num_files);
             num_files = args.num_files;
+            num_workers = max(1u, args.num_threads - num_files);
+
+            // prepare number of sites per temp file for imputation output
+            // - first and last field represent the vars in the overlap that should be ignored
+            // - will be filled after chunk processing has finished, but first field stays zero for the first chunk
+            num_sites_per_file.clear();
+            num_sites_per_file.resize(num_files+2);
 
             // (preliminary) bunchsize in number of variants:
             // estimated from user parameter and memory requirements, assumption based on equally distributed variants;
@@ -383,7 +390,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             bunchsize = roundToMultiple(bunchsize, (size_t)num_workers); // important to have an equal load on all worker threads
 
             reqimpbunchhaps = Ntarget * bunchsize / 4; // imputation haplotypes (mat+pat) in a bunch (in bytes)
-            reqimpqueue = Ntarget * bunchsize * args.num_files * 2; // number of records in output queues x number of target samples per record
+            reqimpqueue = Ntarget * bunchsize * num_files * 2; // number of records in output queues x number of target samples per record
             size_t entrysize = 8; // size of two ints for the haplotypes
             if (writeADosage)
                 entrysize += 8; // size of two floats for the allele dosages
@@ -405,7 +412,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
                     bunchsize = roundToMultiple(bunchsize, (size_t)num_workers);
                 // recalculate required sizes
                 reqimpbunchhaps = Ntarget * bunchsize / 4; // imputation haplotypes (mat+pat) in a bunch (in bytes)
-                reqimpqueue = Ntarget * bunchsize * args.num_files * 2 * entrysize; // number of records in output queues x number of target samples per record x size of the entry
+                reqimpqueue = Ntarget * bunchsize * num_files * 2 * entrysize; // number of records in output queues x number of target samples per record x size of the entry
             }
         }
         size_t reqsum_dyn = reqphasecref + reqphasedos + reqimpref + reqimppbwt + reqimpabsp;
@@ -536,6 +543,8 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             }
 
             nChunks = minNChunks; // might be increased!
+            // preliminary number of bunches
+            nbunches = divideRounded(divideRounded(Mrefglob, (size_t)nChunks), bunchsize * num_files);
         }
 
         // chunks are generated based on the number of target variants
@@ -898,6 +907,7 @@ void VCFData::processNextChunk() {
             // take over the values from the overlap from last chunk
             currM = currMOverlap; // 0 for first chunk, considered overlap for subsequent chunks
             currMref = keeplastref; // 0 for first chunk or if no imputation is done, considered overlap for subsequent chunks
+
             // lstats should contain the stats for the current chunk without the overlap from the previous chunk,
             // so, we store the overlap here temporarily to remove it later to set the correct number
             lstats.M = currMOverlap;
@@ -1576,6 +1586,19 @@ void VCFData::processNextChunk() {
             if (variantIDsFullRefRegion[i][0] == '.') { // empty variant IDs are not allowed
                 variantIDsFullRefRegion[i] = chromlit + ":" + to_string(positionsFullRefRegion[i]+1) + ":" + allelesFullRefRegion[2*i] + ":" + allelesFullRefRegion[2*i+1];
             }
+        }
+    }
+
+    // TODO overlap !!!!
+    num_sites_per_file[0] = 0;
+    num_sites_per_file.back() = 0;
+    // num sites per file
+    size_t nspf = roundToMultiple(Mref, (size_t) num_files) / num_files;
+    for (unsigned f = 0; f < num_files; f++) {
+        num_sites_per_file[f+1] = nspf;
+        if (Mref % num_files && f >= Mref % num_files) {
+            // evenly distribute
+            num_sites_per_file[f+1]--;
         }
     }
 
@@ -3014,7 +3037,8 @@ void VCFData::writeVCFPhased(const vector<BooleanVector> &phasedTargets) {
     hts_close(out);
 }
 
-void VCFData::writeVCFImputedPrepare(size_t local_bunchsize) {
+// returns the number of sites per file
+void VCFData::writeVCFImputedPrepare() {
 
     // create output files
     bcfouts.clear();
@@ -3074,8 +3098,30 @@ void VCFData::writeVCFImputedPrepare(size_t local_bunchsize) {
     for (auto &tgt_gt : tgt_gt_vec)
         tgt_gt = MyMalloc::malloc(Ntarget * 2 * sizeof(int), "tgt_gt_writeImputed"); // (need void* because of htslib)
 
+    site_offsets.resize(num_files+1); // field at the end represents the total number of imputation sites (without overlaps)
+    for (unsigned f = 0; f < num_files; f++) {
+        site_offsets[f+1] = site_offsets[f] + num_sites_per_file[f+1]; // keep in mind that the first field in num_sites_.. contains the vars in the overlap
+    }
+    size_t num_sites_no_ov = site_offsets.back(); // field at the end represents the total number of imputation sites (without overlaps)
+
+    // now that we know the exact distribution of sites for each file, we can calculate the optimal bunch size and the number of bunches
+    if (bunchsize > divideRounded(num_sites_no_ov, (size_t)num_files)) { // don't exceed the total number of reference variants in current chunk
+        bunchsize = divideRounded(num_sites_no_ov, (size_t)num_files);
+    }
+    nbunches = divideRounded(num_sites_no_ov, bunchsize * num_files);
+    // DEBUG
+    cerr << "BUNCHES (pre) nb / size: " << nbunches << " / " << bunchsize << endl;
+    // optimize bunchsize to have an equal load on all bunches (i.e. reducing the bunchsize to have all bunches approximately the same size)
+    bunchsize = divideRounded(num_sites_no_ov, nbunches * num_files);
+    // only set to multiple of num_workers if the memory increase would not be too much!
+    if (bunchsize > 4*num_workers)
+        bunchsize = roundToMultiple(bunchsize, (size_t)num_workers);
+    nbunches = divideRounded(num_sites_no_ov, bunchsize * num_files); // don't know if this is required, but it doesn't hurt
+    // DEBUG
+    cerr << "BUNCHES (post) nb / size: " << nbunches << " / " << bunchsize << endl;
+
     // create output queues, organized for each file
-    size_t qcap = 2 * divideRounded(local_bunchsize, (size_t)num_workers); // space for two bunches (distributed to each worker queue)
+    size_t qcap = 2 * divideRounded(bunchsize, (size_t)num_workers); // space for two bunches (distributed to each worker queue)
     recqs.resize(num_files);
     for (unsigned f = 0; f < num_files; f++) {
         recqs[f].resize(num_workers);
@@ -3083,25 +3129,10 @@ void VCFData::writeVCFImputedPrepare(size_t local_bunchsize) {
             q.set_capacity(qcap);
     }
 
-    // determine number of sites per file
-    site_offsets.resize(num_files+1); // field at the end represents the total number of imputation sites
-    vector<size_t> num_sites_per_file(num_files);
-    for (unsigned f = 0; f < num_files; f++) {
-        // num sites per file
-//        size_t nspf = roundToMultiple(isImputed.size(), (size_t) num_files) / num_files;
-//        if (isImputed.size() % num_files && f >= isImputed.size() % num_files)
-//            nspf--; // evenly distribute
-        size_t nspf = roundToMultiple(Mref, (size_t) num_files) / num_files;
-        if (Mref % num_files && f >= Mref % num_files)
-            nspf--; // evenly distribute
-        site_offsets[f+1] = site_offsets[f] + nspf;
-        num_sites_per_file[f] = nspf;
-    }
-
     // start writing threads
     function<void(vector<tbb::concurrent_bounded_queue<bcf1_t*>>&, htsFile*, bcf_hdr_t*, size_t)> wrfunc(std::bind(&VCFData::writeBCFRecords, this, _1, _2, _3, _4));
     for (unsigned f = 0; f < num_files; f++) {
-        wrts.emplace_back(wrfunc, std::ref(recqs[f]), std::ref(bcfouts[f]), std::ref(imp_hdr), num_sites_per_file[f]);
+        wrts.emplace_back(wrfunc, std::ref(recqs[f]), std::ref(bcfouts[f]), std::ref(imp_hdr), num_sites_per_file[f+1]);
     }
 
 }
@@ -3592,14 +3623,14 @@ inline void VCFData::appendVersionToBCFHeader(bcf_hdr_t *hdr) const {
 }
 
 inline void VCFData::concatFiles(const vector<string>& filenames) const {
-    ofstream dest(filenames[0].c_str(), ios_base::binary | ios_base::app); // open for appending
-    for (unsigned f = 1; f < filenames.size(); f++) {
-        ifstream src(filenames[f].c_str(), ios_base::binary);
-        dest << src.rdbuf();
-        src.close(); // append to first file
-        remove(filenames[f].c_str()); // delete temporary file
-    }
-    dest.close();
+//    ofstream dest(filenames[0].c_str(), ios_base::binary | ios_base::app); // open for appending
+//    for (unsigned f = 1; f < filenames.size(); f++) {
+//        ifstream src(filenames[f].c_str(), ios_base::binary);
+//        dest << src.rdbuf();
+//        src.close(); // append to first file
+//        remove(filenames[f].c_str()); // delete temporary file
+//    }
+//    dest.close();
 }
 
 inline string VCFData::getOutputSuffix() {

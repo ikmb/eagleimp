@@ -41,7 +41,7 @@ PBWTImputer::PBWTImputer(const VCFData& vcfdata_, const string &statfile_, unsig
     debug(debug_) {
 }
 
-void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets) {
+void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets, const vector<size_t>& num_sites_per_block) {
 
     // create transposed reference (reduced to target sites):
     // (only required when haploids are present)
@@ -134,6 +134,7 @@ void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets) 
 #endif
         //imputeTarget(nhap, phasedTargets[nhap], pbwt, imputedTargets[nhap], imputedDosages[nhap]);
         targets[nhap].calcSMMatches();
+        targets[nhap].prepareBlocks(num_sites_per_block);
 //        cout << "Target: " << nhap/2 << "." << nhap%2 << endl;
     }
     swfindsetmax.stop();

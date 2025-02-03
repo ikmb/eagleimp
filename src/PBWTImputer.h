@@ -35,7 +35,7 @@ public:
     ~PBWTImputer() { if(pbwt) delete pbwt; }
 
     void setNumThreads(unsigned num_threads_) { num_threads = num_threads_; }
-    void prepareImputation(const vector<BooleanVector> &phasedTargets);
+    void prepareImputation(const vector<BooleanVector> &phasedTargets, const vector<size_t>& num_sites_per_block);
 
     void imputeBunch(unsigned block, size_t nbunch, vector<BooleanVector> &imputedTargets, vector<vector<float>> &imputedDosages);
 

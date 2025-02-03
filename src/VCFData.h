@@ -107,7 +107,12 @@ public:
     size_t getNHaploidsRef() const { return nHaploidsRef; }
     // returns the number of haploid samples in the target
     size_t getNHaploidsTgt() const { return nHaploidsTgt; }
-    size_t getPreliminaryBunchSize() const { return bunchsize; }
+    unsigned getNumWorkers() const { return num_workers; }
+    unsigned getNumFiles() const { return num_files; }
+    // returns the number of sites per file, whereby the first and the last element indicate the number of sites in the corresponding overlap, that should be ignored for writing
+    const vector<size_t>& getNumSitesPerFile() const { return num_sites_per_file; }
+    size_t getBunchSize() const { return bunchsize; }
+    size_t getNBunches() const { return nbunches; }
 
     // determines the start phases for the next chunk from the phasing results of the current chunk
     void determineStartPhases(const vector<BooleanVector> &phasedTargets);
@@ -116,7 +121,7 @@ public:
 
     void writePhasedConfidences(const vector<fp_type> &totalconfs, const vector<size_t> &ncalls);
     void writeVCFPhased(const vector<BooleanVector> &phasedTargets);
-    void writeVCFImputedPrepare(size_t bunchsize);
+    void writeVCFImputedPrepare();
     void writeVCFImputedBunch(
             unsigned block,
             size_t startidx,
@@ -250,6 +255,7 @@ private:
     size_t MrefMultiAllreg; // number of SNPs in reference that originate from a split multi-allelic variant in selected region -- only set with a Qref!
     size_t MrefMultiAllglob; // global number of SNPs in reference that originate from a split multi-allelic variant (before reduction to region) -- only set with a Qref!
     size_t bunchsize;
+    size_t nbunches = 1;
     bool useExclude; // using an exclude file?
 
     size_t currM = 0, currMref = 0, currMOverlap = 0;
@@ -305,8 +311,9 @@ private:
     float impR2filter = 0.0;
     float impMAFfilter = 0.0;
     unsigned num_workers = 1;
-    vector<size_t> site_offsets;
     unsigned num_files = 1;
+    vector<size_t> num_sites_per_file;
+    vector<size_t> site_offsets;
     vector<vector<float>> ads_vec;
     vector<vector<float>> ds_vec;
     vector<vector<float>> gp_vec;

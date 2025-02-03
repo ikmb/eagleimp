@@ -64,7 +64,7 @@ TargetImp::TargetImp(size_t hap_id_, const VCFData& vcfdata_, const PBWT &pbwt_,
     }
     mrefs.resize(num_blocks, 0);
 
-    // after calculating the sm matches the states have to be forwarded to the corresponding beginning of their block
+    // after calculating the sm matches the states have to be forwarded to the corresponding beginning of their block with prepareBlocks()!!!
 }
 
 // find all set maximal matches for this target
@@ -240,18 +240,16 @@ void TargetImp::calcSMMatches() {
 //        index++;
 //    }
 //    // __DEBUG
+}
 
+// for the distribution in several blocks (for parallel processing) prepare the start states for each block
+// NOTE: the first and the last field in num_sites_per_block should contain the number of vars in the overlap which should be ignored
+void TargetImp::prepareBlocks(const vector<size_t>& num_sites_per_block) {
 
-    // forward imputation block states:
+    // forward first block by the number of sites in the overlap
+    forwardBlock(0, num_sites_per_block[0]);
 
-    // determine number of sites per block
-    vector<size_t> num_sites_per_block(num_blocks);
-    for (unsigned block = 0; block < num_blocks; block++) {
-        size_t nspb = roundToMultiple(Mref, (size_t) num_blocks) / num_blocks;
-        if (Mref % num_blocks && block >= Mref % num_blocks)
-            nspb--;
-        num_sites_per_block[block] = nspb;
-    }
+    // forward imputation block states
     for (unsigned block = 1; block < num_blocks; block++) {
         // copy state from previous block
         beforefirstcommons[block] = beforefirstcommons[block-1];
@@ -262,8 +260,8 @@ void TargetImp::calcSMMatches() {
         nextmisss[block] = nextmisss[block-1];
         mrefs[block] = mrefs[block-1];
 
-        // forward state by number of sites in PREVIOUS block
-        forwardBlock(block, num_sites_per_block[block-1]);
+        // forward state by number of sites in PREVIOUS block (but keeping the extra overlap field in mind!)
+        forwardBlock(block, num_sites_per_block[block]);
     }
 
     // DEBUG
@@ -271,30 +269,30 @@ void TargetImp::calcSMMatches() {
         cerr << "Mref:\t" << Mref << endl;
         cerr << "M:\t" << M << endl;
         cerr << "numsites:";
-        for (size_t n = 0; n < num_blocks; n++)
+        for (size_t n = 0; n < num_blocks+2; n++)
             cerr << "\t" << num_sites_per_block[n];
         cerr << endl;
-        cerr << "mrefs:\t";
+        cerr << "mrefs:\t\t";
         for (size_t n = 0; n < num_blocks; n++)
             cerr << "\t" << mrefs[n];
         cerr << endl;
-        cerr << "currms:\t";
+        cerr << "currms:\t\t";
         for (size_t n = 0; n < num_blocks; n++)
             cerr << "\t" << currms[n];
         cerr << endl;
-        cerr << "mmaps:\t";
+        cerr << "mmaps:\t\t";
         for (size_t n = 0; n < num_blocks; n++)
             cerr << "\t" << mmaps[n];
         cerr << endl;
-        cerr << "idx0s:\t";
+        cerr << "idx0s:\t\t";
         for (size_t n = 0; n < num_blocks; n++)
             cerr << "\t" << idx0s[n];
         cerr << endl;
-        cerr << "missidx:";
+        cerr << "missidx:\t";
         for (size_t n = 0; n < num_blocks; n++)
             cerr << "\t" << miss_idxs[n];
         cerr << endl;
-        cerr << "nextmiss:";
+        cerr << "nextmiss:\t";
         for (size_t n = 0; n < num_blocks; n++)
             cerr << "\t" << nextmisss[n];
         cerr << endl;

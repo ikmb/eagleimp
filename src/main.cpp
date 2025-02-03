@@ -415,28 +415,17 @@ int main(int argc, char *argv[]) {
 
             Stopwatch swimp("Imputation+Write");
 
-            unsigned num_workers = max(1u, args.num_threads - args.num_files);
-            // get preliminary bunch size in number of variants
-            size_t bunchsize = vcfdata.getPreliminaryBunchSize();
-            // test if bunch size is appropriate with current chunk
-            if (bunchsize > divideRounded(vcfdata.getNSNPsFullRef(), (size_t)args.num_files)) { // don't exceed the total number of reference variants in current chunk
-                bunchsize = divideRounded(vcfdata.getNSNPsFullRef(), (size_t)args.num_files);
-            }
-            size_t nbunches = divideRounded(vcfdata.getNSNPsFullRef(), bunchsize * args.num_files);
-            // DEBUG
-            cerr << "BUNCHES (pre) nb / size: " << nbunches << " / " << bunchsize << endl;
-            // optimize bunchsize to have an equal load on all bunches (i.e. reducing the bunchsize to have all bunches approximately the same size)
-            bunchsize = divideRounded(vcfdata.getNSNPsFullRef(), nbunches * args.num_files);
-            // only set to multiple of num_workers if the memory increase would not be too much!
-            if (bunchsize > 4*num_workers)
-                bunchsize = roundToMultiple(bunchsize, (size_t)num_workers);
-            nbunches = divideRounded(vcfdata.getNSNPsFullRef(), bunchsize * args.num_files); // don't know if this is required, but it doesn't hurt
-            // DEBUG
-            cerr << "BUNCHES (post) nb / size: " << nbunches << " / " << bunchsize << endl;
+            // prepare writing of imputed data
+            vcfdata.writeVCFImputedPrepare();
+
+            unsigned num_workers = vcfdata.getNumWorkers();
+            unsigned num_files = vcfdata.getNumFiles();
+            const vector<size_t>& num_sites_per_file = vcfdata.getNumSitesPerFile();
+            // get (optimal) bunch size in number of variants
+            size_t bunchsize = vcfdata.getBunchSize();
+            size_t nbunches = vcfdata.getNBunches();
 
             size_t icapacity = roundToMultiple(bunchsize, UNITWORDS*8*sizeof(BooleanVector::data_type)) / 8;
-//            BooleanVector::data_type *idata = (BooleanVector::data_type*) MyMalloc::malloc(2*vcfdata.getNTarget()*icapacity, string("idata_c")+to_string(chunk)); // pre-initialization below
-//            vector<BooleanVector> imputedTargets(2*vcfdata.getNTarget(), BooleanVector(idata, 2*vcfdata.getNTarget()*icapacity, 0, toBool(Haplotype::Ref)));
             BooleanVector::data_type *idata = (BooleanVector::data_type*) MyMalloc::calloc(2*vcfdata.getNTarget()*icapacity, 1, string("idata_c")+to_string(chunk)); // pre-initialization below
             vector<BooleanVector> imputedTargets(2*vcfdata.getNTarget());
             {
@@ -448,12 +437,12 @@ int main(int argc, char *argv[]) {
             }
             vector<vector<float>> imputedDosages(2*vcfdata.getNTarget(), vector<float>(bunchsize));
 
-            PBWTImputer imputer(vcfdata, args.statfile, args.num_threads, args.num_files, args.setmaxerrors, args.overwriteCalls || args.improveCalls, args.debug); // create with all available threads
-            imputer.prepareImputation(phasedTargets);
+            // prepare imputation
+            PBWTImputer imputer(vcfdata, args.statfile, args.num_threads, num_files, args.setmaxerrors, args.overwriteCalls || args.improveCalls, args.debug); // create with all available threads
+            imputer.prepareImputation(phasedTargets, num_sites_per_file); // this also calculates the set-maximal matches and prepares the distribution on several temp files
 
-            cout << "Using " << num_workers << " threads and " << args.num_files << " temporary files for imputation." << endl;
+            cout << "Using " << num_workers << " threads and " << num_files << " temporary files for imputation." << endl;
             imputer.setNumThreads(num_workers); // after finding the set-maximal matches, share available threads with writers
-            vcfdata.writeVCFImputedPrepare(bunchsize);
 
             // alternating imputation and writing of bunches
             size_t startidx = 0;
@@ -472,11 +461,11 @@ int main(int argc, char *argv[]) {
 //                progress += chunk/(float)vcfdata.getNChunks();
                 StatusFile::updateStatus(bunch/(float)nbunches);
 
-                for (unsigned f = 0; f < args.num_files; f++) {
+                for (unsigned f = 0; f < num_files; f++) {
                     Stopwatch swimpb("imputeBunch");
-                    imputer.imputeBunch(f, bunchsize, imputedTargets, imputedDosages);
+                    imputer.imputeBunch(f, bunchsize, imputedTargets, imputedDosages); // fills target haps and dosages according to already calculated sm-matches
                     swimpb.stop();
-                    vcfdata.writeVCFImputedBunch(f, startidx, bunchsize, imputedTargets, imputedDosages, phasedTargets, phasedDosages);
+                    vcfdata.writeVCFImputedBunch(f, startidx, bunchsize, imputedTargets, imputedDosages, phasedTargets, phasedDosages); // prepares and writes the VCF records
                     // cleanup data for next block
                     memset(idata, 0, 2*vcfdata.getNTarget()*icapacity);
                 }

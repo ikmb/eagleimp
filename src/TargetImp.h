@@ -40,6 +40,10 @@ public:
     // and forwards the block states correspondingly (if there is more than one block)
     void calcSMMatches();
 
+    // for the distribution in several blocks (for parallel processing) prepare the start states for each block;
+    // num_sites_per_block indicates the number of sites for each block
+    void prepareBlocks(const vector<size_t>& num_sites_per_block);
+
     // imputes the next nsites variants according to pre-calculated set-maximal matches and stores the results in imputedTargetBunch and imputedDosageBunch
     void imputeBunch(unsigned block, size_t nsites, BooleanVector &imputedTargetBunch, vector<float> &imputedDosageBunch);
 
