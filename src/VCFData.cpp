@@ -780,8 +780,8 @@ void VCFData::processNextChunk() {
         } else { // currChunk > 0
 
             // chunk region:
-            // new start is the former end (plus 1, since the coordinates are inclusive!)
-            startChunkBp = endChunkBp+1;
+            // new start is the former end (coordinates kept equal as the chunk end could be at a multi-allelic)
+            startChunkBp = endChunkBp;
             endChunkBp = endRegionBp; // set to region end first, will be updated, if there are more chunks
 
             // DEBUG
@@ -1021,8 +1021,8 @@ void VCFData::processNextChunk() {
                 // if we already used up ~97% of our available memory, we stop this chunk now
                 // NOTE: we still load the reference variants between the last and this tgt site
                 // DEBUG
-                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
-//                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/4) { // see if increasing nchunks works
+//                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
+                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/4) { // see if increasing nchunks works
 
                     // TODO maybe adjust currMOverlap here, if the chunk is too small
                     // -> but this needs to be considered for the calculation of the total number of chunks later!!
@@ -1038,24 +1038,6 @@ void VCFData::processNextChunk() {
                 }
 
                 tgtlinesread++;
-                if (tgtlinesread == endChunkFlankIdx[currChunk]) { // we just finished the current chunk
-                    if (tgtlinesread == Mglob) { // if this was the last tgt line
-                        endChunkBp = positionsFullRefRegion.back()+1; // set to last var (inclusive, endChunkBp is 1-based, pos is 0-based)
-                        // DEBUG
-                        cerr << "endChunkBp: " << endChunkBp << " -- " << bcf_pout[currM-1]->pos << " / " << tgt->pos << endl;
-                        // no more chunks
-                        startChunkFlankIdx[currChunk+1] = endChunkFlankIdx[currChunk];
-                        startChunkIdx[currChunk+1] = endChunkFlankIdx[currChunk];
-                        currMOverlap = 0;
-                    } else {
-                        // set to bp position of last common var in this chunk (note, that currM has not yet been incremented! should be M-flanksize-1)
-                        endChunkBp = positionsFullRefRegion[currChunkOffset+indexToRefFull[currM-chunkflanksize]]; // should be position minus 1, but ref->pos is zero-based, and we are 1-based, so this is ok.
-
-                        // DEBUG
-                        cerr << "endChunkBp: " << endChunkBp << " -- " << bcf_pout[currM-chunkflanksize-1]->pos << " / " << bcf_pout[currM-chunkflanksize]->pos << " / " << bcf_pout[currM-chunkflanksize+1]->pos << endl;
-                    }
-                }
-
 
                 // check, if the target contains the same chromosome as the chosen reference
                 if (!checkedChrom) {
@@ -1526,7 +1508,7 @@ void VCFData::processNextChunk() {
     free(tgt_gt);
 
     if (loadQuickRef) {
-        if (tgtlinesread == Mglob) { // if we are at the end of the last chunk and we loaded a Qref, the last ref-only variants have to be processed
+        if (tgtlinesread == Mglob) { // if we are at the end of the last chunk, the last ref-only variants have to be processed
             // no overlap
             MRightOv = 0;
             MrefRightOv = 0;
@@ -1541,6 +1523,16 @@ void VCFData::processNextChunk() {
                 currMref++;
             }
 
+            // set end of chunk to last reference var (inclusive)
+            endChunkBp = positionsFullRefRegion.back();
+            // DEBUG
+            cerr << "endChunkBp: " << endChunkBp << endl;
+
+            // no more chunks
+            startChunkFlankIdx[currChunk+1] = endChunkFlankIdx[currChunk];
+            startChunkIdx[currChunk+1] = endChunkFlankIdx[currChunk];
+            currMOverlap = 0;
+
             // set the final number of chunks
             nChunks = currChunk + 1;
 
@@ -1548,6 +1540,12 @@ void VCFData::processNextChunk() {
             // overlap sizes
             MRightOv = currMOverlap/2; // number of tgt variants in the overlap to next chunk (chunkflanksize for now)
             MrefRightOv = currMref - indexToRefFull[currM-MRightOv-1] - 1; // number of ref vars in overlap to next chunk
+
+            // set end of chunk to bp position of last common var in this chunk
+            endChunkBp = positionsFullRefRegion[currChunkOffset+indexToRefFull[currM-chunkflanksize-1]]; // inclusive!
+
+            // DEBUG
+            cerr << "endChunkBp: " << endChunkBp << " -- " << bcf_pout[currM-chunkflanksize-1]->pos << " / " << bcf_pout[currM-chunkflanksize]->pos << " / " << bcf_pout[currM-chunkflanksize+1]->pos << endl;
 
             // prepare preliminary limits
             size_t nextchunkend = min(Mglob, startChunkFlankIdx[currChunk+1] + maxChunkTgtVars);
