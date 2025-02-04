@@ -228,7 +228,7 @@ private:
     bcf_hdr_t *tgt_hdr_cpy; // copy of the target header used for the phased output file -> for imputation, the sample names are copied
 
     RingBufferBool isImputed; // size corresponds to imputation output of current chunk, indicates if the SNP is/will be imputed or not
-    // for each analyzed target SNP the index in the full reference vector that corresponds to this SNP, size is M
+    // for each analyzed target SNP the index in the full reference vector (relative to current chunk) that corresponds to this SNP, size is M
     RingBuffer<size_t> indexToRefFull;
     // for each reference SNP the index for the next common site in the the target, size as Mref
     // (index corresponds to position in targets vector if the current site is common, the index corresponds to the same site;
@@ -247,18 +247,23 @@ private:
     size_t Nrefhaps; // number of reference haplotypes (NOTE: originally haploids are encoded homozygous diploid!, so this is 2*Nref)
     size_t Ntarget; // number of target samples
     size_t Nrefhapsmax; // maximum number of reference samples (Nrefhaps if iters <= 1, Nrefhaps+Ntargethaps else)
-    size_t M; // number of SNPs common in target and reference in current chunk
+    size_t M; // number of SNPs common in target and reference in current chunk (incl. overlap)
     size_t Mglob; // complete number of SNPs in target file
-    size_t Mref; // number of SNPs in reference (for imputation) in current chunk
+    size_t Mref; // number of SNPs in reference (for imputation) in current chunk (incl. overlap)
     size_t Mrefreg; // number of SNPs in reference (for imputation) in selected region -- only set with a Qref!
     size_t Mrefglob; // global number of SNPs in reference (before reduction to region)
     size_t MrefMultiAllreg; // number of SNPs in reference that originate from a split multi-allelic variant in selected region -- only set with a Qref!
     size_t MrefMultiAllglob; // global number of SNPs in reference that originate from a split multi-allelic variant (before reduction to region) -- only set with a Qref!
-    size_t bunchsize;
+    size_t MLeftOv, MRightOv; // number of common tgt sites in overlap to previous (left) or next (right) chunk
+    size_t MrefLeftOv, MrefRightOv; // number of ref sites in overlap to previous (left) or next (right) chunk
+    size_t bunchsize; // number of sites for each file to be imputed in parallel (nbunches * bunchsize * num_files = Mref)
     size_t nbunches = 1;
     bool useExclude; // using an exclude file?
 
-    size_t currM = 0, currMref = 0, currMOverlap = 0;
+    // continuously updated while reading, after reading used to update M/Mref: currM: number of common tgt sites in chunk (incl. overlap); currMref: number of reference sites in chunk (incl. overlap)
+    size_t currM = 0, currMref = 0;
+    // after reading: number of tgt sites in chunk in overlap to NEXT chunk.
+    size_t currMOverlap = 0;
 
     bool allowRefAltSwap;
     bool allowStrandFlip;
@@ -274,7 +279,7 @@ private:
     // this is the maximum size of a chunk in bytes
     const uint64_t maxchunkmem;
     const uint64_t chunkflanksize; // number of tgt variants in the overlap to the left and to the right (total overlap = 2xchunkflanksize)
-    // region for current chunk (without flanks) (end inclusive!)
+    // region for current chunk (without flanks) (end inclusive!), 0-based!
     // set after reading the corresponding target data
     int64_t startChunkBp, endChunkBp;
     vector<size_t> startChunkIdx; // tgt index for beginning of chunk

@@ -135,6 +135,10 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
     Mrefglob = 0;
     MrefMultiAllreg = 0;
     MrefMultiAllglob = 0;
+    MLeftOv = 0;
+    MRightOv = 0;
+    MrefLeftOv = 0;
+    MrefRightOv = 0;
 
     cout << "\nAnalysing input files..." << endl;
 
@@ -767,6 +771,9 @@ void VCFData::processNextChunk() {
             currM = 0;
             currMref = 0;
 
+            MLeftOv = 0;
+            MrefLeftOv = 0;
+
             lstats.M = 0;
             lstats.Mref = 0;
 
@@ -908,6 +915,12 @@ void VCFData::processNextChunk() {
             currM = currMOverlap; // 0 for first chunk, considered overlap for subsequent chunks
             currMref = keeplastref; // 0 for first chunk or if no imputation is done, considered overlap for subsequent chunks
 
+            // number of vars in the left overlap:
+            // the right part of the complete overlap was the part considered in last chunk.
+            // now, the left part has to be considered in this chunk
+            MLeftOv = currMOverlap - MRightOv;
+            MrefLeftOv = keeplastref - MrefRightOv;
+
             // lstats should contain the stats for the current chunk without the overlap from the previous chunk,
             // so, we store the overlap here temporarily to remove it later to set the correct number
             lstats.M = currMOverlap;
@@ -1011,7 +1024,9 @@ void VCFData::processNextChunk() {
                 if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
 //                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/4) { // see if increasing nchunks works
 
-                    // TODO maybe adjust currMOverlap here, if the chunk is too small -> but this needs to be considered for the calculation of the total number of chunks later!!
+                    // TODO maybe adjust currMOverlap here, if the chunk is too small
+                    // -> but this needs to be considered for the calculation of the total number of chunks later!!
+                    // -> and for the calculation of MRightOv/MrefRightOv!!
                     int64_t reduction = endChunkFlankIdx[currChunk] - tgtlinesread - 1; // difference to the previously calculated end of chunk
                     startChunkFlankIdx[currChunk+1] -= reduction;
                     startChunkIdx[currChunk+1] -= reduction;
@@ -1033,8 +1048,9 @@ void VCFData::processNextChunk() {
                         startChunkIdx[currChunk+1] = endChunkFlankIdx[currChunk];
                         currMOverlap = 0;
                     } else {
-                        // set to bp position of first var in next chunk
-                        endChunkBp = positionsFullRefRegion[currChunkOffset+indexToRefFull[currM-(endChunkFlankIdx[currChunk]-startChunkIdx[currChunk+1])]]; // should be position minus 1, but ref->pos is zero-based, and we are 1-based, so this is ok.
+                        // set to bp position of last common var in this chunk (note, that currM has not yet been incremented! should be M-flanksize-1)
+                        endChunkBp = positionsFullRefRegion[currChunkOffset+indexToRefFull[currM-chunkflanksize]]; // should be position minus 1, but ref->pos is zero-based, and we are 1-based, so this is ok.
+
                         // DEBUG
                         cerr << "endChunkBp: " << endChunkBp << " -- " << bcf_pout[currM-chunkflanksize-1]->pos << " / " << bcf_pout[currM-chunkflanksize]->pos << " / " << bcf_pout[currM-chunkflanksize+1]->pos << endl;
                     }
@@ -1511,8 +1527,11 @@ void VCFData::processNextChunk() {
 
     if (loadQuickRef) {
         if (tgtlinesread == Mglob) { // if we are at the end of the last chunk and we loaded a Qref, the last ref-only variants have to be processed
-            // set the final number of chunks
-            nChunks = currChunk + 1;
+            // no overlap
+            MRightOv = 0;
+            MrefRightOv = 0;
+
+            // read remaining reference vars
             while (qrefcurridxreg < Mrefreg) {
                 // TODO we have to check the memory here and break up if there are too many reference variants left!
                 qRefLoadNextVariant();
@@ -1521,20 +1540,29 @@ void VCFData::processNextChunk() {
                 ptgtIdx.push_back(currM);
                 currMref++;
             }
-        } else { // there will be another chunk, prepare preliminary limits
+
+            // set the final number of chunks
+            nChunks = currChunk + 1;
+
+        } else { // there will be another chunk
+            // overlap sizes
+            MRightOv = currMOverlap/2; // number of tgt variants in the overlap to next chunk (chunkflanksize for now)
+            MrefRightOv = currMref - indexToRefFull[currM-MRightOv-1] - 1; // number of ref vars in overlap to next chunk
+
+            // prepare preliminary limits
             size_t nextchunkend = min(Mglob, startChunkFlankIdx[currChunk+1] + maxChunkTgtVars);
             endChunkFlankIdx.push_back(nextchunkend);
             startChunkIdx.push_back(nextchunkend - chunkflanksize);
             startChunkFlankIdx.push_back(nextchunkend - 2*chunkflanksize);
+
             // depending on the potentially reduced chunk size, we can correct the number of chunks now
             int remChunks = nChunks-currChunk-1; // how many chunks are still planned after this chunk
             int64_t remvars = Mglob - startChunkFlankIdx[currChunk+1]; // variants that still have to be processed (including the current overlap)
             remvars -= remChunks * maxChunkTgtVars; // how many vars are spanned by this chunk...
             if (remChunks) // ...with consideration of overlaps
                 remvars += (nChunks-currChunk-2)*2*chunkflanksize;
-            if (remvars > 0) {
+            if (remvars > 0)
                 nChunks++;
-            }
             // DEBUG
             cerr << "Remvars: " << remvars << endl;
             // _DEBUG
@@ -1544,6 +1572,7 @@ void VCFData::processNextChunk() {
     // set M and Mref for the current chunk
     M = currM;
     Mref = currMref;
+
     lstats.M = currM - lstats.M; // we have to remove the overlap size from previous chunk as it is contained in currM
     lstats.Mref = currMref - lstats.Mref; // we have to remove the overlap size from previous chunk as it is contained in currMref
     lstats.MrefMultiAllreg = MrefMultiAllreg;
@@ -1589,14 +1618,15 @@ void VCFData::processNextChunk() {
         }
     }
 
-    // TODO overlap !!!!
-    num_sites_per_file[0] = 0;
-    num_sites_per_file.back() = 0;
-    // num sites per file
-    size_t nspf = roundToMultiple(Mref, (size_t) num_files) / num_files;
+    // calculate the number of output sites for each file (left and right parts in the overlaps are not considered as they won't be written here)
+    num_sites_per_file[0] = MrefLeftOv; // left overlap
+    num_sites_per_file.back() = MrefRightOv; // right overlap
+    // number of remaining sites per file
+    size_t mref_rem = Mref - MrefLeftOv - MrefRightOv;
+    size_t nspf = roundToMultiple(mref_rem, (size_t) num_files) / num_files;
     for (unsigned f = 0; f < num_files; f++) {
         num_sites_per_file[f+1] = nspf;
-        if (Mref % num_files && f >= Mref % num_files) {
+        if (mref_rem % num_files && f >= mref_rem % num_files) {
             // evenly distribute
             num_sites_per_file[f+1]--;
         }
@@ -1610,6 +1640,27 @@ void VCFData::processNextChunk() {
          << " tgtlinesread: " << tgtlinesread
          << " sfn/sn: " << startChunkFlankIdx[currChunk+1] << "/" << startChunkIdx[currChunk+1]
          << endl;
+    cerr << "currChunkOffset: " << currChunkOffset << " currM: " << M << " currMref: " << Mref << endl;
+    cerr << "MLeftOv: " << MLeftOv << " MRightOv: " << MRightOv << endl;
+    cerr << "MrefLeftOv: " << MrefLeftOv << " MrefRightOv: " << MrefRightOv << endl;
+    cerr << "startBp: " << startChunkBp << " endBp: " << endChunkBp << endl;
+    cerr << "positions:" << endl;
+
+    cerr << " L: " << positionsFullRefRegion[currChunkOffset] << "/(" // first ref variant loaded (common or not?)
+                   << positionsFullRefRegion[currChunkOffset+MrefLeftOv] << "/" // first ref variant in this chunk (common or not?)
+                   << positionsFullRefRegion[currChunkOffset+MLeftOv?indexToRefFull[MLeftOv-1]:0] << "/" // last common variant in previous chunk
+                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[MLeftOv]] << ")" << endl; // first common variant in this chunk
+
+    cerr << " R: " << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-currMOverlap-1]] << "/" // last common not in overlap
+                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-currMOverlap]] << "/(" // first common in overlap
+                   << positionsFullRefRegion[currChunkOffset+Mref-MrefRightOv-1] << "/" // last ref in this chunk (middle of overlap)
+                   << positionsFullRefRegion[currChunkOffset+Mref-MrefRightOv] << "/" // first ref in next chunk (middle of overlap)
+                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-MRightOv-1]] << "/" // last common in this chunk (middle of overlap)
+                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-MRightOv]] << ")/(" // first common in next chunk (middle of overlap)
+                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-1]] << "/" // last common loaded
+                   << positionsFullRefRegion[currChunkOffset+Mref-1] << ")" << endl; // last ref loaded (common if not last chunk, else last ref at all)
+
+
 
 
     if (pgb == 0) // just printed "xx%"
@@ -3098,11 +3149,12 @@ void VCFData::writeVCFImputedPrepare() {
     for (auto &tgt_gt : tgt_gt_vec)
         tgt_gt = MyMalloc::malloc(Ntarget * 2 * sizeof(int), "tgt_gt_writeImputed"); // (need void* because of htslib)
 
-    site_offsets.resize(num_files+1); // field at the end represents the total number of imputation sites (without overlaps)
-    for (unsigned f = 0; f < num_files; f++) {
-        site_offsets[f+1] = site_offsets[f] + num_sites_per_file[f+1]; // keep in mind that the first field in num_sites_.. contains the vars in the overlap
+    site_offsets.resize(num_files+1); // field at the end represents the total number of imputation sites (including left overlap!)
+    site_offsets[0] = num_sites_per_file[0]; // first file skips the overlap
+    for (unsigned f = 1; f <= num_files; f++) {
+        site_offsets[f] = site_offsets[f-1] + num_sites_per_file[f]; // keep in mind that the first field in num_sites_.. contains the vars in the overlap
     }
-    size_t num_sites_no_ov = site_offsets.back(); // field at the end represents the total number of imputation sites (without overlaps)
+    size_t num_sites_no_ov = site_offsets.back() - num_sites_per_file[0]; // need to remove the first overlap to get the number of sites without overlaps
 
     // now that we know the exact distribution of sites for each file, we can calculate the optimal bunch size and the number of bunches
     if (bunchsize > divideRounded(num_sites_no_ov, (size_t)num_files)) { // don't exceed the total number of reference variants in current chunk
@@ -3149,6 +3201,11 @@ void VCFData::writeVCFImputedBunch(
 
     const bcf_hdr_t *bcfhdr = imp_hdr;
 
+    // DEBUG
+    atomic<size_t> nfiltered1(0);
+    atomic<size_t> nfiltered2(0);
+    // DEBUG
+
     omp_set_num_threads(num_workers);
 #pragma omp parallel
     for (size_t bidx = omp_get_thread_num(); bidx < bsize && site_offsets[block] + startidx + bidx < site_offsets[block+1]; bidx += num_workers) { // go through all sites in bunch in current block
@@ -3168,7 +3225,7 @@ void VCFData::writeVCFImputedBunch(
         bool isimputed = isImputed[idx];
 
         // check if within output region and not an imputed multi-allelic that the user wants to skip
-        int64_t bp = positionsFullRefRegion[idxReg] + 1;
+        int64_t bp = positionsFullRefRegion[idxReg];
         if (startChunkBp <= bp && bp <= endChunkBp && !(isimputed && excludeMultiAllRef && multiAllFlagsFullRefRegion[idxReg]) ) {
 
             bcf1_t *bcfrec = bcf_init1();
@@ -3568,9 +3625,18 @@ void VCFData::writeVCFImputedBunch(
 
             recqs[block][(startidx+bidx) % num_workers].push(NULL);
 
+            // DEBUG
+            if (bp < startChunkBp) nfiltered1++;
+            if (bp > endChunkBp) nfiltered2++;
+            // __DEBUG
+
         } // END if not in output region
 
     } // END through all sites from bunch
+
+    // DEBUG
+    if (nfiltered1 || nfiltered2)
+        cerr << "YYY: block: " << block << " startidx: " << startidx << " nfiltered1: " << nfiltered1 << " nfiltered2: " << nfiltered2 << endl;
 }
 
 void VCFData::writeVCFImputedClose() {
@@ -3958,7 +4024,9 @@ void VCFData::printSummary() const {
     if (doImputation) {
         double conflictrate = 0.0;
         if (conflictcnt) {
-            conflictrate = conflictcnt/(double)site_offsets.back()/(double)(getNTarget()-getNHaploidsTgt())/2;
+            size_t num_sites_no_ov = site_offsets.back() - num_sites_per_file[0]; // need to remove the first overlap to get the number of sites without overlaps
+            size_t total_haps = num_sites_no_ov * ((getNTarget()-getNHaploidsTgt())*2 + getNHaploidsTgt());
+            conflictrate = conflictcnt/(double)total_haps;
             StatusFile::addInfo("<p class='pinfo'>Imputation conflict rate (relation of haplotypes with no overlap and dosage set to allele frequency to total haplotypes): "
                     + to_string(conflictrate) + "</p>", false);
         } else {
