@@ -273,7 +273,7 @@ private:
     bool chrliterally;
     bool setChrom = false;
     bool checkedChrom = false;
-    // global region (end inclusive!)
+    // global region (end inclusive!), 1-based!
     int64_t startRegionBp, endRegionBp;
     int64_t startFlankRegionBp, endFlankRegionBp; // including flanks
     // this is the maximum size of a chunk in bytes

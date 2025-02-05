@@ -244,8 +244,8 @@ Args::Args(int argc, char *argv[]) :
     opts_region.add_options()
     // the chromosome is always set automatically
     //("chrom", value<string>(&chromStr)->default_value("0"), "chromosome to analyze (if input has many, 0=first (either read from target or reference!))")
-    ("bpStart", value<int64_t>(&bpStart)->default_value(0), "minimum base pair position to analyze (1-based)")
-    ("bpEnd", value<int64_t>(&bpEnd)->default_value(MAX_CSI_COOR-1), "maximum base pair position to analyze (inclusive, 1-based)")
+    ("bpStart", value<int64_t>(&bpStart)->default_value(1), "minimum base pair position to analyze (1-based)")
+    ("bpEnd", value<int64_t>(&bpEnd)->default_value(MAX_CSI_COOR), "maximum base pair position to analyze (inclusive, 1-based)")
     ("bpFlanking", value<int64_t>(&bpFlanking)->default_value(0), "flanking region to use during phasing/imputation but discard in output")
     ;
 

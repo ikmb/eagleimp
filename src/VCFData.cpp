@@ -720,8 +720,8 @@ void VCFData::processNextChunk() {
         if (currChunk == 0) {
             // initialize chunk region with complete region first (without flanks)
             // this will be updated while reading the chunk data
-            startChunkBp = startRegionBp;
-            endChunkBp = endRegionBp;
+            startChunkBp = startRegionBp-1; // 1-based to 0-based!
+            endChunkBp = endRegionBp-1; // 1-based to 0-based!
 
             // prepare metadata for first chunk
             alleleFreqsCommon.reset(maxChunkTgtVars);
@@ -782,7 +782,7 @@ void VCFData::processNextChunk() {
             // chunk region:
             // new start is the former end (coordinates kept equal as the chunk end could be at a multi-allelic)
             startChunkBp = endChunkBp;
-            endChunkBp = endRegionBp; // set to region end first, will be updated, if there are more chunks
+            endChunkBp = endRegionBp-1; // set to region end first (1-based to 0-based), will be updated, if there are more chunks
 
             // DEBUG
             cerr << "LENGTHS: " << endl;
@@ -3041,7 +3041,7 @@ void VCFData::writeVCFPhased(const vector<BooleanVector> &phasedTargets) {
 
         if (isphased) { // phased marker
 
-            int64_t bp = (*rec_it)->pos + 1; // one-based!
+            int64_t bp = (*rec_it)->pos; // zero-based!
             if (startChunkBp <= bp && bp <= endChunkBp) { // check if within output region (without flanks)
                 for (size_t i = 0; i < Ntarget; i++) {
                     int *ptr = tgt_gt_int + 2*i;
@@ -3098,7 +3098,7 @@ void VCFData::writeVCFPhased(const vector<BooleanVector> &phasedTargets) {
 
         } else { // !isphased: site was not phased; we do not remove phase information anymore
             // basically, we do nothing here, but check if the SNP is in the output region
-            int64_t bp = (*rec_it)->pos + 1; // one-based!
+            int64_t bp = (*rec_it)->pos; // zero-based!
             if (startChunkBp <= bp && bp <= endChunkBp) { // check if within output region
                 if (bcf_write(out, hdr, *rec_it)) {
                     StatusFile::addError("Failed writing phasing output.");
