@@ -891,6 +891,9 @@ void VCFData::processNextChunk() {
 
             size_t keeplastisphased = isPhased.size()-nextPidx[0]; // contains overlap size + unphased sites in overlap
             isPhased.keepLast(keeplastisphased); // if outputUnphased == true -> currMOverlap + number of unphased sites in overlap
+            // need to destroy all bcf records that do not remain
+            for (size_t i = 0; i < bcf_pout.size()-keeplastisphased; i++)
+                bcf_destroy(bcf_pout[i]);
             bcf_pout.keepLast(keeplastisphased); // if outputUnphased == true -> currMOverlap + number of unphased sites in overlap
 
             // need to correct some index mappings now
@@ -960,7 +963,7 @@ void VCFData::processNextChunk() {
     // quick reference index set to where the last chunk stopped
     // NOTE: if the last chunk stopped at a multi-allelic and the exact match was swapped before the other alleles,
     //       qridx was behind qrefcurridxreg. This is considered here.
-    size_t qridx = qrefcurridxreg - (referenceFullT.size()-isImputed.size());
+    size_t qridx = qrefcurridxreg - (doImputation ? (referenceFullT.size()-isImputed.size()) : 0);
 
     // read data SNP-wise in positional sorted order from target and reference
     // the function also takes care that we only read the requested region
@@ -3031,14 +3034,35 @@ void VCFData::writeVCFPhased(const vector<BooleanVector> &phasedTargets) {
         }
     }
 
-//    int mtgt_gt = Ntarget*2;
     void *tgt_gt = MyMalloc::malloc(Ntarget * 2 * sizeof(int), "tgt_gt_writePhased"); // mtgt_gt is the size of the tgt_gt space (need void* because of htslib)
     int* tgt_gt_int = reinterpret_cast<int*>(tgt_gt); // update, whenever tgt_gt is updated!!!
 
     size_t psite = 0; // index of phased sites
     auto rec_it = bcf_pout.begin();
-    for (bool isphased : isPhased) {
-
+    auto isp_it = isPhased.begin();
+    auto isp_end = isPhased.end();
+    // forward iterators by left overlap and shift end by right overlap (this works only if we do not output unphased sites)
+    if (!outputUnphased) {
+        rec_it += MLeftOv;
+        isp_it += MLeftOv;
+        isp_end -= MRightOv;
+    } else { // otherwise we also need to additionally skip unphased sites in the overlap
+        size_t mleftov_rem = MLeftOv;
+        while(mleftov_rem > 0) {
+            ++rec_it;
+            ++isp_it;
+            if (*isp_it) // is phased
+                mleftov_rem--;
+        };
+        size_t mrightov_rem = MRightOv;
+        while(mrightov_rem > 0) {
+            --isp_end;
+            if (*isp_end) // is phased (points to valid data as we just decremented the iterator)
+                mrightov_rem--;
+        };
+    }
+    for (; isp_it != isp_end; ++isp_it, ++rec_it) {
+        bool isphased = *isp_it;
         if (isphased) { // phased marker
 
             int64_t bp = (*rec_it)->pos; // zero-based!
@@ -3106,13 +3130,19 @@ void VCFData::writeVCFPhased(const vector<BooleanVector> &phasedTargets) {
                 }
             }
         }
-        bcf_destroy(*rec_it);
-        ++rec_it;
+        // destroying is now handled elsewhere
+        //bcf_destroy(*rec_it);
     } // for
 
     MyMalloc::free(tgt_gt);
-//    bcf_destroy(rec); // all records are destroyed in the loop
     hts_close(out);
+
+    // at the end of the last chunk, we need to clean up all bcf records
+    if (currChunk+1 == nChunks) {
+        for (auto rec : bcf_pout) {
+            bcf_destroy(rec);
+        }
+    }
 }
 
 // returns the number of sites per file
