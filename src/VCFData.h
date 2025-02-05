@@ -345,7 +345,7 @@ private:
     size_t qrefregfirstidx = 0;
     size_t qrefreglastidx = UINT64_MAX; // exclusive!
     size_t qrefcurridxglob = 0;
-    size_t qrefcurridxreg = 0;
+    size_t qrefcurridxreg = 0; // points to the next variant to be loaded (equals the number of loaded variants in the region)
     ifstream qin; // for Qref
     bcf_srs_t *sr; // synchronized reader, for VCF/BCF
     bcf_hdr_t *ref_hdr; // header for reading reference VCF

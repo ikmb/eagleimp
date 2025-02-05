@@ -854,7 +854,6 @@ void VCFData::processNextChunk() {
             // number of reference variants the current chunk is reduced of to keep only variants in the overlap,
             // equals former isImputed.size()-isImputedOverlap.size()
             size_t redref = indexToRefFull[indexToRefFull.size()-currMOverlap-1]+1;
-            size_t keeplastref = referenceFullT.size()-redref; // == currMrefOverlap
 
             // beginning of current chunk relative to region (reference-based index)
             // -> must be the element where the first element in the overlap region points to
@@ -869,7 +868,8 @@ void VCFData::processNextChunk() {
             cerr << "refFullT.size(): " << referenceFullT.size() << " minus redref: " << (referenceFullT.size()-redref) << endl;
             // __DEBUG
 
-            // like referenceFullT.keepLast(currMrefOverlap)
+            // like referenceFullT.keepLast(referenceFullT.size()-redref)
+            // NOTE: referenceFullT.size() might be different to (larger than) isImputed.size() due to a potential variant swap for multi-allelics during Qref loading
             if (doImputation) { // only required for imputation
                 // free data from unrequired reference haps
                 for (size_t mref = 0; mref < redref; mref++) {
@@ -883,6 +883,7 @@ void VCFData::processNextChunk() {
             }
 
             // take over reference metadata for this chunk and prepare for next chunk
+            size_t keeplastref = isImputed.size()-redref; // == currMrefOverlap
             indexToRefFull.keepLast(currMOverlap);
             isImputed.keepLast(keeplastref);
             nextPidx.keepLast(keeplastref);
@@ -956,7 +957,10 @@ void VCFData::processNextChunk() {
     int mref_gt = 0; void *ref_gt = NULL; // will be allocated once in bcf_get_genotypes() and then reused for each marker (need void* because of htslib)
     int mtgt_gt = 0; void *tgt_gt = NULL; // will be allocated once in bcf_get_genotypes() and then reused for each marker (need void* because of htslib)
 
-    size_t qridx = qrefcurridxreg; // quick reference index set to where the last chunk stopped
+    // quick reference index set to where the last chunk stopped
+    // NOTE: if the last chunk stopped at a multi-allelic and the exact match was swapped before the other alleles,
+    //       qridx was behind qrefcurridxreg. This is considered here.
+    size_t qridx = qrefcurridxreg - (referenceFullT.size()-isImputed.size());
 
     // read data SNP-wise in positional sorted order from target and reference
     // the function also takes care that we only read the requested region
@@ -1021,8 +1025,8 @@ void VCFData::processNextChunk() {
                 // if we already used up ~97% of our available memory, we stop this chunk now
                 // NOTE: we still load the reference variants between the last and this tgt site
                 // DEBUG
-//                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
-                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/4) { // see if increasing nchunks works
+                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
+//                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/4) { // see if increasing nchunks works
 
                     // TODO maybe adjust currMOverlap here, if the chunk is too small
                     // -> but this needs to be considered for the calculation of the total number of chunks later!!
@@ -1567,6 +1571,9 @@ void VCFData::processNextChunk() {
         }
     }
 
+    // DEBUG
+    cerr << "qrefcurridxglob: " << qrefcurridxglob << " qrefcurridxreg: " << qrefcurridxreg << endl;
+
     // set M and Mref for the current chunk
     M = currM;
     Mref = currMref;
@@ -1646,7 +1653,7 @@ void VCFData::processNextChunk() {
 
     cerr << " L: " << positionsFullRefRegion[currChunkOffset] << "/(" // first ref variant loaded (common or not?)
                    << positionsFullRefRegion[currChunkOffset+MrefLeftOv] << "/" // first ref variant in this chunk (common or not?)
-                   << positionsFullRefRegion[currChunkOffset+MLeftOv?indexToRefFull[MLeftOv-1]:0] << "/" // last common variant in previous chunk
+                   << positionsFullRefRegion[currChunkOffset+(MLeftOv?indexToRefFull[MLeftOv-1]:0)] << "/" // last common variant in previous chunk
                    << positionsFullRefRegion[currChunkOffset+indexToRefFull[MLeftOv]] << ")" << endl; // first common variant in this chunk
 
     cerr << " R: " << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-currMOverlap-1]] << "/" // last common not in overlap
@@ -2715,6 +2722,14 @@ inline bool VCFData::loadAndFindInQref(bcf1_t *tgt, size_t &qridx, bool &refalts
         if (qridx == qrefcurridxreg) {
             qRefLoadNextVariant();
         }
+        // DEBUG
+        if (positionsFullRefRegion[qridx] >= 33800342 && positionsFullRefRegion[qridx] <= 33800401) {
+            cerr << "ZZZ: Loaded at " << qridx << ": " << positionsFullRefRegion[qridx] << ":" << allelesFullRefRegion[2*qridx] << ":" << allelesFullRefRegion[2*qridx+1] << ":" << (multiAllFlagsFullRefRegion[qridx] ? "ma" : "ba") << endl;
+        }
+        if (positionsFullRefRegion[qridx] == 34108971) {
+            cerr << "XYZ: Loaded at " << qridx << ": " << positionsFullRefRegion[qridx] << ":" << allelesFullRefRegion[2*qridx] << ":" << allelesFullRefRegion[2*qridx+1] << ":" << (multiAllFlagsFullRefRegion[qridx] ? "ma" : "ba") << endl;
+        }
+        // __DEBUG
         qridx++;
     }
     if (tgt->pos != positionsFullRefRegion[qridx])
@@ -2741,6 +2756,14 @@ inline bool VCFData::loadAndFindInQref(bcf1_t *tgt, size_t &qridx, bool &refalts
         // load variant (if not yet loaded)
         if (tryidx == qrefcurridxreg)
             qRefLoadNextVariant();
+        // DEBUG
+        if (positionsFullRefRegion[tryidx] >= 33800342 && positionsFullRefRegion[tryidx] <= 33800401) {
+            cerr << "ZZZ: Loaded match at " << tryidx << ": " << positionsFullRefRegion[tryidx] << ":" << allelesFullRefRegion[2*tryidx] << ":" << allelesFullRefRegion[2*tryidx+1] << ":" << (multiAllFlagsFullRefRegion[tryidx] ? "ma" : "ba") << endl;
+        }
+        if (positionsFullRefRegion[qridx] == 34108971) {
+            cerr << "XYZ: Loaded match at " << tryidx << ": " << positionsFullRefRegion[tryidx] << ":" << allelesFullRefRegion[2*tryidx] << ":" << allelesFullRefRegion[2*tryidx+1] << ":" << (multiAllFlagsFullRefRegion[tryidx] ? "ma" : "ba") << endl;
+        }
+        // __DEBUG
 
         if (allelesFullRefRegion[2*tryidx].compare(tgtall0) == 0) { // reference alleles match
             if (mono || allelesFullRefRegion[2*tryidx+1].compare(tgtall1) == 0) { // alternative alleles match
@@ -2825,6 +2848,12 @@ inline bool VCFData::loadAndFindInQref(bcf1_t *tgt, size_t &qridx, bool &refalts
 
         // allele IDs
         swap(variantIDsFullRefRegion[qridx], variantIDsFullRefRegion[fidx]);
+
+        // DEBUG
+        if (positionsFullRefRegion[qridx] == 34108971) {
+            cerr << "XYZ: Swapped " << qridx << " and " << fidx << ": " << positionsFullRefRegion[qridx] << ":" << allelesFullRefRegion[2*qridx] << ":" << allelesFullRefRegion[2*qridx+1] << ":" << (multiAllFlagsFullRefRegion[qridx] ? "ma" : "ba") << endl;
+        }
+        // __DEBUG
 
     }
     return true;
@@ -3210,6 +3239,12 @@ void VCFData::writeVCFImputedBunch(
 
         size_t idx = site_offsets[block] + startidx + bidx;
         size_t idxReg = idx + currChunkOffset;
+
+        // DEBUG
+        if (idxReg >= 2295058 && idxReg <= 2295064) {
+            cerr << "ZZZ: Touched idxReg: " << idxReg << " idx: " << idx << " site_offsets[" << block << "]: " << site_offsets[block] << " startidx: " << startidx << " bidx: " << bidx << endl;
+        }
+        // __DEBUG
 
         vector<float> &ads = ads_vec[omp_get_thread_num()];
         vector<float> &ds = ds_vec[omp_get_thread_num()];
