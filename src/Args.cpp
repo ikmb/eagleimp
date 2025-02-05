@@ -126,7 +126,7 @@ using namespace bpo;
         exit(EXIT_FAILURE);
     }
 
-    if (args.bpEnd >= MAX_CSI_COOR) {
+    if (args.bpEnd > MAX_CSI_COOR) {
         StatusFile::addError("End position must not exceed maximum indexable position " + to_string(MAX_CSI_COOR));
         exit(EXIT_FAILURE);
     }
