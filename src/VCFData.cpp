@@ -370,7 +370,8 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         // but number corresponds to all FPGA pipelines times the capacity of the FPGA processor outqueue, which is fixed to 2)
         size_t reqphasecref = (skipPhasing ? 0 : (usefpga ? fpgaconfs[0].getNumPipelines() * 2 : numThreads)) * min(Nrefhapsmax, args.K) * (Mglob/3) / (usefpga ? 2 : 1);
         size_t reqphasedos = Ntarget * Mglob * 8; // phased dosages
-        size_t reqimpref = doImputation ? (Nrefhaps * Mrefglob) / 8 : 0ull; // required size in bytes for reference haplotypes
+        size_t reqimpref = Nrefhaps * (doImputation ? Mrefglob : Mglob) / 8; // required size in bytes for reference haplotypes
+        reqimpref += Mrefglob * 24; // approximately required memory for data structures storing the hapdata
         size_t reqimppbwt = doImputation ? Nrefhaps * Mglob : 0ull; // PBWT and refT of common reference (if every tgt site is also found in the reference)
         size_t reqimpabsp = doImputation ? Nrefhaps * Mglob * 4 : 0ull; // absolute permutation arrays for reference PBWT (if every tgt site is also found in the reference)
 
@@ -485,6 +486,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             // max vars in a chunk adjusted for using overlaps and taking care of the required static memory
             maxChunkTgtVars = divideRounded(maxchunkmem-reqsum_stat, reqpersite+reqperovsite);
 
+            // DEBUG
             cerr << "maxChunkTgtVars: " << maxChunkTgtVars << endl;
 
                 // check if this estimation is conform with the FPGA configuration
@@ -548,7 +550,8 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
 
             nChunks = minNChunks; // might be increased!
             // preliminary number of bunches
-            nbunches = divideRounded(divideRounded(Mrefglob, (size_t)nChunks), bunchsize * num_files);
+            if (doImputation)
+                nbunches = divideRounded(divideRounded(Mrefglob, (size_t)nChunks), bunchsize * num_files);
         }
 
         // chunks are generated based on the number of target variants
@@ -757,8 +760,8 @@ void VCFData::processNextChunk() {
             }
 
             currChunkOffset = 0;
-            if (doImputation) // only required for imputation
-                referenceFullT.reserve(Mrefpre); // don't need to prepare data memory anymore, will be done on-the-fly
+            // TODO this is a lot if we do not do imputation... we need to check if we really need this or we have to consider it in the memory calculation.
+            referenceFullT.reserve(Mrefpre); // don't need to prepare data memory anymore, will be done on-the-fly
             // prepare metadata for first and already for next chunk
             indexToRefFull.reset(maxChunkTgtVars);
             isImputed.reset(Mrefpre);
@@ -795,12 +798,6 @@ void VCFData::processNextChunk() {
                 if (targets[tidx].size() != targets[0].size())
                     cerr << "target sizes not equal!" << endl;
             }
-            cerr << "MISSINGS (reverse):" << endl;
-            size_t ti = 0;
-            cerr << ti << ": tm  :";
-            for (int i = tgtmiss[ti].size()-1; i >= 0; i--)
-                cerr << "\t" << tgtmiss[ti][i];
-            cerr << endl;
             // __DEBUG
 
             // NOTE: currentMOverlap is the number of tgt sites to take over from the last chunk as overlap
@@ -833,15 +830,6 @@ void VCFData::processNextChunk() {
                 }
             }
 
-            // DEBUG
-            cerr << "MISSINGS new (reverse):" << endl;
-            ti = 0;
-            cerr << ti << ": tm  :";
-            for (int i = tgtmiss[ti].size()-1; i >= 0; i--)
-                cerr << "\t" << tgtmiss[ti][i];
-            cerr << endl;
-            // __DEBUG
-
             // reference data
             for (auto& ref : reference)
                 ref.keepLast(currMOverlap);
@@ -870,17 +858,16 @@ void VCFData::processNextChunk() {
 
             // like referenceFullT.keepLast(referenceFullT.size()-redref)
             // NOTE: referenceFullT.size() might be different to (larger than) isImputed.size() due to a potential variant swap for multi-allelics during Qref loading
-            if (doImputation) { // only required for imputation
-                // free data from unrequired reference haps
-                for (size_t mref = 0; mref < redref; mref++) {
+            // free data from unrequired reference haps
+            for (size_t mref = 0; mref < redref; mref++) {
+                if (referenceFullT[mref].getData())
                     MyMalloc::free(referenceFullT[mref].getData());
-                }
-                // copy overlap region to beginning
-                for (size_t mref = redref; mref < referenceFullT.size(); mref++) {
-                    referenceFullT[mref-redref] = move(referenceFullT[mref]);
-                }
-                referenceFullT.resize(referenceFullT.size()-redref);
             }
+            // copy overlap region to beginning
+            for (size_t mref = redref; mref < referenceFullT.size(); mref++) {
+                referenceFullT[mref-redref] = move(referenceFullT[mref]);
+            }
+            referenceFullT.resize(referenceFullT.size()-redref);
 
             // take over reference metadata for this chunk and prepare for next chunk
             size_t keeplastref = isImputed.size()-redref; // == currMrefOverlap
@@ -889,7 +876,12 @@ void VCFData::processNextChunk() {
             nextPidx.keepLast(keeplastref);
             ptgtIdx.keepLast(keeplastref);
 
-            size_t keeplastisphased = isPhased.size()-nextPidx[0]; // contains overlap size + unphased sites in overlap
+            // the number of sites that have to be removed from the isPhased and bcf_pout vectors (all sites until the first common site (in the left overlap) of this new chunk)
+            // NOTE: if there are accidentally unphased sites between the last common site before the overlap and the next common site, these will also be removed,
+            // but that doesn't matter as they were printed already during processing the last chunk.
+            size_t redisphased = nextPidx[0];
+            size_t keeplastisphased = isPhased.size()-redisphased; // contains overlap size + unphased sites in overlap
+
             isPhased.keepLast(keeplastisphased); // if outputUnphased == true -> currMOverlap + number of unphased sites in overlap
             // need to destroy all bcf records that do not remain
             for (size_t i = 0; i < bcf_pout.size()-keeplastisphased; i++)
@@ -907,12 +899,12 @@ void VCFData::processNextChunk() {
             cerr << "currMOverlap: " << currMOverlap
                  << " keeplastref: " << keeplastref
                  << " redref: " << redref
-                 << " redtgt1: " << nextPidx[0]
+                 << " redtgt1: " << redisphased
                  << " redtgt2: " << ptgtIdx[0] << endl;
             // __DEBUG
 
             indexToRefFull.sub(redref);
-            nextPidx.sub(nextPidx[0]);
+            nextPidx.sub(redisphased);
             ptgtIdx.sub(currM-currMOverlap);
 
             // take over the values from the overlap from last chunk
@@ -963,7 +955,7 @@ void VCFData::processNextChunk() {
     // quick reference index set to where the last chunk stopped
     // NOTE: if the last chunk stopped at a multi-allelic and the exact match was swapped before the other alleles,
     //       qridx was behind qrefcurridxreg. This is considered here.
-    size_t qridx = qrefcurridxreg - (doImputation ? (referenceFullT.size()-isImputed.size()) : 0);
+    size_t qridx = qrefcurridxreg - (referenceFullT.size()-isImputed.size());
 
     // read data SNP-wise in positional sorted order from target and reference
     // the function also takes care that we only read the requested region
@@ -1106,7 +1098,8 @@ void VCFData::processNextChunk() {
             currMref += qridx - qrold;
         }
 
-        if ((!ref && !qfound) || (tgt && !loadQuickRef && ref->n_allele == 1)) { // SNP is not in reference (thus, it has to be in target only), or ref is mono but SNP is also in target
+//        if ((!ref && !qfound) || (tgt && !loadQuickRef && ref->n_allele == 1)) { // SNP is not in reference (thus, it has to be in target only), or ref is mono but SNP is also in target
+        if (!ref && !qfound) { // SNP is not in reference (thus, it has to be in target only)
 //            if (tgt->n_allele > 1) // report if polymorphic in target -> should be counted even if monomorphic
             if (ref) { // means ref->n_allele == 1
                 lstats.MmonomorphicRefTgt++;
@@ -1116,6 +1109,8 @@ void VCFData::processNextChunk() {
                 addToInfoFileExcluded(tgt, "target only");
             }
             if (outputUnphased) { // this SNP cannot be used for phasing and imputation, but if the user decides to "outputUnphased" it will be copied to the phased output file
+                // DEBUG
+                cerr << "NOT FOUND: idx: " << isPhased.size() << " pos: " << tgt->pos << endl;
                 bcf_pout.push_back(bcf_dup(tgt));
                 isPhased.push_back(false);
                 lstats.Munphased++;
@@ -1349,6 +1344,8 @@ void VCFData::processNextChunk() {
             lstats.MrefAltError++;
 
             if (outputUnphased) {
+                // DEBUG
+                cerr << "REFALTERR: idx: " << isPhased.size() << " pos: " << tgt->pos << endl;
                 bcf_pout.push_back(bcf_dup(tgt));
                 isPhased.push_back(false);
                 lstats.Munphased++;
@@ -1523,7 +1520,13 @@ void VCFData::processNextChunk() {
             // read remaining reference vars
             while (qrefcurridxreg < Mrefreg) {
                 // TODO we have to check the memory here and break up if there are too many reference variants left!
-                qRefLoadNextVariant();
+                if (doImputation)
+                    qRefLoadNextVariant(true); // only required to store these variants if we do not skip imputation
+                else { // to be consistent, we keep referenceFullT updated ( TODO do we really need this? )
+                    referenceFullT.emplace_back(nullptr, 0, 0);
+                    qrefcurridxreg++;
+                    qrefcurridxglob++;
+                }
                 isImputed.push_back(true);
                 nextPidx.push_back(bcf_pout.size());
                 ptgtIdx.push_back(currM);
@@ -1627,16 +1630,18 @@ void VCFData::processNextChunk() {
     }
 
     // calculate the number of output sites for each file (left and right parts in the overlaps are not considered as they won't be written here)
-    num_sites_per_file[0] = MrefLeftOv; // left overlap
-    num_sites_per_file.back() = MrefRightOv; // right overlap
-    // number of remaining sites per file
-    size_t mref_rem = Mref - MrefLeftOv - MrefRightOv;
-    size_t nspf = roundToMultiple(mref_rem, (size_t) num_files) / num_files;
-    for (unsigned f = 0; f < num_files; f++) {
-        num_sites_per_file[f+1] = nspf;
-        if (mref_rem % num_files && f >= mref_rem % num_files) {
-            // evenly distribute
-            num_sites_per_file[f+1]--;
+    if (doImputation) {
+        num_sites_per_file[0] = MrefLeftOv; // left overlap
+        num_sites_per_file.back() = MrefRightOv; // right overlap
+        // number of remaining sites per file
+        size_t mref_rem = Mref - MrefLeftOv - MrefRightOv;
+        size_t nspf = roundToMultiple(mref_rem, (size_t) num_files) / num_files;
+        for (unsigned f = 0; f < num_files; f++) {
+            num_sites_per_file[f+1] = nspf;
+            if (mref_rem % num_files && f >= mref_rem % num_files) {
+                // evenly distribute
+                num_sites_per_file[f+1]--;
+            }
         }
     }
 
@@ -2658,17 +2663,22 @@ inline void VCFData::qRefOpenReadMeta() {
 }
 
 
-inline void VCFData::qRefLoadNextVariant() {
+inline void VCFData::qRefLoadNextVariant(bool store) {
     // load haplotype data
 
     // reserve space for data
-    BooleanVector::data_type* hapdata = (BooleanVector::data_type*) MyMalloc::calloc(hapcapacity, 1, "hapdata_qref"); // pre-initialization with zeroes
-    if (!hapdata) {
-        cout << endl;
-        StatusFile::addError(string("Not enough memory for reference. Alloc size: ").append(to_string(hapcapacity)));
-        exit(EXIT_FAILURE);
+    BooleanVector::data_type* hapdata = nullptr;
+    if (store) {
+        hapdata = (BooleanVector::data_type*) MyMalloc::calloc(hapcapacity, 1, "hapdata_qref"); // pre-initialization with zeroes
+        if (!hapdata) {
+            cout << endl;
+            StatusFile::addError(string("Not enough memory for reference. Alloc size: ").append(to_string(hapcapacity)));
+            exit(EXIT_FAILURE);
+        }
+        referenceFullT.emplace_back(hapdata, hapcapacity, Nrefhaps);
+    } else {
+        referenceFullT.emplace_back(nullptr, 0, 0);
     }
-    referenceFullT.emplace_back(hapdata, hapcapacity, Nrefhaps);
 
     // read size of encoded data
     size_t encsize;
@@ -2679,7 +2689,10 @@ inline void VCFData::qRefLoadNextVariant() {
         // read encoded data
         vector<char> enc(encsize);
         while (readbytes < encsize) {
-            qin.read(enc.data()+readbytes, encsize - readbytes);
+            if (store)
+                qin.read(enc.data()+readbytes, encsize - readbytes);
+            else // TODO shouldn't have an effect if we leave this. The compiler might recognize that we do not need "enc" anyway.
+                qin.ignore(encsize - readbytes);
             if (qin.fail() || qin.eof()) {
                 cout << endl;
                 StatusFile::addError("Failed reading haplotypes from reference.");
@@ -2688,10 +2701,14 @@ inline void VCFData::qRefLoadNextVariant() {
             readbytes += qin.gcount();
         }
         // decode
-        runlengthDecode(enc, hapdata, hapcapacity/sizeof(BooleanVector::data_type));
+        if (store)
+            runlengthDecode(enc, hapdata, hapcapacity/sizeof(BooleanVector::data_type));
     } else { // the original sequence was stored
         while (readbytes < hapcapacity) {
-            qin.read(((char*)hapdata)+readbytes, hapcapacity - readbytes);
+            if (store)
+                qin.read(((char*)hapdata)+readbytes, hapcapacity - readbytes);
+            else
+                qin.ignore(hapcapacity - readbytes);
             if (qin.fail() || qin.eof()) {
                 cout << endl;
                 StatusFile::addError("Failed reading haplotypes from reference.");
@@ -2715,30 +2732,50 @@ inline void VCFData::qRefLoadNextVariant() {
 // - if the reverse complements of the alleles match, strandflipped is set.
 // - if the tgt ref/alt pair has no counterpart in the reference, refalterror is set.
 // qridx at function call is used as starting position to find the variant, we require qridx <= qrefcurridxreg!!
-// qridx after return is either the index (relative to region) where the tgt was found or the index of the following variant if not found.
+// qridx after return is either the index (relative to region) where the tgt was found (return value is true AND !refalterror) or the index of a previous variant else.
 // NOTE: the function may swap entries at positions greater or equal to the returned qridx
 //       (happens if tgt was found in a multi-allelic variant, then the matching variant is swapped to qridx, while others are moved to higher indices)
 inline bool VCFData::loadAndFindInQref(bcf1_t *tgt, size_t &qridx, bool &refaltswapped, bool &strandflipped, bool &refalterror) {
 
+    // DEBUG
+    bool dbg = tgt->pos > 17424860 && tgt->pos < 17424870;
+    if (dbg)
+        cerr << "DBG: " << tgt->pos << " qridx: " << qridx << " qrefcurridxreg: " << qrefcurridxreg << endl;
+    // __DEBUG
+
     // find position in qref (qridx <= qrefcurridxreg!!!)
-    while (qridx < Mrefreg && tgt->pos > positionsFullRefRegion[qridx]) {
+    size_t searchidx = qridx;
+    while (searchidx < Mrefreg && tgt->pos > positionsFullRefRegion[searchidx]) {
+        searchidx++;
+    }
+
+    // DEBUG
+    if (dbg)
+        cerr << " searchidx: " << searchidx << endl;
+
+    // now, searchidx points to either a variant at or after the queried position
+    // -> load predecessing variants, but store only if we do imputation
+    while (searchidx && qridx < searchidx) {
         if (qridx == qrefcurridxreg) {
-            qRefLoadNextVariant();
+            qRefLoadNextVariant(doImputation);
         }
-        // DEBUG
-        if (positionsFullRefRegion[qridx] >= 33800342 && positionsFullRefRegion[qridx] <= 33800401) {
-            cerr << "ZZZ: Loaded at " << qridx << ": " << positionsFullRefRegion[qridx] << ":" << allelesFullRefRegion[2*qridx] << ":" << allelesFullRefRegion[2*qridx+1] << ":" << (multiAllFlagsFullRefRegion[qridx] ? "ma" : "ba") << endl;
-        }
-        if (positionsFullRefRegion[qridx] == 34108971) {
-            cerr << "XYZ: Loaded at " << qridx << ": " << positionsFullRefRegion[qridx] << ":" << allelesFullRefRegion[2*qridx] << ":" << allelesFullRefRegion[2*qridx+1] << ":" << (multiAllFlagsFullRefRegion[qridx] ? "ma" : "ba") << endl;
-        }
-        // __DEBUG
         qridx++;
     }
-    if (tgt->pos != positionsFullRefRegion[qridx])
-        return false; // not found
 
-    // at least positions match
+    // DEBUG
+    if (dbg)
+        cerr << " qridx: " << qridx << " qrefcurridxreg: " << qrefcurridxreg << endl;
+
+    // the next variant is either at or after the desired position
+    if (tgt->pos != positionsFullRefRegion[searchidx]) { // position is after the query -> not found
+        // DEBUG
+        if (dbg)
+            cerr << "Not found! refpos: " << positionsFullRefRegion[searchidx] << endl;
+        return false;
+    }
+
+    // at least positions match (but variant is not yet loaded!)
+    // qridx == searchidx
 
     bool mono = tgt->n_allele == 1; // check, if monomorph
     size_t tryidx = qridx; // continuing now with this variant and try all indices at the same position
@@ -2753,20 +2790,18 @@ inline bool VCFData::loadAndFindInQref(bcf1_t *tgt, size_t &qridx, bool &refalts
         tgtall1rc = reverseComplement(tgt->d.allele[1]);
     }
 
+    // DEBUG
+    if (dbg)
+        cerr << " tryidx: " << tryidx << " alleles: " << tgtall0 << " " << tgtall1 << endl;
+
     // check alleles, also in possible multi-allelic splits
     bool found = false;
     do {
+
         // load variant (if not yet loaded)
-        if (tryidx == qrefcurridxreg)
-            qRefLoadNextVariant();
-        // DEBUG
-        if (positionsFullRefRegion[tryidx] >= 33800342 && positionsFullRefRegion[tryidx] <= 33800401) {
-            cerr << "ZZZ: Loaded match at " << tryidx << ": " << positionsFullRefRegion[tryidx] << ":" << allelesFullRefRegion[2*tryidx] << ":" << allelesFullRefRegion[2*tryidx+1] << ":" << (multiAllFlagsFullRefRegion[tryidx] ? "ma" : "ba") << endl;
+        if (tryidx == qrefcurridxreg) {
+            qRefLoadNextVariant(true); // store anyway, even if we might not need it -> because we have to potentially swap variants below and the variant might be required in a following query
         }
-        if (positionsFullRefRegion[qridx] == 34108971) {
-            cerr << "XYZ: Loaded match at " << tryidx << ": " << positionsFullRefRegion[tryidx] << ":" << allelesFullRefRegion[2*tryidx] << ":" << allelesFullRefRegion[2*tryidx+1] << ":" << (multiAllFlagsFullRefRegion[tryidx] ? "ma" : "ba") << endl;
-        }
-        // __DEBUG
 
         if (allelesFullRefRegion[2*tryidx].compare(tgtall0) == 0) { // reference alleles match
             if (mono || allelesFullRefRegion[2*tryidx+1].compare(tgtall1) == 0) { // alternative alleles match
@@ -2775,6 +2810,9 @@ inline bool VCFData::loadAndFindInQref(bcf1_t *tgt, size_t &qridx, bool &refalts
                 strandflipped = false;
                 found = true;
                 fidx = tryidx;
+                // DEBUG
+                if (dbg)
+                    cerr << " MATCH! qridx: " << qridx << " fidx: " << fidx << endl;
                 break; // don't need to try others
             }
         } else if (allowRefAltSwap && allelesFullRefRegion[2*tryidx+1].compare(tgtall0) == 0) { // reference alleles match if swapped
@@ -2809,20 +2847,35 @@ inline bool VCFData::loadAndFindInQref(bcf1_t *tgt, size_t &qridx, bool &refalts
                 }
             }
         }
-        // no match at all -> try next idx
+        // DEBUG
+        if (dbg) {
+            if (found)
+                cerr << "Potential match: ";
+            else
+                cerr << "No match: ";
+            cerr << "qridx: " << qridx << " tryidx: " << tryidx << " pos: " << tgt->pos << " tgtall0: " << tgtall0 << " tgtall1: " << tgtall1 << " refall0: " << allelesFullRefRegion[2*tryidx] << " refall1: " << allelesFullRefRegion[2*tryidx+1] << endl;
+        }
+        // __DEBUG
+        // we might have a potential, but not perfect match here, so we try the next idx as well
         tryidx++;
     } while(tryidx < positionsFullRefRegion.size() && tgt->pos == positionsFullRefRegion[tryidx]);
 
     refalterror = !found;
     if (!found) { // positions match, but no ref/alt pair matches
-        // the variant at fidx is not yet loaded
+        // the variant at tryidx is not yet loaded
+        // DEBUG
+        if (dbg)
+            cerr << "Mismatch: qridx: " << qridx << " tryidx: " << tryidx << " pos: " << tgt->pos << " tgtall0: " << tgtall0 << " tgtall1: " << tgtall1 << endl;
         return true;
     }
 
     // here, we found the tgt (at fidx), but we probably need to swap multi-allelic splits
-    // (since we left the loop above with break, the variant at fidx is loaded!)
+    // (the variant at fidx is loaded!)
     if (fidx != qridx) {
         // swap references at fidx and qridx
+        // DEBUG
+        if (dbg)
+            cerr << "Swap matches: qridx: " << qridx << " fidx: " << fidx << " pos: " << tgt->pos << " tgtall0: " << tgtall0 << " tgtall1: " << tgtall1 << " refall0: " << allelesFullRefRegion[2*fidx] << " refall1: " << allelesFullRefRegion[2*fidx+1] << endl;
 
         // haplotypes
         // simply need to swap data pointers in underlying BooleanVectors
@@ -2851,12 +2904,6 @@ inline bool VCFData::loadAndFindInQref(bcf1_t *tgt, size_t &qridx, bool &refalts
 
         // allele IDs
         swap(variantIDsFullRefRegion[qridx], variantIDsFullRefRegion[fidx]);
-
-        // DEBUG
-        if (positionsFullRefRegion[qridx] == 34108971) {
-            cerr << "XYZ: Swapped " << qridx << " and " << fidx << ": " << positionsFullRefRegion[qridx] << ":" << allelesFullRefRegion[2*qridx] << ":" << allelesFullRefRegion[2*qridx+1] << ":" << (multiAllFlagsFullRefRegion[qridx] ? "ma" : "ba") << endl;
-        }
-        // __DEBUG
 
     }
     return true;
@@ -3046,13 +3093,13 @@ void VCFData::writeVCFPhased(const vector<BooleanVector> &phasedTargets) {
         rec_it += MLeftOv;
         isp_it += MLeftOv;
         isp_end -= MRightOv;
-    } else { // otherwise we also need to additionally skip unphased sites in the overlap
+    } else { // if we want to output unphased sites, we need to additionally skip unphased sites in the overlap
         size_t mleftov_rem = MLeftOv;
         while(mleftov_rem > 0) {
-            ++rec_it;
-            ++isp_it;
             if (*isp_it) // is phased
                 mleftov_rem--;
+            ++rec_it;
+            ++isp_it;
         };
         size_t mrightov_rem = MRightOv;
         while(mrightov_rem > 0) {

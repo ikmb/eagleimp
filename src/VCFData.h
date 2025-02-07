@@ -171,8 +171,9 @@ private:
     // NOTE: the function may swap entries at positions greater or equal to the returned qridx
     //       (happens if tgt was found in a multi-allelic variant, then the matching variant is swapped to qridx, while others are moved to higher indices)
     inline bool loadAndFindInQref(bcf1_t *tgt, size_t &qridx, bool &refaltswapped, bool &strandflipped, bool &refalterror);
-    // loads the next variant from the Qref data stream and adds the data to referenceFullT by using push_back()
-    inline void qRefLoadNextVariant();
+    // loads the next variant from the Qref data stream and adds the data to referenceFullT by using emplace_back() if store == true
+    // ( if store == false only a placeholder without data is added to referenceFullT )
+    inline void qRefLoadNextVariant(bool store);
 
     // split multi-allelic reference SNPs:
     // *ref will be updated to a bi-allelic SNP with the reference and first alternative allele.
@@ -230,9 +231,10 @@ private:
     RingBufferBool isImputed; // size corresponds to imputation output of current chunk, indicates if the SNP is/will be imputed or not
     // for each analyzed target SNP the index in the full reference vector (relative to current chunk) that corresponds to this SNP, size is M
     RingBuffer<size_t> indexToRefFull;
-    // for each reference SNP the index for the next common site in the the target, size as Mref
-    // (index corresponds to position in targets vector if the current site is common, the index corresponds to the same site;
-    // if no common index follows, the stored value is M)
+    // for each reference SNP the index for the next common site in the the target (isPhased or bcf_pout), size as Mref
+    // (index points to position in bcf_pout vector;
+    //  if the current site is common, the index corresponds to the same site;
+    //  if no common index follows, the stored value is M)
     RingBuffer<size_t> nextPidx;
     // for each reference SNP the index for the commonly analyzed target site (i.e. the index in phasedTarget), it points to the next common site if this site was not analyzed in phasing
     RingBuffer<size_t> ptgtIdx;
