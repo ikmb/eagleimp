@@ -1,5 +1,5 @@
 /*
- *    Copyright (C) 2018-2021 by Lars Wienbrandt,
+ *    Copyright (C) 2018-2025 by Lars Wienbrandt,
  *    Institute of Clinical Molecular Biology, Kiel University
  *    
  *    This file is part of EagleImp.

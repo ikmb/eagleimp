@@ -228,7 +228,6 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
         fpgahandler.prepareReferenceBuffers();
 
         cout << "Phasing iteration " << iter << "/" << iters << " (K=" << localK << "): 0%" << flush;
-        int pgb = 0; // for progress bar
 
         // processor that prepares the phasing process for each target
         ThreadPool<Target*, Target*> fpgaPrepare(
@@ -295,6 +294,11 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
         // At this point, we just need to collect the data from the other threads.
         // The capacity of the last queue ensures, that we didn't run into a deadlock before.
 
+        int pgb = 0; // for progress bar
+        // for progress display: lines per each display step (displaying 80 steps: every 5% and three dots in between)
+        size_t prghelp_total = nTarget;
+        size_t prghelp_linesperdispl = divideRounded(prghelp_total, (size_t)80);
+
         // just fetch all confidences
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT
         for (size_t nt = DEBUG_TARGET_START; nt <= DEBUG_TARGET_STOP; nt++)
@@ -302,13 +306,11 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
         for (size_t nt = 0; nt < nTarget; nt++)
 #endif
         { // we might not know the order in which the results arrive, but we know that there must be exactly nTarget results
-            if (nt % 64 == 0) { // update status file every 64 targets
-//                float progress = ((nt/(float)nTarget)/(float)iters)/(float)vcfdata.getNChunks();
-//                progress += ((iter-1)/(float)iters)/(float)vcfdata.getNChunks();
-//                progress += chunk/(float)vcfdata.getNChunks();
-                StatusFile::updateStatus(nt/(float)nTarget);
+            // progress display
+            if (nt % prghelp_linesperdispl == 0) {
+                StatusFile::updateStatus(nt/(float)prghelp_total);
                 if (pgb==3) { // printing % after three dots
-                    cout << (100*nt)/nTarget << "%" << flush;
+                    cout << (100*nt)/prghelp_total << "%" << flush;
                     pgb = 0;
                 } else {
                     cout << "." << flush;
@@ -686,6 +688,9 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
             cout << "Parsing: ";
         cout << "0%" << flush;
         int pgb = 0; // for progress bar
+        // for progress display: lines per each display step (displaying 80 steps: every 5% and three dots in between)
+        size_t prghelp_total = nTarget;
+        size_t prghelp_linesperdispl = divideRounded(prghelp_total, (size_t)80);
 
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT
         for (size_t nt = DEBUG_TARGET_START; nt <= DEBUG_TARGET_STOP; nt++)
@@ -697,13 +702,11 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
         for (size_t nt = 0; nt < nTarget; nt++)
 #endif
         {
-            if (nt % 64 == 0) { // update status file every 64 targets
-//                float progress = ((nt/(float)nTarget)/(float)iters)/(float)vcfdata.getNChunks();
-//                progress += ((iter-1)/(float)iters)/(float)vcfdata.getNChunks();
-//                progress += chunk/(float)vcfdata.getNChunks();
-                StatusFile::updateStatus(nt/(float)nTarget);
+            // progress display
+            if (nt % prghelp_linesperdispl == 0) {
+                StatusFile::updateStatus(nt/(float)prghelp_total);
                 if (pgb==3) { // printing % after three dots
-                    cout << (100*nt)/nTarget << "%" << flush;
+                    cout << (100*nt)/prghelp_total << "%" << flush;
                     pgb = 0;
                 } else {
                     cout << "." << flush;

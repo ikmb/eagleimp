@@ -268,15 +268,15 @@ int main(int argc, char *argv[]) {
 
     // set total number of steps for StatusFile
     {
-        unsigned steps;
+        unsigned stepsperchunk;
         if (args.createQuickRef)
-            steps = 1;
+            stepsperchunk = 1;
         else {
-            steps = args.skipImputation ? 1 : 2; // reading + imputation steps
-            steps += args.iters; // phasing iterations (even if phasing is skipped, we count this step)
+            stepsperchunk = args.skipImputation ? 1 : 2; // reading + imputation steps
+            stepsperchunk += args.iters; // phasing iterations (even if phasing is skipped, we count this step)
         }
-        steps *= vcfdata.getNChunks(); // all steps repeated for each chunk
-        StatusFile::updateSteps(0,steps);
+        StatusFile::setStepsPerChunk(stepsperchunk);
+        StatusFile::setTotalChunks(vcfdata.getNChunks());
     }
 
     // DEBUG
@@ -448,20 +448,25 @@ int main(int argc, char *argv[]) {
             size_t startidx = 0;
             cout << "Imputing: 0%" << flush;
             int pgb = 0; // for progress bar
-            for (size_t bunch = 0; bunch < nbunches; bunch++, startidx += bunchsize) {
-                if (pgb == 3) { // print % after three dots
-                    cout << (100*bunch/nbunches) << "%" << flush;
-                    pgb = 0;
-                } else {
-                    cout << "." << flush;
-                    pgb++;
-                }
-                //cout << "Imputing bunch " << bunch+1 << "/" << nbunches << " ..." << endl;
-//                float progress = (bunch/(float)nbunches)/(float)vcfdata.getNChunks();
-//                progress += chunk/(float)vcfdata.getNChunks();
-                StatusFile::updateStatus(bunch/(float)nbunches);
+            // for progress display: lines per each display step (displaying 80 steps: every 5% and three dots in between)
+            size_t prghelp_total = nbunches*num_files;
+            size_t prghelp_linesperdispl = divideRounded(prghelp_total, (size_t)80);
 
+            for (size_t bunch = 0; bunch < nbunches; bunch++, startidx += bunchsize) {
                 for (unsigned f = 0; f < num_files; f++) {
+                    // progress display
+                    size_t prg = bunch*num_files+f;
+                    if (prg % prghelp_linesperdispl == 0) {
+                        StatusFile::updateStatus(prg/(float)prghelp_total);
+                        if (pgb == 3) { // print % after three dots
+                            cout << (100*prg/prghelp_total) << "%" << flush;
+                            pgb = 0;
+                        } else {
+                            cout << "." << flush;
+                            pgb++;
+                        }
+                    }
+
                     Stopwatch swimpb("imputeBunch");
                     imputer.imputeBunch(f, bunchsize, imputedTargets, imputedDosages); // fills target haps and dosages according to already calculated sm-matches
                     swimpb.stop();
