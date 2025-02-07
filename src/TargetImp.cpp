@@ -264,40 +264,40 @@ void TargetImp::prepareBlocks(const vector<size_t>& num_sites_per_block) {
         forwardBlock(block, num_sites_per_block[block]);
     }
 
-    // DEBUG
-    if (hap_id == 0) {
-        cerr << "Mref:\t" << Mref << endl;
-        cerr << "M:\t" << M << endl;
-        cerr << "numsites:";
-        for (size_t n = 0; n < num_blocks+2; n++)
-            cerr << "\t" << num_sites_per_block[n];
-        cerr << endl;
-        cerr << "mrefs:\t\t";
-        for (size_t n = 0; n < num_blocks; n++)
-            cerr << "\t" << mrefs[n];
-        cerr << endl;
-        cerr << "currms:\t\t";
-        for (size_t n = 0; n < num_blocks; n++)
-            cerr << "\t" << currms[n];
-        cerr << endl;
-        cerr << "mmaps:\t\t";
-        for (size_t n = 0; n < num_blocks; n++)
-            cerr << "\t" << mmaps[n];
-        cerr << endl;
-        cerr << "idx0s:\t\t";
-        for (size_t n = 0; n < num_blocks; n++)
-            cerr << "\t" << idx0s[n];
-        cerr << endl;
-        cerr << "missidx:\t";
-        for (size_t n = 0; n < num_blocks; n++)
-            cerr << "\t" << miss_idxs[n];
-        cerr << endl;
-        cerr << "nextmiss:\t";
-        for (size_t n = 0; n < num_blocks; n++)
-            cerr << "\t" << nextmisss[n];
-        cerr << endl;
-    }
-    // __DEBUG
+//    // DEBUG
+//    if (hap_id == 0) {
+//        cerr << "Mref:\t" << Mref << endl;
+//        cerr << "M:\t" << M << endl;
+//        cerr << "numsites:";
+//        for (size_t n = 0; n < num_blocks+2; n++)
+//            cerr << "\t" << num_sites_per_block[n];
+//        cerr << endl;
+//        cerr << "mrefs:\t\t";
+//        for (size_t n = 0; n < num_blocks; n++)
+//            cerr << "\t" << mrefs[n];
+//        cerr << endl;
+//        cerr << "currms:\t\t";
+//        for (size_t n = 0; n < num_blocks; n++)
+//            cerr << "\t" << currms[n];
+//        cerr << endl;
+//        cerr << "mmaps:\t\t";
+//        for (size_t n = 0; n < num_blocks; n++)
+//            cerr << "\t" << mmaps[n];
+//        cerr << endl;
+//        cerr << "idx0s:\t\t";
+//        for (size_t n = 0; n < num_blocks; n++)
+//            cerr << "\t" << idx0s[n];
+//        cerr << endl;
+//        cerr << "missidx:\t";
+//        for (size_t n = 0; n < num_blocks; n++)
+//            cerr << "\t" << miss_idxs[n];
+//        cerr << endl;
+//        cerr << "nextmiss:\t";
+//        for (size_t n = 0; n < num_blocks; n++)
+//            cerr << "\t" << nextmisss[n];
+//        cerr << endl;
+//    }
+//    // __DEBUG
 }
 
 #ifdef COUNTSMMATCHES

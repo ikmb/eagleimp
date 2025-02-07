@@ -487,8 +487,8 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             // max vars in a chunk adjusted for using overlaps and taking care of the required static memory
             maxChunkTgtVars = min(divideRounded(maxchunkmem-reqsum_stat, reqpersite+reqperovsite), Mglob);
 
-            // DEBUG
-            cerr << "maxChunkTgtVars: " << maxChunkTgtVars << endl;
+//            // DEBUG
+//            cerr << "maxChunkTgtVars: " << maxChunkTgtVars << endl;
 
                 // check if this estimation is conform with the FPGA configuration
                 if (usefpga) {
@@ -704,12 +704,12 @@ void VCFData::processNextChunk() {
         cout << "Chunk " << currChunk+1 << "/" << nChunks << ":" << endl;
         cout << "----------------------------------------------------------------" << endl;
 
-        // DEBUG
-        cerr << "sf/s/e: " << startChunkFlankIdx[currChunk] << "/" << startChunkIdx[currChunk] << "/" << endChunkFlankIdx[currChunk]
-             << " sizef/size: " <<  endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk] << "/" << endChunkFlankIdx[currChunk] - startChunkIdx[currChunk]
-             << " tgtlinesread: " << tgtlinesread
-             << " sfn/sn: " << startChunkFlankIdx[currChunk+1] << "/" << startChunkIdx[currChunk+1]
-             << endl;
+//        // DEBUG
+//        cerr << "sf/s/e: " << startChunkFlankIdx[currChunk] << "/" << startChunkIdx[currChunk] << "/" << endChunkFlankIdx[currChunk]
+//             << " sizef/size: " <<  endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk] << "/" << endChunkFlankIdx[currChunk] - startChunkIdx[currChunk]
+//             << " tgtlinesread: " << tgtlinesread
+//             << " sfn/sn: " << startChunkFlankIdx[currChunk+1] << "/" << startChunkIdx[currChunk+1]
+//             << endl;
 
         //
         // prepare memory for target data of current chunk, copy overlap from previous chunk
@@ -788,18 +788,18 @@ void VCFData::processNextChunk() {
             startChunkBp = endChunkBp;
             endChunkBp = endRegionBp-1; // set to region end first (1-based to 0-based), will be updated, if there are more chunks
 
-            // DEBUG
-            cerr << "LENGTHS: " << endl;
-            cerr << isPhased.size() << "/"
-                 << alleleFreqsCommon.size() << "/"
-                 << bcf_pout.size() << "/"
-                 << cMs.size() << endl;
-            cerr << "tgt0: " << targets[0].size() << "/" << tgtmiss[0].size() << endl;
-            for (size_t tidx = 1; tidx < Ntarget; tidx++) {
-                if (targets[tidx].size() != targets[0].size())
-                    cerr << "target sizes not equal!" << endl;
-            }
-            // __DEBUG
+//            // DEBUG
+//            cerr << "LENGTHS: " << endl;
+//            cerr << isPhased.size() << "/"
+//                 << alleleFreqsCommon.size() << "/"
+//                 << bcf_pout.size() << "/"
+//                 << cMs.size() << endl;
+//            cerr << "tgt0: " << targets[0].size() << "/" << tgtmiss[0].size() << endl;
+//            for (size_t tidx = 1; tidx < Ntarget; tidx++) {
+//                if (targets[tidx].size() != targets[0].size())
+//                    cerr << "target sizes not equal!" << endl;
+//            }
+//            // __DEBUG
 
             // NOTE: currentMOverlap is the number of tgt sites to take over from the last chunk as overlap
 
@@ -848,14 +848,14 @@ void VCFData::processNextChunk() {
             // -> must be the element where the first element in the overlap region points to
             currChunkOffset += redref;
 
-            // DEBUG
-            cerr << "REFLENGTHS: " << endl;
-            cerr << isImputed.size() << "/"
-                 << indexToRefFull.size() << "/"
-                 << nextPidx.size() << "/"
-                 << ptgtIdx.size() << endl;
-            cerr << "refFullT.size(): " << referenceFullT.size() << " minus redref: " << (referenceFullT.size()-redref) << endl;
-            // __DEBUG
+//            // DEBUG
+//            cerr << "REFLENGTHS: " << endl;
+//            cerr << isImputed.size() << "/"
+//                 << indexToRefFull.size() << "/"
+//                 << nextPidx.size() << "/"
+//                 << ptgtIdx.size() << endl;
+//            cerr << "refFullT.size(): " << referenceFullT.size() << " minus redref: " << (referenceFullT.size()-redref) << endl;
+//            // __DEBUG
 
             // like referenceFullT.keepLast(referenceFullT.size()-redref)
             // NOTE: referenceFullT.size() might be different to (larger than) isImputed.size() due to a potential variant swap for multi-allelics during Qref loading
@@ -890,19 +890,19 @@ void VCFData::processNextChunk() {
             bcf_pout.keepLast(keeplastisphased); // if outputUnphased == true -> currMOverlap + number of unphased sites in overlap
 
             // need to correct some index mappings now
-            // DEBUG
-            cerr << "idx0: " << indexToRefFull[0] << " --- "
-                             << nextPidx[0] << " --- "
-                             << ptgtIdx[0] << endl;
-            cerr << "idxbck: " << indexToRefFull.back() << " --- "
-                               << nextPidx.back() << " --- "
-                               << ptgtIdx.back() << endl;
-            cerr << "currMOverlap: " << currMOverlap
-                 << " keeplastref: " << keeplastref
-                 << " redref: " << redref
-                 << " redtgt1: " << redisphased
-                 << " redtgt2: " << ptgtIdx[0] << endl;
-            // __DEBUG
+//            // DEBUG
+//            cerr << "idx0: " << indexToRefFull[0] << " --- "
+//                             << nextPidx[0] << " --- "
+//                             << ptgtIdx[0] << endl;
+//            cerr << "idxbck: " << indexToRefFull.back() << " --- "
+//                               << nextPidx.back() << " --- "
+//                               << ptgtIdx.back() << endl;
+//            cerr << "currMOverlap: " << currMOverlap
+//                 << " keeplastref: " << keeplastref
+//                 << " redref: " << redref
+//                 << " redtgt1: " << redisphased
+//                 << " redtgt2: " << ptgtIdx[0] << endl;
+//            // __DEBUG
 
             indexToRefFull.sub(redref);
             nextPidx.sub(redisphased);
@@ -928,12 +928,12 @@ void VCFData::processNextChunk() {
     } // END if(!createQRef)
 
 
-    // DEBUG
-    MyMalloc::printSummary(string("intermediate before reading chunk ")+to_string(currChunk+1));
-//        ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
-//        MyMalloc::dumpMemMap(ofs);
-//        ofs.close();
-    // __DEBUG
+//    // DEBUG
+//    MyMalloc::printSummary(string("intermediate before reading chunk ")+to_string(currChunk+1));
+////        ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
+////        MyMalloc::dumpMemMap(ofs);
+////        ofs.close();
+//    // __DEBUG
 
     Stopwatch swrdvcf("Read data");
     stringstream ss;
@@ -1030,9 +1030,9 @@ void VCFData::processNextChunk() {
                     startChunkIdx[currChunk+1] -= reduction;
                     endChunkFlankIdx[currChunk] -= reduction; // this will also stop reading after this line
 
-                    // DEBUG
-                    if (reduction)
-                        cerr << "--- REDUCED chunk by " << reduction << " sites." << endl;
+//                    // DEBUG
+//                    if (reduction)
+//                        cerr << "--- REDUCED chunk by " << reduction << " sites." << endl;
                 }
 
                 tgtlinesread++;
@@ -1531,8 +1531,8 @@ void VCFData::processNextChunk() {
 
             // set end of chunk to last reference var (inclusive)
             endChunkBp = positionsFullRefRegion.back();
-            // DEBUG
-            cerr << "endChunkBp: " << endChunkBp << endl;
+//            // DEBUG
+//            cerr << "endChunkBp: " << endChunkBp << endl;
 
             // no more chunks
             startChunkFlankIdx[currChunk+1] = endChunkFlankIdx[currChunk];
@@ -1551,8 +1551,8 @@ void VCFData::processNextChunk() {
             // set end of chunk to bp position of last common var in this chunk
             endChunkBp = positionsFullRefRegion[currChunkOffset+indexToRefFull[currM-MRightOv-1]]; // inclusive!
 
-            // DEBUG
-            cerr << "endChunkBp: " << endChunkBp << " -- " << bcf_pout[currM-MRightOv-1]->pos << " / " << bcf_pout[currM-MRightOv]->pos << " / " << bcf_pout[currM-MRightOv+1]->pos << endl;
+//            // DEBUG
+//            cerr << "endChunkBp: " << endChunkBp << " -- " << bcf_pout[currM-MRightOv-1]->pos << " / " << bcf_pout[currM-MRightOv]->pos << " / " << bcf_pout[currM-MRightOv+1]->pos << endl;
 
             // prepare preliminary limits
             size_t nextchunkend = min(Mglob, startChunkFlankIdx[currChunk+1] + maxChunkTgtVars);
@@ -1570,14 +1570,14 @@ void VCFData::processNextChunk() {
                 nChunks++;
                 StatusFile::setTotalChunks(nChunks);
             }
-            // DEBUG
-            cerr << "Remvars: " << remvars << endl;
-            // _DEBUG
+//            // DEBUG
+//            cerr << "Remvars: " << remvars << endl;
+//            // _DEBUG
         }
     }
 
-    // DEBUG
-    cerr << "qrefcurridxglob: " << qrefcurridxglob << " qrefcurridxreg: " << qrefcurridxreg << endl;
+//    // DEBUG
+//    cerr << "qrefcurridxglob: " << qrefcurridxglob << " qrefcurridxreg: " << qrefcurridxreg << endl;
 
     // set M and Mref for the current chunk
     M = currM;
@@ -1646,34 +1646,32 @@ void VCFData::processNextChunk() {
 
     swrdvcf.stop();
 
-    // DEBUG
-    cerr << "sf/s/e: " << startChunkFlankIdx[currChunk] << "/" << startChunkIdx[currChunk] << "/" << endChunkFlankIdx[currChunk]
-         << " size/sizef: " <<  endChunkFlankIdx[currChunk] - startChunkIdx[currChunk] << "/" << endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk]
-         << " tgtlinesread: " << tgtlinesread
-         << " sfn/sn: " << startChunkFlankIdx[currChunk+1] << "/" << startChunkIdx[currChunk+1]
-         << endl;
-    cerr << "currChunkOffset: " << currChunkOffset << " currM: " << M << " currMref: " << Mref << endl;
-    cerr << "MLeftOv: " << MLeftOv << " MRightOv: " << MRightOv << endl;
-    cerr << "MrefLeftOv: " << MrefLeftOv << " MrefRightOv: " << MrefRightOv << endl;
-    cerr << "startBp: " << startChunkBp << " endBp: " << endChunkBp << endl;
-    cerr << "positions:" << endl;
-
-    cerr << " L: " << positionsFullRefRegion[currChunkOffset] << "/(" // first ref variant loaded (common or not?)
-                   << positionsFullRefRegion[currChunkOffset+MrefLeftOv] << "/" // first ref variant in this chunk (common or not?)
-                   << positionsFullRefRegion[currChunkOffset+(MLeftOv?indexToRefFull[MLeftOv-1]:0)] << "/" // last common variant in previous chunk
-                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[MLeftOv]] << ")" << endl; // first common variant in this chunk
-
-    cerr << " R: " << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-currMOverlap-1]] << "/" // last common not in overlap
-                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-currMOverlap]] << "/(" // first common in overlap
-                   << positionsFullRefRegion[currChunkOffset+Mref-MrefRightOv-1] << "/" // last ref in this chunk (middle of overlap)
-                   << positionsFullRefRegion[currChunkOffset+Mref-MrefRightOv] << "/" // first ref in next chunk (middle of overlap)
-                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-MRightOv-1]] << "/" // last common in this chunk (middle of overlap)
-                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-MRightOv]] << ")/(" // first common in next chunk (middle of overlap)
-                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-1]] << "/" // last common loaded
-                   << positionsFullRefRegion[currChunkOffset+Mref-1] << ")" << endl; // last ref loaded (common if not last chunk, else last ref at all)
-
-
-
+//    // DEBUG
+//    cerr << "sf/s/e: " << startChunkFlankIdx[currChunk] << "/" << startChunkIdx[currChunk] << "/" << endChunkFlankIdx[currChunk]
+//         << " size/sizef: " <<  endChunkFlankIdx[currChunk] - startChunkIdx[currChunk] << "/" << endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk]
+//         << " tgtlinesread: " << tgtlinesread
+//         << " sfn/sn: " << startChunkFlankIdx[currChunk+1] << "/" << startChunkIdx[currChunk+1]
+//         << endl;
+//    cerr << "currChunkOffset: " << currChunkOffset << " currM: " << M << " currMref: " << Mref << endl;
+//    cerr << "MLeftOv: " << MLeftOv << " MRightOv: " << MRightOv << endl;
+//    cerr << "MrefLeftOv: " << MrefLeftOv << " MrefRightOv: " << MrefRightOv << endl;
+//    cerr << "startBp: " << startChunkBp << " endBp: " << endChunkBp << endl;
+//    cerr << "positions:" << endl;
+//
+//    cerr << " L: " << positionsFullRefRegion[currChunkOffset] << "/(" // first ref variant loaded (common or not?)
+//                   << positionsFullRefRegion[currChunkOffset+MrefLeftOv] << "/" // first ref variant in this chunk (common or not?)
+//                   << positionsFullRefRegion[currChunkOffset+(MLeftOv?indexToRefFull[MLeftOv-1]:0)] << "/" // last common variant in previous chunk
+//                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[MLeftOv]] << ")" << endl; // first common variant in this chunk
+//
+//    cerr << " R: " << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-currMOverlap-1]] << "/" // last common not in overlap
+//                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-currMOverlap]] << "/(" // first common in overlap
+//                   << positionsFullRefRegion[currChunkOffset+Mref-MrefRightOv-1] << "/" // last ref in this chunk (middle of overlap)
+//                   << positionsFullRefRegion[currChunkOffset+Mref-MrefRightOv] << "/" // first ref in next chunk (middle of overlap)
+//                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-MRightOv-1]] << "/" // last common in this chunk (middle of overlap)
+//                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-MRightOv]] << ")/(" // first common in next chunk (middle of overlap)
+//                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-1]] << "/" // last common loaded
+//                   << positionsFullRefRegion[currChunkOffset+Mref-1] << ")" << endl; // last ref loaded (common if not last chunk, else last ref at all)
+//    // __DEBUG
 
     if (pgb == 0) // just printed "xx%"
         cout << ".";
@@ -3223,16 +3221,16 @@ void VCFData::writeVCFImputedPrepare() {
         bunchsize = divideRounded(num_sites_no_ov, (size_t)num_files);
     }
     nbunches = divideRounded(num_sites_no_ov, bunchsize * num_files);
-    // DEBUG
-    cerr << "BUNCHES (pre) nb / size: " << nbunches << " / " << bunchsize << endl;
+//    // DEBUG
+//    cerr << "BUNCHES (pre) nb / size: " << nbunches << " / " << bunchsize << endl;
     // optimize bunchsize to have an equal load on all bunches (i.e. reducing the bunchsize to have all bunches approximately the same size)
     bunchsize = divideRounded(num_sites_no_ov, nbunches * num_files);
     // only set to multiple of num_workers if the memory increase would not be too much!
     if (bunchsize > 4*num_workers)
         bunchsize = roundToMultiple(bunchsize, (size_t)num_workers);
     nbunches = divideRounded(num_sites_no_ov, bunchsize * num_files); // don't know if this is required, but it doesn't hurt
-    // DEBUG
-    cerr << "BUNCHES (post) nb / size: " << nbunches << " / " << bunchsize << endl;
+//    // DEBUG
+//    cerr << "BUNCHES (post) nb / size: " << nbunches << " / " << bunchsize << endl;
 
     // create output queues, organized for each file
     size_t qcap = 2 * divideRounded(bunchsize, (size_t)num_workers); // space for two bunches (distributed to each worker queue)

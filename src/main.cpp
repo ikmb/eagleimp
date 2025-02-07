@@ -279,12 +279,12 @@ int main(int argc, char *argv[]) {
         StatusFile::setTotalChunks(vcfdata.getNChunks());
     }
 
-    // DEBUG
-    MyMalloc::printSummary(string("before chunks"));
-//    ofstream memofs(args.outPrefix + ".memmap_bc");
-//    MyMalloc::dumpMemMap(memofs);
-//    memofs.close();
-    // __DEBUG
+//    // DEBUG
+//    MyMalloc::printSummary(string("before chunks"));
+////    ofstream memofs(args.outPrefix + ".memmap_bc");
+////    MyMalloc::dumpMemMap(memofs);
+////    memofs.close();
+//    // __DEBUG
 
     // process data in chunks
     for (int chunk = 0; chunk < vcfdata.getNChunks(); chunk++) {
@@ -499,7 +499,7 @@ int main(int argc, char *argv[]) {
         MyMalloc::free(pdata);
 
         // DEBUG
-        MyMalloc::printSummary(string("intermediate after chunk ")+to_string(chunk+1));
+        MyMalloc::printSummary(string("after chunk ")+to_string(chunk+1));
 //        ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
 //        MyMalloc::dumpMemMap(ofs);
 //        ofs.close();
