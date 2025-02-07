@@ -484,7 +484,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             // additionally required dynamic memory per site if an overlap is required (more than one chunk, space for ref and refT on common sites is reserverd twice)
             size_t reqperovsite = reqimppbwt/Mglob;
             // max vars in a chunk adjusted for using overlaps and taking care of the required static memory
-            maxChunkTgtVars = divideRounded(maxchunkmem-reqsum_stat, reqpersite+reqperovsite);
+            maxChunkTgtVars = min(divideRounded(maxchunkmem-reqsum_stat, reqpersite+reqperovsite), Mglob);
 
             // DEBUG
             cerr << "maxChunkTgtVars: " << maxChunkTgtVars << endl;
@@ -1019,8 +1019,8 @@ void VCFData::processNextChunk() {
                 // check, how we get along with our memory:
                 // if we already used up ~97% of our available memory, we stop this chunk now
                 // NOTE: we still load the reference variants between the last and this tgt site
-                // DEBUG
                 if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
+//                // DEBUG
 //                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/4) { // see if increasing nchunks works
 
                     // TODO maybe adjust currMOverlap here, if the chunk is too small
