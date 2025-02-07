@@ -139,6 +139,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
     MRightOv = 0;
     MrefLeftOv = 0;
     MrefRightOv = 0;
+    currMOverlap = 0;
 
     cout << "\nAnalysing input files..." << endl;
 
@@ -1548,10 +1549,10 @@ void VCFData::processNextChunk() {
             MrefRightOv = currMref - indexToRefFull[currM-MRightOv-1] - 1; // number of ref vars in overlap to next chunk
 
             // set end of chunk to bp position of last common var in this chunk
-            endChunkBp = positionsFullRefRegion[currChunkOffset+indexToRefFull[currM-(currMOverlap/2)-1]]; // inclusive!
+            endChunkBp = positionsFullRefRegion[currChunkOffset+indexToRefFull[currM-MRightOv-1]]; // inclusive!
 
             // DEBUG
-            cerr << "endChunkBp: " << endChunkBp << " -- " << bcf_pout[currM-(currMOverlap/2)-1]->pos << " / " << bcf_pout[currM-currMOverlap/2]->pos << " / " << bcf_pout[currM-(currMOverlap/2)+1]->pos << endl;
+            cerr << "endChunkBp: " << endChunkBp << " -- " << bcf_pout[currM-MRightOv-1]->pos << " / " << bcf_pout[currM-MRightOv]->pos << " / " << bcf_pout[currM-MRightOv+1]->pos << endl;
 
             // prepare preliminary limits
             size_t nextchunkend = min(Mglob, startChunkFlankIdx[currChunk+1] + maxChunkTgtVars);
