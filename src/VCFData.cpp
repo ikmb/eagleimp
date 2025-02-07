@@ -370,7 +370,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         // but number corresponds to all FPGA pipelines times the capacity of the FPGA processor outqueue, which is fixed to 2)
         size_t reqphasecref = (skipPhasing ? 0 : (usefpga ? fpgaconfs[0].getNumPipelines() * 2 : numThreads)) * min(Nrefhapsmax, args.K) * (Mglob/3) / (usefpga ? 2 : 1);
         size_t reqphasedos = Ntarget * Mglob * 8; // phased dosages
-        size_t reqimpref = Nrefhaps * (Mglob / 4 + doImputation ? Mrefglob / 8 : 0); // required size in bytes for reference haplotypes (one bit per hap, but stored twice in ref and refT)
+        size_t reqimpref = Nrefhaps * (Mglob / 4 + (doImputation ? Mrefglob / 8 : 0)); // required size in bytes for reference haplotypes (one bit per hap, but stored twice in ref and refT)
         reqimpref += Mrefglob * 48; // approximately required memory for data structures storing the hapdata
         size_t reqimppbwt = doImputation ? Nrefhaps * Mglob : 0ull; // PBWT and refT of common reference (if every tgt site is also found in the reference)
         size_t reqimpabsp = doImputation ? Nrefhaps * Mglob * 4 : 0ull; // absolute permutation arrays for reference PBWT (if every tgt site is also found in the reference)
@@ -3043,7 +3043,7 @@ void VCFData::writeVCFPhased(const vector<BooleanVector> &phasedTargets) {
     void *tgt_gt = MyMalloc::malloc(Ntarget * 2 * sizeof(int), "tgt_gt_writePhased"); // mtgt_gt is the size of the tgt_gt space (need void* because of htslib)
     int* tgt_gt_int = reinterpret_cast<int*>(tgt_gt); // update, whenever tgt_gt is updated!!!
 
-    size_t psite = 0; // index of phased sites
+    size_t psite = MLeftOv; // index of phased sites (consider overlap!)
     auto rec_it = bcf_pout.begin();
     auto isp_it = isPhased.begin();
     auto isp_end = isPhased.end();
@@ -3136,8 +3136,6 @@ void VCFData::writeVCFPhased(const vector<BooleanVector> &phasedTargets) {
                 }
             }
         }
-        // destroying is now handled elsewhere
-        //bcf_destroy(*rec_it);
     } // for
 
     MyMalloc::free(tgt_gt);
@@ -3264,23 +3262,12 @@ void VCFData::writeVCFImputedBunch(
 
     const bcf_hdr_t *bcfhdr = imp_hdr;
 
-    // DEBUG
-    atomic<size_t> nfiltered1(0);
-    atomic<size_t> nfiltered2(0);
-    // DEBUG
-
     omp_set_num_threads(num_workers);
 #pragma omp parallel
     for (size_t bidx = omp_get_thread_num(); bidx < bsize && site_offsets[block] + startidx + bidx < site_offsets[block+1]; bidx += num_workers) { // go through all sites in bunch in current block
 
         size_t idx = site_offsets[block] + startidx + bidx;
         size_t idxReg = idx + currChunkOffset;
-
-        // DEBUG
-        if (idxReg >= 2295058 && idxReg <= 2295064) {
-            cerr << "ZZZ: Touched idxReg: " << idxReg << " idx: " << idx << " site_offsets[" << block << "]: " << site_offsets[block] << " startidx: " << startidx << " bidx: " << bidx << endl;
-        }
-        // __DEBUG
 
         vector<float> &ads = ads_vec[omp_get_thread_num()];
         vector<float> &ds = ds_vec[omp_get_thread_num()];
@@ -3694,18 +3681,10 @@ void VCFData::writeVCFImputedBunch(
 
             recqs[block][(startidx+bidx) % num_workers].push(NULL);
 
-            // DEBUG
-            if (bp < startChunkBp) nfiltered1++;
-            if (bp > endChunkBp) nfiltered2++;
-            // __DEBUG
-
         } // END if not in output region
 
     } // END through all sites from bunch
 
-    // DEBUG
-    if (nfiltered1 || nfiltered2)
-        cerr << "YYY: block: " << block << " startidx: " << startidx << " nfiltered1: " << nfiltered1 << " nfiltered2: " << nfiltered2 << endl;
 }
 
 void VCFData::writeVCFImputedClose() {
