@@ -370,8 +370,8 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         // but number corresponds to all FPGA pipelines times the capacity of the FPGA processor outqueue, which is fixed to 2)
         size_t reqphasecref = (skipPhasing ? 0 : (usefpga ? fpgaconfs[0].getNumPipelines() * 2 : numThreads)) * min(Nrefhapsmax, args.K) * (Mglob/3) / (usefpga ? 2 : 1);
         size_t reqphasedos = Ntarget * Mglob * 8; // phased dosages
-        size_t reqimpref = Nrefhaps * (doImputation ? Mrefglob : Mglob) / 8; // required size in bytes for reference haplotypes
-        reqimpref += Mrefglob * 24; // approximately required memory for data structures storing the hapdata
+        size_t reqimpref = Nrefhaps * (doImputation ? Mrefglob : Mglob) / 4; // required size in bytes for reference haplotypes (one bit per hap, but stored twice in ref and refT)
+        reqimpref += Mrefglob * 48; // approximately required memory for data structures storing the hapdata
         size_t reqimppbwt = doImputation ? Nrefhaps * Mglob : 0ull; // PBWT and refT of common reference (if every tgt site is also found in the reference)
         size_t reqimpabsp = doImputation ? Nrefhaps * Mglob * 4 : 0ull; // absolute permutation arrays for reference PBWT (if every tgt site is also found in the reference)
 
@@ -422,7 +422,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         }
         size_t reqsum_dyn = reqphasecref + reqphasedos + reqimpref + reqimppbwt + reqimpabsp;
         size_t reqsum_stat = reqimpbunchhaps + reqimpqueue;
-        size_t reqsafety = reqsum_dyn/10;
+        size_t reqsafety = reqsum_dyn/5;
         reqsum_dyn += reqsafety;
 
         if (!createQRef) { // give a short memory summary
@@ -434,7 +434,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
                 cout << "    Reference haps : " << divideRounded(reqimpref, 1024ul*1024ul) << " MiB" << endl;
                 cout << "    RefT + PBWT    : " << divideRounded(reqimppbwt, 1024ul*1024ul) << " MiB" << endl;
                 cout << "    PBWT absPerm   : " << divideRounded(reqimpabsp, 1024ul*1024ul) << " MiB" << endl;
-                cout << "    10% safety     : " << divideRounded(reqsafety, 1024ul*1024ul) << " MiB" << endl;
+                cout << "    20% safety     : " << divideRounded(reqsafety, 1024ul*1024ul) << " MiB" << endl;
                 cout << "  Static (chunk independent) memory:" << endl;
                 cout << "    Imputed haps   : " << divideRounded(reqimpbunchhaps, 1024ul*1024ul) << " MiB" << endl;
                 cout << "    Outqueue space : " << divideRounded(reqimpqueue, 1024ul*1024ul) << " MiB" << endl;
@@ -589,7 +589,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
 //        endChunkFlankIdx.push_back(Mglob);
 
         if (!createQRef) {
-            StatusFile::addInfo(string("<p class='pinfo'>Data will be processed in ").append(nChunks > 1 ? "at least " : "").append(to_string(nChunks)).append(" chunk").append(nChunks > 1 ? "s." : " (no splitting required).</p>"), false);
+            StatusFile::addInfo(string("<p class='pinfo'>Data will be processed in ").append(nChunks > 1 ? "at least " : "presumably ").append(to_string(nChunks)).append(" chunk").append(nChunks > 1 ? "s." : " (no splitting required).</p>"), false);
             if (yaml) {
                 StatusFile::addInfoYAML("Chunks", to_string(nChunks));
             }
