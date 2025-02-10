@@ -687,7 +687,7 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
         else
             cout << "Parsing: ";
         cout << "0%" << flush;
-        int pgb = 0; // for progress bar
+        atomic<int> pgb(0); // for progress bar
         // for progress display: lines per each display step (displaying 80 steps: every 5% and three dots in between)
         size_t prghelp_total = nTarget;
         size_t prghelp_linesperdispl = divideRounded(prghelp_total, (size_t)80);

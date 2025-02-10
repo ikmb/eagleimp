@@ -242,8 +242,6 @@ Args::Args(int argc, char *argv[]) :
 #endif
 
     opts_region.add_options()
-    // the chromosome is always set automatically
-    //("chrom", value<string>(&chromStr)->default_value("0"), "chromosome to analyze (if input has many, 0=first (either read from target or reference!))")
     ("bpStart", value<int64_t>(&bpStart)->default_value(1), "minimum base pair position to analyze (1-based)")
     ("bpEnd", value<int64_t>(&bpEnd)->default_value(MAX_CSI_COOR), "maximum base pair position to analyze (inclusive, 1-based)")
     ("bpFlanking", value<int64_t>(&bpFlanking)->default_value(0), "flanking region to use during phasing/imputation but discard in output")
@@ -271,8 +269,6 @@ Args::Args(int argc, char *argv[]) :
 
     opts_hidden.add_options()
     ("cMmaxsplit", value<float>(&cMmaxsplit)->default_value(0.125), "max run of homozygous genotypes for phasing in cM")
-//    ("minibdA", value<size_t>(&min_ibd_a)->default_value(40), "minimum number of consistent sites for IBD A condition (zero disables IBD check)")
-//    ("minibdB", value<size_t>(&min_ibd_b)->default_value(20), "minimum number of consistent sites for IBD B condition (must be <= minibdA - zero disables IBD check)")
     ("hsize", value<size_t>(&hsize)->default_value(100), "history size, must not be larger than 128 but larger than delta+1")
     ("hsize_fast", value<size_t>(&hsize_fast)->default_value(30), "history size in fast pre-phasing, must not be larger than 128, but larger than delta_fast+2")
     ("beamwidth", value<size_t>(&beamwidth)->default_value(128), "beam width")
@@ -289,7 +285,6 @@ Args::Args(int argc, char *argv[]) :
     ("overwriteCalls", "imputation is allowed to change genotype calls from the input, it will do so whenever the imputation result is different to the original call")
     ("improveCalls", "as in --overwriteCalls imputation is allowed to change genotype calls, but only if the dosage will be improved")
     ("numTmpFiles", value<unsigned>(&num_files)->default_value(0), "number of temporary files for imputation output (0=auto)")
-//    ("overrideChunks", value<int>(&overrideChunks)->default_value(0), "disable automatic chunk division and set to provided number (0=auto enabled)")
     ("skipHeader", "skip writing of VCF header for output files")
     ("deterministic", "disable random generator such that the output is deterministic for each run")
     ("debug", "produce lots of debug output")

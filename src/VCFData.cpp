@@ -75,7 +75,6 @@ VCFData::VCFData(const Args& args, int argc, char** argv, const vector<FPGAConfi
       overwriteCalls(args.overwriteCalls),
       improveCalls(args.improveCalls),
       skipHeader(args.skipHeader),
-//      overrideChunks(args.overrideChunks),
       numThreads(args.num_threads),
       usefpga(!fpgaconfs.empty()),
       yaml(args.yaml)
@@ -457,85 +456,51 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             minNChunks = 1;
             nChunks = 1;
         } else {
-//            if (overrideChunks) { // override chunk calculation
-//                nChunks = overrideChunks;
-//                StatusFile::addWarning("Automatic chunk division disabled by user.");
-//                if (reqsum_dyn/nChunks > maxchunkmem-reqsum_stat) {
-//                    StatusFile::addWarning("The analysis of your target data together with the reference will probably not fit into memory!<br>\n"
-//                            "  Estimated maximum memory requirements per chunk: " + to_string(reqsum_dyn/nChunks+reqsum_stat) + " bytes.");
-//                }
-//            } else {
-
-//                nChunks = divideRounded(reqsum_dyn, maxchunkmem-reqsum_stat); // a safety margin is already included in reqsum
-//                if (nChunks > 1) {
-//                    // recalculate memory requirements per chunk including overlap
-//                    size_t reqsum_dyn_chunk = (Mglob/nChunks + 2*chunkflanksize) * reqsum_dyn / Mglob; // estimated from the relation Mchunk/Mglob
-//                    while (reqsum_dyn_chunk > maxchunkmem-reqsum_stat && Mglob/nChunks >= chunkflanksize) {
-//                        int nChunks_tmp = nChunks;
-//                        nChunks = divideRounded(reqsum_dyn_chunk*nChunks, maxchunkmem-reqsum_stat);
-//                        if (nChunks == nChunks_tmp) // to ensure an exit of the while loop
-//                            nChunks++;
-//                        reqsum_dyn_chunk = (Mglob/nChunks + 2*chunkflanksize) * reqsum_dyn / Mglob;
-//                    }
-//
-//                }
             // The number of tgt sites that are allowed in a chunk at max:
             // required dynamic memory per site (assuming an equal distribution)
             size_t reqpersite = reqsum_dyn/Mglob;
             // additionally required dynamic memory per site if an overlap is required (more than one chunk, space for ref and refT on common sites is reserverd twice)
             size_t reqperovsite = reqimppbwt/Mglob;
+
             // max vars in a chunk adjusted for using overlaps and taking care of the required static memory
             maxChunkTgtVars = min(divideRounded(maxchunkmem-reqsum_stat, reqpersite+reqperovsite), Mglob);
 
-//            // DEBUG
-//            cerr << "maxChunkTgtVars: " << maxChunkTgtVars << endl;
-
-                // check if this estimation is conform with the FPGA configuration
-                if (usefpga) {
-                    // TODO need correction for FPGA?
-//                    // determine number of chunks according to maximum supported sites
-//                    int nChunks_old = nChunks;
-//                    while (fpgaconfs[0].getMaxSites() < (Mglob/nChunks+2*chunkflanksize) && Mglob/nChunks >= chunkflanksize) { // the maximum number of supported sites is smaller than the sites in each chunk
-//                        int nChunks_tmp = nChunks;
-//                        nChunks = divideRounded((Mglob+2*nChunks*chunkflanksize), fpgaconfs[0].getMaxSites());
-//                        if (nChunks == nChunks_tmp) // to ensure an exit of the while loop
-//                            nChunks++;
-//                    }
-//                    if (nChunks != nChunks_old)
-//                        StatusFile::addWarning("Increased number of chunks to " + to_string(nChunks) + " due to the FPGA's maximum number of sites restriction.");
-//
-//                    // check if FPGA memory is sufficient with the current number of chunks
-//                    size_t maxKbytes = roundToMultiple(min(args.K, Nrefhapsmax), (size_t) 512) / 8;
-//                    size_t maxMemPerSite = maxKbytes*4 * fpgaconfs[0].getNumPipelines(); // required memory on the FPGA if ~every 3rd site is a split site (fwd+bck and ref+inc per split site)
-//                    size_t maxSites = (Mglob/nChunks + 2*chunkflanksize)/3; // if every third site is a split site
-//                    int nChunks_old2 = nChunks;
-//                    while (fpgaconfs[0].getAvailableRAM() < maxMemPerSite*maxSites && Mglob/nChunks >= chunkflanksize) {
-//                        int nChunks_tmp = nChunks;
-//                        nChunks = divideRounded(maxMemPerSite*(Mglob+2*nChunks*chunkflanksize)/3, fpgaconfs[0].getAvailableRAM());
-//                        if (nChunks == nChunks_tmp) // to ensure an exit of the while loop
-//                            nChunks++;
-//                        maxSites = (Mglob/nChunks + 2*chunkflanksize)/3; // if every third site is a split site
-//                    }
-//                    if (nChunks != nChunks_old2)
-//                        StatusFile::addWarning("Increased number of chunks to " + to_string(nChunks) + " due to the FPGA's available memory restriction.");
-//
-//                    // check, if we increased the number of chunks too much
-//                    if (Mglob/nChunks < 2*chunkflanksize) {
-//                        nChunks = nChunks_old;
-//                        usefpga = false;
-//                        StatusFile::addWarning("<b>Disabled FPGA:</b> Chunk size too small. Reverted number of chunks to " + to_string(nChunks) + " and continuing with CPU only.");
-//                    }
+            // check if this estimation is conform with the FPGA configuration
+            size_t maxChunkTgtVarsFPGA = maxChunkTgtVars;
+            if (usefpga) {
+                // determine number of chunks according to maximum supported sites
+                while (fpgaconfs[0].getMaxSites() < maxChunkTgtVarsFPGA) { // the maximum number of supported sites is smaller than the sites in each chunk
+                    maxChunkTgtVarsFPGA = fpgaconfs[0].getMaxSites();
                 }
-//            }
+
+                // check if FPGA memory is sufficient with the current number of chunks
+                size_t maxKbytes = roundToMultiple(min(args.K, Nrefhapsmax), (size_t) 512) / 8;
+                size_t maxMemPerSite = maxKbytes*4 * fpgaconfs[0].getNumPipelines(); // required memory on the FPGA if ~every 3rd site is a split site (fwd+bck and ref+inc per split site)
+                size_t maxSites = maxChunkTgtVarsFPGA/3; // if every third site is a split site
+                if (fpgaconfs[0].getAvailableRAM() < maxMemPerSite*maxSites) {
+                    maxSites = fpgaconfs[0].getAvailableRAM() / maxMemPerSite;
+                    maxChunkTgtVarsFPGA = 3*maxSites; // if every thrid site is a split site
+                }
+            }
 
             // this is a rough estimation intended to be smaller than the final number of chunks!
             minNChunks = divideRounded(Mglob, maxChunkTgtVars); // no overlaps, equal distribution
+            size_t minNChunksFPGA = divideRounded(Mglob, maxChunkTgtVarsFPGA);
 
             // check if chunk size is large enough:
             // as an overlap will be defined on both ends of a chunk, chunk size must be at least two overlaps!
+            if (usefpga) {
+                if (minNChunksFPGA > 1 && maxChunkTgtVarsFPGA < 2*chunkflanksize) {
+                    usefpga = false;
+                    StatusFile::addWarning("<b>Disabled FPGA:</b> Chunk size too small. Try to continue with CPU only.");
+                } else {
+                    // take over FPGA related values
+                    maxChunkTgtVars = maxChunkTgtVarsFPGA;
+                    minNChunks = minNChunksFPGA;
+                }
+            }
             if (minNChunks > 1 && maxChunkTgtVars < 2*chunkflanksize) {
                 string serr("<b>Analysis not possible:</b> Too many chunks.");
-//                if (!overrideChunks)
                 serr += " If possible, try larger chunk memory size with --maxChunkMemory.";
                 StatusFile::addError(serr);
                 exit(EXIT_FAILURE);
@@ -553,6 +518,9 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             // preliminary number of bunches
             if (doImputation)
                 nbunches = divideRounded(divideRounded(Mrefglob, (size_t)nChunks), bunchsize * num_files);
+
+//            // DEBUG
+//            cerr << "maxChunkTgtVars: " << maxChunkTgtVars << endl;
         }
 
         // chunks are generated based on the number of target variants
@@ -561,7 +529,6 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         endChunkFlankIdx.clear();
 
         // we start with the first target index
-//        size_t curridx = 0;
         startChunkIdx.push_back(0);
         startChunkFlankIdx.push_back(0);
         // we only prepare preliminary limits for the next chunk, others will be generated on-the-fly
@@ -574,32 +541,9 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             startChunkFlankIdx.push_back(maxChunkTgtVars-2*chunkflanksize);
             endChunkFlankIdx.push_back(maxChunkTgtVars);
         }
-//        for (int chunk = 1; chunk < nChunks; chunk++)
-//        {
-//            // equally distribute variants
-//            curridx += Mglob/nChunks + ((size_t)chunk < Mglob%nChunks ? 1 : 0); // add size of current chunk to get start index of next chunk
-//            startChunkIdx.push_back(curridx);
-//            startChunkFlankIdx.push_back(curridx - chunkflanksize); // as the chunk size will be larger than the flank size, this index will exist
-//            endChunkFlankIdx.push_back(curridx + chunkflanksize); // as the chunk size will be larger than the flank size, this index will exist as well
-//        }
-//        // calculate the maximum possible extension of a chunk
-//        maxChunkExtension = 0; //Mglob - startChunkFlankIdx.back() - 2*chunkflanksize;
-//        // sentinel at the end
-//        startChunkIdx.push_back(Mglob);
-//        startChunkFlankIdx.push_back(Mglob); // important to have no overlap here!
-//        endChunkFlankIdx.push_back(Mglob);
 
         if (!createQRef) {
             StatusFile::addInfo(string("<p class='pinfo'>Data will be processed in ").append(nChunks > 1 ? "at least " : "presumably ").append(to_string(nChunks)).append(" chunk").append(nChunks > 1 ? "s." : " (no splitting required).</p>"), false);
-            if (yaml) {
-                StatusFile::addInfoYAML("Chunks", to_string(nChunks));
-            }
-//            // DEBUG
-//            cout << "Chunks: " << endl;
-//            for (int c = 0; c < nChunks; c++) {
-//                cout << c << ": " << startChunkFlankIdx[c] << " " << startChunkIdx[c] << " " << endChunkFlankIdx[c] << endl;
-//            }
-//            // __DEBUG
         }
 
         // the chunk regions are set after loading each corresponding chunk
@@ -889,7 +833,6 @@ void VCFData::processNextChunk() {
                 bcf_destroy(bcf_pout[i]);
             bcf_pout.keepLast(keeplastisphased); // if outputUnphased == true -> currMOverlap + number of unphased sites in overlap
 
-            // need to correct some index mappings now
 //            // DEBUG
 //            cerr << "idx0: " << indexToRefFull[0] << " --- "
 //                             << nextPidx[0] << " --- "
@@ -904,6 +847,7 @@ void VCFData::processNextChunk() {
 //                 << " redtgt2: " << ptgtIdx[0] << endl;
 //            // __DEBUG
 
+            // need to correct some index mappings now
             indexToRefFull.sub(redref);
             nextPidx.sub(redisphased);
             ptgtIdx.sub(currM-currMOverlap);
@@ -944,7 +888,6 @@ void VCFData::processNextChunk() {
         cout << "Reading data: 0%" << flush;
         ss << "Reading data (Chunk " << (currChunk+1) << "/" << nChunks << ")";
     }
-//    StatusFile::updateStatus(createQRef ? 0 : tgtlinesread/(float)Mglob, ss.str());
     StatusFile::updateStatus(0, ss.str());
     int pgb = 0; // for progress bar
     // for progress display: lines per each display step (displaying 80 steps: every 5% and three dots in between)
@@ -965,7 +908,6 @@ void VCFData::processNextChunk() {
 
         bcf1_t *ref = NULL;
         bcf1_t *tgt = NULL;
-//        if (!loadQuickRef) {
         if (createQRef) {
             ref = bcf_sr_get_line(sr, 0); // read one line of reference, if available at current position (otherwise NULL)
             if (ref) {
@@ -1021,9 +963,8 @@ void VCFData::processNextChunk() {
                 // check, how we get along with our memory:
                 // if we already used up ~97% of our available memory, we stop this chunk now
                 // NOTE: we still load the reference variants between the last and this tgt site
-                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
-//                // DEBUG
-//                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/4) { // see if increasing nchunks works
+//                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
+                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/4) {
 
                     int64_t reduction = endChunkFlankIdx[currChunk] - tgtlinesread - 1; // difference to the previously calculated end of chunk
                     startChunkFlankIdx[currChunk+1] -= reduction;
@@ -1097,7 +1038,6 @@ void VCFData::processNextChunk() {
             currMref += qridx - qrold;
         }
 
-//        if ((!ref && !qfound) || (tgt && !loadQuickRef && ref->n_allele == 1)) { // SNP is not in reference (thus, it has to be in target only), or ref is mono but SNP is also in target
         if (!ref && !qfound) { // SNP is not in reference (thus, it has to be in target only)
 //            if (tgt->n_allele > 1) // report if polymorphic in target -> should be counted even if monomorphic
             if (ref) { // means ref->n_allele == 1
@@ -1188,8 +1128,6 @@ void VCFData::processNextChunk() {
 
         // drop multi-allelic reference markers if desired by user
         if (excludeMultiAllRef) {
-//            if ((!loadQuickRef && ref->n_allele > 2)
-//                    || (loadQuickRef && multiAllFlagsFullRefRegion[qfoundidx])) {
             if (multiAllFlagsFullRefRegion[qfoundidx]) {
                 lstats.MmultiAllelicRefTgt++;
                 if (outputUnphased) {
@@ -1203,13 +1141,6 @@ void VCFData::processNextChunk() {
             }
         }
 
-//        // if not done so far, we need to unpack the records here:
-//        // for accessing ref->d.allele we need to unpack up to ALT at least (BCF_UN_STR),
-//        // (in order to access the genotypes, it is called again later with BCF_UN_FMT
-//        // within bcf_get_genotypes())
-//        if (!loadQuickRef)
-//            bcf_unpack(ref, BCF_UN_STR);
-
         // we can fetch the genotypes already here, which also unpacks the d.allele fields
         int ntgt_gt = bcf_get_genotypes(tgt_hdr, tgt, &tgt_gt, &mtgt_gt); // calls bcf_unpack() within
 
@@ -1221,7 +1152,6 @@ void VCFData::processNextChunk() {
 
         // preserve monomorphic markers if not monomorphic in the reference panel
         if (tgt->n_allele < 2) {
-//            if (loadQuickRef) {
             string allref = qrswapped ? allelesFullRefRegion[2*qfoundidx+1] : allelesFullRefRegion[2*qfoundidx];
             string allalt = qrswapped ? allelesFullRefRegion[2*qfoundidx] : allelesFullRefRegion[2*qfoundidx+1];
             if (qrflipped) {
@@ -1229,112 +1159,12 @@ void VCFData::processNextChunk() {
                 allalt = reverseComplement(allalt.c_str());
             }
             bcf_update_alleles_str(tgt_hdr, tgt, allref.append(",").append(allalt).c_str());
-//            } else {
-//                // check which allele is ours
-//                unsigned int a = 0;
-//                bool strandflip = false;
-//                bool found = true; // we expect to find the allele
-//                while (a < ref->n_allele && strcmp(ref->d.allele[a], tgt->d.allele[0]) != 0)
-//                    a++;
-//                if (a == ref->n_allele) { // not found: strand flip?
-//                    a = 0;
-//                    while (a < ref->n_allele && reverseComplement(ref->d.allele[a]).compare(tgt->d.allele[0]))
-//                        a++;
-//                    if (a == ref->n_allele) // not found
-//                        found = false;
-//                    else // strand flip
-//                        strandflip = true;
-//                }
-//                if (found) {
-//                    if (!strandflip) {
-//                        if (a) // swap alleles if the common one was not the reference
-//                            bcf_update_alleles_str(tgt_hdr, tgt, string(ref->d.allele[a]).append(".").append(ref->d.allele[0]).c_str());
-//                        else
-//                            bcf_update_alleles_str(tgt_hdr, tgt, string(ref->d.allele[0]).append(".").append(ref->d.allele[1]).c_str());
-//                    } else { // strand flip
-//                        if (a)
-//                            bcf_update_alleles_str(tgt_hdr, tgt, string(reverseComplement(ref->d.allele[a])).append(".").append(reverseComplement(ref->d.allele[0])).c_str());
-//                        else
-//                            bcf_update_alleles_str(tgt_hdr, tgt, string(reverseComplement(ref->d.allele[0])).append(".").append(reverseComplement(ref->d.allele[1])).c_str());
-//                    }
-//                } else
-//                    bcf_update_alleles_str(tgt_hdr, tgt, string(tgt->d.allele[0]).append(",.").c_str()); // make bi-allelic with one allele missing. will later result in refalterror anyway
-//            }
         }
 
         // check for REF/ALT errors
-//        bool refaltswap = loadQuickRef ? qrswapped : false;
-//        bool strandflip = loadQuickRef ? qrflipped : false;
-//        bool refalterror = loadQuickRef ? (qrrefalterror || (qrswapped && !allowRefAltSwap) || (qrflipped && !allowStrandFlip)) : true; // default to true, if we find a match, we set it to false
         bool refaltswap = qrswapped;
         bool strandflip = qrflipped;
         bool refalterror = qrrefalterror || (qrswapped && !allowRefAltSwap) || (qrflipped && !allowStrandFlip);
-//        if (!loadQuickRef) {
-//            // test through all possibilities in order, stop if we find a match:
-//            // 1. direct match
-//            if (strcmp(tgt->d.allele[0], ref->d.allele[0]) == 0) { // equal reference alleles
-//                if (strcmp(tgt->d.allele[1], ref->d.allele[1]) == 0) { // equal first alternative alleles
-//                    refalterror = false;
-//                } else if (ref->n_allele > 2) { // if ref is multi-allelic, need to find the alt allele
-//                    for (int i = 2; i < ref->n_allele; i++) {
-//                        if (strcmp(tgt->d.allele[1], ref->d.allele[i]) == 0) {
-//                            refalterror = false;
-//                            break;
-//                        }
-//                    }
-//                }
-//            } // NOTE: we will stop here if we've already found an equal SNP here as refalterror was already set to false then
-//            // alternatives are only possible if tgt is a SNP
-//            if (bcf_is_snp(tgt)) {
-//                // 2. ref/alt swapped
-//                if (refalterror && allowRefAltSwap && strcmp(tgt->d.allele[1], ref->d.allele[0]) == 0) { // equal alternative target allele and ref reference allele
-//                    if (strcmp(tgt->d.allele[0], ref->d.allele[1]) == 0) { // target ref matches first alternative reference allele
-//                        refalterror = false;
-//                        refaltswap = true;
-//                    } else if (ref->n_allele > 2) { // if ref is multi-allelic, need to find the alt allele
-//                        for (int i = 2; i < ref->n_allele; i++) {
-//                            if (strcmp(tgt->d.allele[0], ref->d.allele[i]) == 0) {
-//                                refalterror = false;
-//                                refaltswap = true;
-//                                break;
-//                            }
-//                        }
-//                    }
-//                }
-//                // 3. strand flipped
-//                if (refalterror && allowStrandFlip && reverseComplement(tgt->d.allele[0]).compare(ref->d.allele[0]) == 0) { // equal reference alleles if reverse complemented
-//                    if (reverseComplement(tgt->d.allele[1]).compare(ref->d.allele[1]) == 0) { // equal first alternative alleles if reverse complemented
-//                        refalterror = false;
-//                        strandflip = true;
-//                    } else if (ref->n_allele > 2) { // if ref is multi-allelic, need to find the alt allele
-//                        for (int i = 2; i < ref->n_allele; i++) {
-//                            if (reverseComplement(tgt->d.allele[1]).compare(ref->d.allele[i]) == 0) {
-//                                refalterror = false;
-//                                strandflip = true;
-//                                break;
-//                            }
-//                        }
-//                    }
-//                }
-//                // 4. ref/alt swapped and strand flipped
-//                if (refalterror && allowRefAltSwap && allowStrandFlip && reverseComplement(tgt->d.allele[1]).compare(ref->d.allele[0]) == 0) { // equal reference alleles if reverse complemented
-//                    if (reverseComplement(tgt->d.allele[0]).compare(ref->d.allele[1]) == 0) { // target ref matches first alternative reference allele if reverse complemented
-//                        refalterror = false;
-//                        refaltswap = true;
-//                        strandflip = true;
-//                    } else if (ref->n_allele > 2) { // if ref is multi-allelic, need to find the alt allele
-//                        for (int i = 2; i < ref->n_allele; i++) {
-//                            if (reverseComplement(tgt->d.allele[0]).compare(ref->d.allele[i]) == 0) {
-//                                refalterror = false;
-//                                refaltswap = true;
-//                                strandflip = true;
-//                                break;
-//                            }
-//                        }
-//                    }
-//                }
-//            } // END if is SNP?
-//        } // END !loadQref
 
         // skip on ref/alt error
         if (refalterror) {
@@ -1374,60 +1204,13 @@ void VCFData::processNextChunk() {
             cMs.push_back(mapint.interp(chrBpsReg.back()));
         }
 
-//        // split reference SNP into several SNPs if multi-allelic (if we wanted to exclude multi-allelics, we would have done already)
-//        vector<bcf1_t*> masplits;
-//        if (!loadQuickRef) {
-//            if (ref->n_allele > 2) {
-//                lstats.MmultiAllelicRefTgt++;
-//                int numMissing, numUnphased;
-//                splitSNP(ref, &ref_gt, &mref_gt, masplits, lstats.MmultiSplittedTgt, lstats.GmultiFilledTgt);
-//
-//                auto splitit = masplits.begin();
-//                while( splitit != masplits.end() && strcmp(tgt->d.allele[1], ref->d.allele[1]) != 0 ) {
-//                    // current ref is not the one we need for phasing here, so store only for imputation and try next
-//                    if (doImputation) {
-//                        lstats.MrefOnly++;
-//                        processReferenceOnlySNP(ref, &ref_gt, &mref_gt, numMissing, numUnphased, inOverlap, true);
-//                        if (numMissing)
-//                            lstats.MmissingRefOnly++;
-//                        if (numUnphased)
-//                            lstats.MunphasedRefOnly++;
-//                        lstats.GmissingRefOnly += numMissing;
-//                        lstats.GunphasedRefOnly += numUnphased;
-//                    }
-//                    ref = *splitit;
-//                    bcf_unpack(ref, BCF_UN_STR);
-//                    splitit++;
-//                }
-//                // store remaining splits (will be listed before the one used for imputation/phasing in the output)
-//                for (; splitit != masplits.end(); splitit++) {
-//                    if (doImputation) {
-//                        lstats.MrefOnly++;
-//                        processReferenceOnlySNP(*splitit, &ref_gt, &mref_gt, numMissing, numUnphased, inOverlap, true);
-//                        if (numMissing)
-//                            lstats.MmissingRefOnly++;
-//                        if (numUnphased)
-//                            lstats.MunphasedRefOnly++;
-//                        lstats.GmissingRefOnly += numMissing;
-//                        lstats.GunphasedRefOnly += numUnphased;
-//                    }
-//                }
-//                multiAllFlagsFullRefRegion.push_back_withPreInit(true);
-//                MrefMultiAllreg++;
-//            } else { // n_allele <= 2
-//                multiAllFlagsFullRefRegion.push_back_withPreInit(false);
-//            }
-//        } else { // loadQuickRef
         if (multiAllFlagsFullRefRegion[qfoundidx])
             lstats.MmultiAllelicRefTgt++; // just for the statistics
-//        }
 
         // include SNP in reference data for phasing and, if desired, in the full data for imputation
 
-//        int numMissing = 0, numUnphased = 0;
         int numMissing = 0;
         float af = 0.0;
-//        if (loadQuickRef) {
         // copy ref information for phasing
         af = alleleFreqsFullRefRegion[qfoundidx];
         referenceT[currM].setSize(Nrefhaps); // size will be the number of haps to add
@@ -1435,48 +1218,15 @@ void VCFData::processNextChunk() {
             reference[i].push_back_withPreInit(referenceFullT[qfoundidx-currChunkOffset][i]);
             referenceT[currM].setWithPreInit(i, referenceFullT[qfoundidx-currChunkOffset][i]);
         }
-//        } else { // !loadQuickRef
-//            processReferenceSNP(Nref, ref, &ref_gt, &mref_gt, inOverlap, numMissing, numUnphased, af, true);
-//
-//            if (numMissing)
-//                lstats.MwithMissingRef++;
-//            if (numUnphased)
-//                lstats.MwithUnphasedRef++;
-//            lstats.GmissingRef += numMissing;
-//            lstats.GunphasedRef += numUnphased;
-//        }
 
         // process target genotypes: append Ntarget entries (0/1/2/9) to genosTarget[]
         processTargetSNP(Ntarget, ntgt_gt, reinterpret_cast<int*>(tgt_gt), refaltswap, numMissing, tgt->pos);
         lstats.GmissingTarget += numMissing;
 
-//        // keep the record's information
-//        if (doImputation && !loadQuickRef) {
-//            alleleFreqsFullRefRegion.push_back(af);
-//            positionsFullRefRegion.push_back(ref->pos);
-//            allelesFullRefRegion.emplace_back(ref->d.allele[0]);
-//            allelesFullRefRegion.emplace_back(ref->d.allele[1]);
-//            variantIDsFullRefRegion.emplace_back(ref->d.id);
-//
-//            isImputed.push_back(false);
-//            indexToRefFull.push_back(currMref);
-//            nextPidx.push_back(bcf_pout.size()); // common site, index will point to element being inserted now
-//            ptgtIdx.push_back(currM);
-//            currMref++;
-//            if (inOverlap) {
-//                isImputedOverlap.push_back(false);
-//                indexToRefFullOverlap.push_back(currMrefOverlap);
-//                nextPidxOverlap.push_back(bcf_poutOverlap.size()); // common site, index will point to element being inserted now
-//                ptgtIdxOverlap.push_back(currMOverlap);
-//                currMrefOverlap++;
-//            }
-//        }
-//        if (loadQuickRef) { // loaded quick ref
         // we need to change the imputation flag since it was initialized with "true"
         isImputed.set_back(false);
         indexToRefFull.push_back(isImputed.size()-1);
         // nextPidx and ptgtIdx was already taken care of after loading the Qref
-//        }
 
         // remove genotypes (will be phased)
         bcf_update_genotypes(tgt_hdr, tgt, NULL, 0);
@@ -1491,14 +1241,7 @@ void VCFData::processNextChunk() {
             infoexpl = "strand flip";
         else if (refaltswap)
             infoexpl = "ref/alt swap";
-//        if (loadQuickRef)
         addToInfoFileIncluded(tgt->pos, tgt->d.id, tref, talt, variantIDsFullRefRegion[qfoundidx], allelesFullRefRegion[2*qfoundidx], allelesFullRefRegion[2*qfoundidx+1], infoexpl);
-//        else
-//            addToInfoFileIncluded(tgt->pos, tgt->d.id, tref, talt, ref->d.id, ref->d.allele[0], ref->d.allele[1], infoexpl);
-
-//        // need to clean up potentially generated splits -> if ref points to one of these splits, it is going to be destroyed here! don't use it afterwards!
-//        for (bcf1_t* s : masplits)
-//            bcf_destroy(s);
 
     } // END while (reading chunk)
 
@@ -1541,6 +1284,10 @@ void VCFData::processNextChunk() {
             // set the final number of chunks (shouldn't be required, but doesn't harm...)
             nChunks = currChunk + 1;
             StatusFile::setTotalChunks(nChunks);
+
+            if (yaml) {
+                StatusFile::addInfoYAML("Chunks", to_string(nChunks));
+            }
 
         } else { // there will be another chunk
             // overlap to next chunk
@@ -1592,30 +1339,11 @@ void VCFData::processNextChunk() {
 
     // set the map for haploid samples
     if (currChunk == 0 && !createQRef) {
-        // reference
-//        if (!loadQuickRef) { // otherwise already set
-////            if (chrom == CHRX || chrom == CHRY) { // go through the flags if we are on X or Y
-//                for (size_t i = 0; i < Nrefhapsmax/2; i++) {
-//                    haploidsRefMap.push_back(2*i);
-//                    if (!haploidsRef[i]) // diploid
-//                        haploidsRefMap.push_back(2*i+1);
-//                }
-////            } else { // diploid chromosome: identity
-////                for (size_t i = 0; i < Nrefhapsmax; i++)
-////                    haploidsRefMap.push_back(i);
-////            }
-//        }
-        // target
-//        if (chrom == CHRX || chrom == CHRY) { // go through the flags if we are on X or Y
-            for (size_t i = 0; i < Ntarget; i++) {
-                haploidsTgtMap.push_back(2*i);
-                if (!haploidsTgt[i]) // diploid
-                    haploidsTgtMap.push_back(2*i+1);
-            }
-//        } else { // diploid chromosome: identity
-//            for (size_t i = 0; i < 2*Ntarget; i++)
-//                haploidsTgtMap.push_back(i);
-//        }
+        for (size_t i = 0; i < Ntarget; i++) {
+            haploidsTgtMap.push_back(2*i);
+            if (!haploidsTgt[i]) // diploid
+                haploidsTgtMap.push_back(2*i+1);
+        }
     }
 
     // convert variant IDs to chr:pos:ref:alt if missing
@@ -1682,7 +1410,6 @@ void VCFData::processNextChunk() {
 
     if (!createQRef) { // statistics for normal run
 
-//        if (loadQuickRef)
         lstats.MmultiAllelicRefOnly = MrefMultiAllreg - lstats.MmultiAllelicRefTgt;
 
         // number of reference variants the current chunk is reduced of to keep only variants in the overlap,
@@ -1775,18 +1502,8 @@ void VCFData::processNextChunk() {
                 StatusFile::addInfo("  Dropped " + to_string(lstats.MmultiAllelicRefTgt) + " variants bi-allelic in target but multi-allelic in reference.<br>", false);
                 yamlinfo << "    Dropped multi-allelic reference variants: " << lstats.MmultiAllelicRefTgt << "\n";
             } else {
-//                if (!loadQuickRef){
-//                    StatusFile::addInfo("  Split " + to_string(lstats.MmultiAllelicRefTgt) + " variants bi-allelic in target but multi-allelic in reference into " + to_string(lstats.MmultiSplittedTgt)
-//                            + " bi-allelic reference variants,<br>\n"
-//                            + "  "  + to_string(lstats.GmultiFilledTgt) + " haplotypes filled with reference alleles.<br>", false);
-//                    yamlinfo << "    Multi-allelic splits in common variants:\n";
-//                    yamlinfo << "      Common multi-allelic reference variants before split: " << lstats.MmultiAllelicRefTgt << "\n";
-//                    yamlinfo << "      Resulting bi-allelic reference variants: " << lstats.MmultiSplittedTgt << "\n";
-//                    yamlinfo << "      Haplotypes filled with reference alleles: " << lstats.GmultiFilledTgt << "\n";
-//                } else {
                 StatusFile::addInfo("  " + to_string(lstats.MmultiAllelicRefTgt) + " variants bi-allelic in target were multi-allelic in reference.<br>", false);
                 yamlinfo << "    Common reference variants from multi-allelic splits: " << lstats.MmultiAllelicRefTgt << "\n";
-//                }
             }
         }
         if (lstats.MmonomorphicRefTgt) {
@@ -1808,7 +1525,6 @@ void VCFData::processNextChunk() {
         }
 
         StatusFile::addInfo("</p><p class='pinfo'>", false);
-//        size_t mrefonly = loadQuickRef ? (Mref-M) : lstats.MrefOnly;
         size_t mrefonly = Mref-M;
         StatusFile::addInfo("  " + to_string(mrefonly) + " variants in reference but not in target.<br>", false);
         yamlinfo << "    Reference-only variants: " << mrefonly << "\n";
@@ -1817,18 +1533,8 @@ void VCFData::processNextChunk() {
                 StatusFile::addInfo("  Excluding " + to_string(lstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants from imputation.<br>", false);
                 yamlinfo << "    Excluded reference-only multi-allelic variants: " << lstats.MmultiAllelicRefOnly << "\n";
             } else if (lstats.MmultiAllelicRefOnly) {
-//                if (!loadQuickRef){
-//                    StatusFile::addInfo("  Split " + to_string(lstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants into "
-//                            + to_string(lstats.MmultiSplittedRefOnly) + " bi-allelic reference variants,<br>\n"
-//                            + "    " + to_string(lstats.GmultiFilledRefOnly) + " haplotypes filled with reference alleles.<br>", false);
-//                    yamlinfo << "    Multi-allelic splits in reference-only variants:\n";
-//                    yamlinfo << "      Reference-only multi-allelic variants before split: " << lstats.MmultiAllelicRefOnly << "\n";
-//                    yamlinfo << "      Resulting bi-allelic reference variants: " << lstats.MmultiSplittedRefOnly << "\n";
-//                    yamlinfo << "      Haplotypes filled with reference alleles: " << lstats.GmultiFilledRefOnly << "\n";
-//                } else {
                 StatusFile::addInfo("  " + to_string(lstats.MmultiAllelicRefOnly) + " bi-allelic variants in reference only that originate from multi-allelic splits.<br>", false);
                 yamlinfo << "    Reference-only bi-allelic variants from multi-allelic splits: " << lstats.MmultiAllelicRefOnly << "\n";
-//                }
             } else {
                 StatusFile::addInfo("  No multi-allelic reference-only variants.<br>", false);
                 // we skip this output in YAML
@@ -1920,9 +1626,6 @@ void VCFData::processNextChunk() {
 
     } else { // create QRef
 
-
-//        StatusFile::updateStatus(0, "write Qref meta");
-
         qrefvarsofs.close();
         qRefWriteMetaAndConcat(); // dump the reference meta data to qref file and concat with variant data to create final qref
 
@@ -1954,10 +1657,9 @@ void VCFData::processNextChunk() {
     StatusFile::nextStep();
 }
 
-// keep SNP for imputation
+// only used for creating a Qref
 inline void VCFData::processReferenceOnlySNP(bcf1_t *ref, void **ref_gt, int *mref_gt, int &numMissing, int &numUnphased, bool multiallelic) {
     float af;
-//    int nref_gt = bcf_get_genotypes(ref_hdr, ref, ref_gt, mref_gt);
     processReferenceSNP(Nref, ref, ref_gt, mref_gt, numMissing, numUnphased, af, false);
 //    cout << "SNP: " << Mref << " Nref: " << Nref << " nref_gt: " << nref_gt << " nMiss: " << numMissing << " nUnph: " << numUnphased << endl;
     alleleFreqsFullRefRegion.push_back(af);
@@ -1973,16 +1675,6 @@ inline void VCFData::processReferenceOnlySNP(bcf1_t *ref, void **ref_gt, int *mr
 
     currMref++;
 
-    // not required anymore as this function is called only when creating a Qref
-//    isImputed.push_back(true);
-//    nextPidx.push_back(bcf_pout.size()); // will point to the next common index or the end, if there will be no more common sites
-//    ptgtIdx.push_back(currM);
-//    if (inOverlap) {
-//        isImputedOverlap.push_back(true);
-//        nextPidxOverlap.push_back(bcf_poutOverlap.size()); // will point to the next common index or the end, if there will be no more common sites
-//        ptgtIdxOverlap.push_back(currMOverlap);
-//        currMrefOverlap++;
-//    }
 }
 
 inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, int *mref_gt,
@@ -2074,43 +1766,35 @@ inline void VCFData::processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, 
                 an++;
             } else if (*(ptr+1) == bcf_int32_vector_end) {
                 // haploid or missing
-//                if (allowHaploid || bcf_gt_is_missing(*ptr)) {
-                    // simply encode as homozygous diploid
-                    haps[1] = haps[0];
-                    if (!bcf_gt_is_missing(*ptr)) { // not missing -> haploid sample
-                        if (haploidsRef_initialized[i]) {
-                            if (!haploidsRef[i]) { // already initialized as diploid
-                                cout << endl;
-                                StatusFile::addError("Reference sample " + to_string(i) + " was diploid and is haploid now! Incorrect PAR regions?");
-                                exit(EXIT_FAILURE);
-                            }
-                        } else { // not initialized yet
-                            haploidsRef_initialized[i] = true;
-                            haploidsRef[i] = true;
-                            nHaploidsRef++;
+                // simply encode as homozygous diploid
+                haps[1] = haps[0];
+                if (!bcf_gt_is_missing(*ptr)) { // not missing -> haploid sample
+                    if (haploidsRef_initialized[i]) {
+                        if (!haploidsRef[i]) { // already initialized as diploid
+                            cout << endl;
+                            StatusFile::addError("Reference sample " + to_string(i) + " was diploid and is haploid now! Incorrect PAR regions?");
+                            exit(EXIT_FAILURE);
                         }
+                    } else { // not initialized yet
+                        haploidsRef_initialized[i] = true;
+                        haploidsRef[i] = true;
+                        nHaploidsRef++;
                     }
-//                } else {
-//                    cout << endl;
-//                    StatusFile::addError("Reference contains haploid sample.");
-//                    exit(EXIT_FAILURE);
-//                }
+                }
             } else { // not missing and not haploid -> diploid
                 haps[1] = (bcf_gt_allele(*(ptr+1)) >= 1) ? Haplotype::Alt : Haplotype::Ref; // encode REF allele -> 0, ALT allele(s) -> 1
                 if (!bcf_gt_is_phased(*(ptr+1)))
                     unphased = true;
-//                if (allowHaploid) {
-                    if (haploidsRef_initialized[i]) {
-                        if (haploidsRef[i]) {
-                            cout << endl;
-                            StatusFile::addError("Reference sample " + to_string(i) + " was haploid and is diploid now! Incorrect PAR regions?");
-                            exit(EXIT_FAILURE);
-                        }
-                    } else {
-                        // already pre-initialized as diploid... haploidsRef[i] = false; // diploid
-                        haploidsRef_initialized[i] = true;
+                if (haploidsRef_initialized[i]) {
+                    if (haploidsRef[i]) {
+                        cout << endl;
+                        StatusFile::addError("Reference sample " + to_string(i) + " was haploid and is diploid now! Incorrect PAR regions?");
+                        exit(EXIT_FAILURE);
                     }
-//                }
+                } else {
+                    // already pre-initialized as diploid... haploidsRef[i] = false; // diploid
+                    haploidsRef_initialized[i] = true;
+                }
 				// count allele
 				if (haps[1] == Haplotype::Alt)
 					ac1++;
@@ -2219,35 +1903,29 @@ inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, boo
                 }
                 numMissing++;
             } else if (*(ptr+1) == bcf_int32_vector_end) { // haploid sample!
-//                if (allowHaploid) { // on chrX/Y: encode as homozygous diploid and mark as male
-                    g = bcf_gt_allele(*ptr) >= 1 ? Genotype::HomAlt : Genotype::HomRef;
-                    // mark as haploid
-                    if (haploidsTgt_initialized[i]) {
-                        if (!haploidsTgt[i]) {
-                            cout << endl;
-                            stringstream ss;
-                            ss << "Target sample " << i << " (" << targetIDs[i] << " at " << tgtvariantpos+1 << ") was diploid and is haploid now! Incorrect PAR regions?";
-                            StatusFile::addError(ss.str());
-                            exit(EXIT_FAILURE);
-                        }
-                    } else {
-                        haploidsTgt[i] = true; // haploid
-                        haploidsTgt_initialized[i] = true;
-                        nHaploidsTgt++;
-                        if (iters > 1) {
-#if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT
-                            if (i >= DEBUG_TARGET_START && i <= DEBUG_TARGET_STOP)
-                                haploidsRef[Nref+i-DEBUG_TARGET_START] = true; // this target will be ref in a phasing iteration > 1
-#else
-                            haploidsRef[Nref+i] = true; // this target will be ref in a phasing iteration > 1
-#endif
-                        }
+                g = bcf_gt_allele(*ptr) >= 1 ? Genotype::HomAlt : Genotype::HomRef;
+                // mark as haploid
+                if (haploidsTgt_initialized[i]) {
+                    if (!haploidsTgt[i]) {
+                        cout << endl;
+                        stringstream ss;
+                        ss << "Target sample " << i << " (" << targetIDs[i] << " at " << tgtvariantpos+1 << ") was diploid and is haploid now! Incorrect PAR regions?";
+                        StatusFile::addError(ss.str());
+                        exit(EXIT_FAILURE);
                     }
-//                } else {
-//                    cout << endl;
-//                    StatusFile::addError("Target contains haploid sample.");
-//                    exit(EXIT_FAILURE);
-//                }
+                } else {
+                    haploidsTgt[i] = true; // haploid
+                    haploidsTgt_initialized[i] = true;
+                    nHaploidsTgt++;
+                    if (iters > 1) {
+#if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT
+                        if (i >= DEBUG_TARGET_START && i <= DEBUG_TARGET_STOP)
+                            haploidsRef[Nref+i-DEBUG_TARGET_START] = true; // this target will be ref in a phasing iteration > 1
+#else
+                        haploidsRef[Nref+i] = true; // this target will be ref in a phasing iteration > 1
+#endif
+                    }
+                }
             } else { // diploid
                 int idx =  bcf_gt_allele(*ptr) + bcf_gt_allele(*(ptr+1));
                 switch (idx) {
@@ -2261,20 +1939,18 @@ inline void VCFData::processTargetSNP(int nsmpl, int ngt, const int32_t *gt, boo
                 default: // no other possibility (multi-allelic cases have been filtered before)
                     g = Genotype::HomAlt;
                 }
-//                if (allowHaploid) {
-                    if (haploidsTgt_initialized[i]) {
-                        if (haploidsTgt[i]) {
-                            cout << endl;
-                            stringstream ss;
-                            ss << "Target sample " << i << " (" << targetIDs[i] << " at " << tgtvariantpos+1 << ") was diploid and is haploid now! Incorrect PAR regions?";
-                            StatusFile::addError(ss.str());
-                            exit(EXIT_FAILURE);
-                        }
-                    } else {
-                        // already pre-initialized as diploid... haploidsTgt[i] = false; // diploid
-                        haploidsTgt_initialized[i] = true;
+                if (haploidsTgt_initialized[i]) {
+                    if (haploidsTgt[i]) {
+                        cout << endl;
+                        stringstream ss;
+                        ss << "Target sample " << i << " (" << targetIDs[i] << " at " << tgtvariantpos+1 << ") was diploid and is haploid now! Incorrect PAR regions?";
+                        StatusFile::addError(ss.str());
+                        exit(EXIT_FAILURE);
                     }
-//                }
+                } else {
+                    // already pre-initialized as diploid... haploidsTgt[i] = false; // diploid
+                    haploidsTgt_initialized[i] = true;
+                }
             }
         } else { // ploidy == 1
             if (bcf_gt_is_missing(*ptr)) { // missing allele
@@ -3713,7 +3389,6 @@ void VCFData::writeVCFImputedConcat() {
 void VCFData::combineChunks() const {
     if (nChunks > 1) {
         cout << "Combining chunk files..." << endl;
-//        StatusFile::updateStatus(0, "Combine chunks");
         vector<string> chunkfiles;
         chunkfiles.push_back(outFileNameImp);
         for (int chunk = 1; chunk < nChunks; chunk++)
@@ -3838,11 +3513,6 @@ inline size_t VCFData::getNumVariantsFromIndex(const string &vcffilename) {
         if (litstart+start < name.size()) { // there is something following the number
         	if (literally) *literally = true;
         }
-    // we allow any kind of chromosome now
-//    if (tmp < 1 || tmp > 24) {
-//        StatusFile::addError("Invalid chromosome! Valid chromosomes are 1-24 or X,Y, preliminary \"chr\" is allowed.");
-//        exit(EXIT_FAILURE);
-//    }
     }
     return tmp;
 }
@@ -3989,18 +3659,8 @@ void VCFData::printSummary() const {
             StatusFile::addInfo("  Excluded " + to_string(globalstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants from imputation.<br>", false);
             yamlinfo << "    Excluded reference-only multi-allelic variants: " << globalstats.MmultiAllelicRefOnly << "\n";
         } else if (globalstats.MmultiAllelicRefOnly) {
-//            if (!loadQuickRef){
-//                StatusFile::addInfo("  Split " + to_string(globalstats.MmultiAllelicRefOnly) + " reference-only multi-allelic variants into "
-//                        + to_string(globalstats.MmultiSplittedRefOnly) + " bi-allelic reference variants,<br>\n"
-//                        + "    " + to_string(globalstats.GmultiFilledRefOnly) + " haplotypes filled with reference alleles.<br>", false);
-//                yamlinfo << "    Multi-allelic splits in reference-only variants:\n";
-//                yamlinfo << "      Reference-only multi-allelic variants before split: " << globalstats.MmultiAllelicRefOnly << "\n";
-//                yamlinfo << "      Resulting bi-allelic reference variants: " << globalstats.MmultiSplittedRefOnly << "\n";
-//                yamlinfo << "      Haplotypes filled with reference alleles: " << globalstats.GmultiFilledRefOnly << "\n";
-//            } else {
             StatusFile::addInfo("  " + to_string(globalstats.MmultiAllelicRefOnly) + " bi-allelic variants in reference only that originate from multi-allelic splits.<br>", false);
             yamlinfo << "    Reference-only bi-allelic variants from multi-allelic splits: " << globalstats.MmultiAllelicRefOnly << "\n";
-//            }
         } else {
             StatusFile::addInfo("  No multi-allelic reference-only variants.<br>", false);
             // we skip this output in YAML

@@ -205,17 +205,6 @@ int main(int argc, char *argv[]) {
 
     // phasing parameters (hidden options)
     Target::cMmaxSplit = args.cMmaxsplit;
-//    if (args.min_ibd_a != 0 && args.min_ibd_a < args.min_ibd_b) {
-//        cerr << "ERROR! minibdA must be greater or equal to minibdB." << endl;
-//        exit(EXIT_FAILURE);
-//    }
-//    if (args.min_ibd_a == 0 || args.min_ibd_b == 0) { // disable IBD check
-//        Target::MinIBDSplitSitesA = 0ull;
-//        Target::MinIBDSplitSitesB = 0ull;
-//    } else {
-//        Target::MinIBDSplitSitesA = args.min_ibd_a;
-//        Target::MinIBDSplitSitesB = args.min_ibd_b;
-//    }
     if (args.hsize > 128 || args.hsize < args.delta+1) {
         StatusFile::addError("hsize must be <= 128 and >= delta+1.");
         exit(EXIT_FAILURE);
@@ -340,14 +329,6 @@ int main(int argc, char *argv[]) {
             Stopwatch swp("Phasing");
 
             if (usefpga) {
-                // This commented check is wrong since the current M is NOT the number of split sites!
-                // The limit has already been checked by creating the chunks with an estimated number of split sites of M/3.
-//                // check if current M works for FPGA
-//                if (fpgaconfigs[0].getMaxSites() < vcfdata.getNSNPs()) {
-//                    StatusFile::addError("FPGA does not support M=" + to_string(vcfdata.getNSNPs())
-//                            + " sites. Maximum: " + to_string(fpgaconfigs[0].getMaxSites()));
-//                    exit(EXIT_FAILURE);
-//                }
                 // if not set explicitly numFPGAs+2 buffers are prepared for FPGA<->host communication
                 unsigned buffersFPGA = args.get<unsigned>("buffers-FPGA");
                 size_t buffersizeFPGA = args.get<size_t>("buffer-size-FPGA");
@@ -498,12 +479,12 @@ int main(int argc, char *argv[]) {
 
         MyMalloc::free(pdata);
 
-        // DEBUG
-        MyMalloc::printSummary(string("after chunk ")+to_string(chunk+1));
+//        // DEBUG
+//        MyMalloc::printSummary(string("after chunk ")+to_string(chunk+1));
 //        ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
 //        MyMalloc::dumpMemMap(ofs);
 //        ofs.close();
-        // __DEBUG
+//        // __DEBUG
 
     } // end for all chunks
     StatusFile::clearContext();
