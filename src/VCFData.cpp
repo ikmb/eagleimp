@@ -1316,6 +1316,7 @@ void VCFData::processNextChunk() {
             if (remvars > 0) {
                 nChunks++;
                 StatusFile::setTotalChunks(nChunks);
+                StatusFile::addInfo("<p class='pinfo'>Increased minimal number of chunks to " + to_string(nChunks) + ".</p>", false);
             }
 //            // DEBUG
 //            cerr << "Remvars: " << remvars << endl;
