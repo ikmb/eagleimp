@@ -562,6 +562,9 @@ if [[ -n "$SPLITX" ]]; then
             TMP="$STATPATH/$CHR"_"$PART$STUB$SUFF".stat.$IWE.yaml
             if [[ -f $TMP ]]; then
                 XSTATFILES+=("$TMP")
+                if [[ $IWE == "error" ]]; then
+                    ERRCNT=$(( $ERRCNT + 1 ))
+                fi
             fi
         done
         if (( ${#XSTATFILES[@]} > 0 )); then
