@@ -157,6 +157,10 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
     // determine number of SNPs in input file from corresponding index
     if (!createQRef) {
         Mglob = getNumVariantsFromIndex(vcfTarget);
+        if (!Mglob) {
+            StatusFile::addError("No valid sequences found in VCF file.");
+            exit(EXIT_FAILURE);
+        }
         chrBpsReg.reserve(Mglob);
     }
 
@@ -207,7 +211,6 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
             StatusFile::addError("Failed to initialize the region: " + s.str());
             exit(EXIT_FAILURE);
         }
-
     }
 
     if (!loadQuickRef && !bcf_sr_add_reader(sr, refFile.c_str())) {
@@ -282,6 +285,10 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
 
         // determine number of SNPs in input file by reading the index
         Mrefglob = getNumVariantsFromIndex(refFile);
+        if (!Mrefglob) {
+            StatusFile::addError("No valid sequences found in VCF file.");
+            exit(EXIT_FAILURE);
+        }
 
         // reserve space for globals
         size_t Mrefpre = Mrefglob + Mrefglob/10; // 10% extra for multi-allelic splits
@@ -904,6 +911,7 @@ void VCFData::processNextChunk() {
 
     // read data SNP-wise in positional sorted order from target and reference
     // the function also takes care that we only read the requested region
+    size_t tgtlinesread_old = tgtlinesread;
     while ((createQRef || tgtlinesread < endChunkFlankIdx[currChunk]) && bcf_sr_next_line(sr)) {
 
         bcf1_t *ref = NULL;
@@ -960,23 +968,22 @@ void VCFData::processNextChunk() {
                     }
                 }
 
+                tgtlinesread++;
+
                 // check, how we get along with our memory:
                 // if we already used up ~97% of our available memory, we stop this chunk now
                 // NOTE: we still load the reference variants between the last and this tgt site
-//                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
-                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/4) {
+                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
+//                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/4) {
 
-                    int64_t reduction = endChunkFlankIdx[currChunk] - tgtlinesread - 1; // difference to the previously calculated end of chunk
+                    int64_t reduction = endChunkFlankIdx[currChunk] - tgtlinesread; // difference to the previously calculated end of chunk
                     startChunkFlankIdx[currChunk+1] -= reduction;
                     startChunkIdx[currChunk+1] -= reduction;
                     endChunkFlankIdx[currChunk] -= reduction; // this will also stop reading after this line
 
 //                    // DEBUG
-//                    if (reduction)
-//                        cerr << "--- REDUCED chunk by " << reduction << " sites." << endl;
+//                    cerr << "--- REDUCED chunk by " << reduction << " sites." << endl;
                 }
-
-                tgtlinesread++;
 
                 // check, if the target contains the same chromosome as the chosen reference
                 if (!checkedChrom) {
@@ -1250,7 +1257,12 @@ void VCFData::processNextChunk() {
     free(tgt_gt);
 
     if (loadQuickRef) {
-        if (tgtlinesread == Mglob) { // if we are at the end of the last chunk, the last ref-only variants have to be processed
+        if (tgtlinesread == Mglob || tgtlinesread == tgtlinesread_old) { // end of last chunk (or reader has not read any more variants -> end of region set in reader)
+            // if we are at the end of the last chunk, the last ref-only variants have to be processed
+
+            // correct Mglob if we reached the end of the user region
+            Mglob = tgtlinesread;
+
             // no overlap
             currMOverlap = 0;
             MRightOv = 0;
@@ -1278,8 +1290,9 @@ void VCFData::processNextChunk() {
 //            cerr << "endChunkBp: " << endChunkBp << endl;
 
             // no more chunks
-            startChunkFlankIdx[currChunk+1] = endChunkFlankIdx[currChunk];
-            startChunkIdx[currChunk+1] = endChunkFlankIdx[currChunk];
+            endChunkFlankIdx[currChunk] = Mglob;
+            startChunkFlankIdx[currChunk+1] = Mglob;
+            startChunkIdx[currChunk+1] = Mglob;
 
             // set the final number of chunks (shouldn't be required, but doesn't harm...)
             nChunks = currChunk + 1;
@@ -1320,7 +1333,6 @@ void VCFData::processNextChunk() {
             }
 //            // DEBUG
 //            cerr << "Remvars: " << remvars << endl;
-//            // _DEBUG
         }
     }
 
@@ -3469,14 +3481,22 @@ inline size_t VCFData::getNumVariantsFromIndex(const string &vcffilename) {
     }
 
     int nseq;
-    // just need this to get the number of sequences, so we can cleanup afterwards immediately
+    // get the number and names of sequences stored in the target file
     const char** seq = tbx ? tbx_seqnames(tbx, &nseq) : bcf_index_seqnames(idx, hdr, &nseq);
-    free(seq); // allocated by HTSlib
+    // we only pick the first sequence that fits the convention, i.e. a number or literals optionally preceding with "chr" (but no special chars such as "_", ".", ...)
     for (int i = 0; i < nseq; i++) {
         uint64_t nrecords, unmapped;
-        hts_idx_get_stat(tbx ? tbx->idx : idx, i, &nrecords, &unmapped);
-        numvars += nrecords;
+        string seqstring(seq[i]);
+//        if (seqstring.substr(0,3).compare("chr") == 0) // seqname starts with "chr"
+//            seqstring = seqstring.substr(3);
+        if (seqstring.find_first_not_of("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") == string::npos) { // only number or literals
+            hts_idx_get_stat(tbx ? tbx->idx : idx, i, &nrecords, &unmapped);
+//            cerr << "seq: " << i << " seqname: " << seq[i] << " nrecords: " << nrecords << " unmapped: " << unmapped << endl;
+            numvars = nrecords;
+            break;
+        }
     }
+    free(seq); // allocated by HTSlib
 
     hts_close(file);
     bcf_hdr_destroy(hdr);

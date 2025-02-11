@@ -186,6 +186,7 @@ private:
     inline void appendVersionToBCFHeader(bcf_hdr_t *hdr) const;
     inline void concatFiles(const vector<string>& filenames) const;
     inline string getOutputSuffix();
+    // returns the number of variants only from the first valid sequence in the VCF file
     inline size_t getNumVariantsFromIndex(const string &vcffilename);
 
     void writeBCFRecords(vector<tbb::concurrent_bounded_queue<bcf1_t*>> &recq, htsFile *bcfout, bcf_hdr_t *bcfhdr, size_t numrecs);
