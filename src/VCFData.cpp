@@ -1286,8 +1286,6 @@ void VCFData::processNextChunk() {
 
             // set end of chunk to last reference var (inclusive)
             endChunkBp = positionsFullRefRegion.back();
-//            // DEBUG
-//            cerr << "endChunkBp: " << endChunkBp << endl;
 
             // no more chunks
             endChunkFlankIdx[currChunk] = Mglob;
@@ -1416,9 +1414,10 @@ void VCFData::processNextChunk() {
 
     if (pgb == 0) // just printed "xx%"
         cout << ".";
-    cout << "100%";
+    cout << "100% (";
     if (currChunk+1 != nChunks)
-        cout << " (chunk end)" << endl;
+        cout << "chunk ";
+    cout << "end at bp " << endChunkBp << ")" << endl;
     cout << endl;
 
     if (!createQRef) { // statistics for normal run

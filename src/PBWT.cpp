@@ -30,10 +30,10 @@
 #include "Stopwatch.h"
 #endif
 
-PBWT::PBWT(const RingBuffer<BooleanVector> *dataraw_, vector<int> *gCount0_, int ntarget_)
+PBWT::PBWT(const RingBuffer<BooleanVector> *dataraw_, vector<int> *gCount0_, size_t ntarget_)
     : K((*dataraw_)[0].size()),
 //      Kwords(4*roundToMultiple((size_t)K, UNITWORDS * sizeof(BooleanVector::data_type) * 8) / (8 * sizeof(BooleanVector::data_type))),
-      Kwords(2*divideRounded(K,32)),
+      Kwords(2*divideRounded(K,(size_t)32)),
       Kinv(1.0/(fp_type)K),
       M(dataraw_->size()),
       dataraw(dataraw_),
@@ -50,9 +50,9 @@ PBWT::PBWT(const RingBuffer<BooleanVector> *dataraw_, vector<int> *gCount0_, int
 //    dump(ntarget, true);
 }
 
-PBWT::PBWT(const RingBuffer<BooleanVector> *dataraw_, bool refPBWT_, int ntarget_)
+PBWT::PBWT(const RingBuffer<BooleanVector> *dataraw_, bool refPBWT_, size_t ntarget_)
     : K((*dataraw_)[0].size()),
-      Kwords(2*divideRounded(K,32)),
+      Kwords(2*divideRounded(K,(size_t)32)),
       Kinv(1.0/(fp_type)K),
       M(dataraw_->size()),
       dataraw(dataraw_),
@@ -69,7 +69,7 @@ PBWT::PBWT(const RingBuffer<BooleanVector> *dataraw_, bool refPBWT_, int ntarget
 //    dump(ntarget, true);
 }
 
-PBWT::PBWT(uint32_t* comprPBWTraw, int K_, int Kwords_, int M_, int ntarget_)
+PBWT::PBWT(uint32_t* comprPBWTraw, size_t K_, size_t Kwords_, size_t M_, size_t ntarget_)
     : K(K_),
       Kwords(2*Kwords_), // will be the size after filling with cnt0 offsets
       Kinv(1.0/(fp_type)K),
@@ -86,16 +86,16 @@ PBWT::PBWT(uint32_t* comprPBWTraw, int K_, int Kwords_, int M_, int ntarget_)
 
     uint32_t *src = comprPBWTraw;
     uint32_t *dst = comprPBWT;
-    for (int m = 0; m < 2*M; m++) {
+    for (size_t m = 0; m < 2*M; m++) {
         uint32_t currcnt0 = 0;
-        for (int k = 0; k < Kwords_; k++) { // Note: iterating over the original number of Kwords!
+        for (size_t k = 0; k < Kwords_; k++) { // Note: iterating over the original number of Kwords!
             currcnt0 += 32-__builtin_popcount(*src);
             *dst++ = *src++; // copy data
             *dst++ = currcnt0; // insert cnt0 offset
         }
     }
 
-    uint32_t *currcnt0ptr = comprPBWT + (2*divideRounded(K,32)-1); // points to cnt0 of first site
+    uint32_t *currcnt0ptr = comprPBWT + (2*divideRounded(K,(size_t)32)-1); // points to cnt0 of first site
 //            // DEBUG
 //            cerr << "cnt0s " << tgt->getIdx() << ": " << tgt->getNSplits() << " " << M << endl; size_t idx = 0;
     for (auto &gcnt0 : *gCount0) {
@@ -109,7 +109,7 @@ PBWT::PBWT(uint32_t* comprPBWTraw, int K_, int Kwords_, int M_, int ntarget_)
 //    dump(ntarget, true);
 }
 
-PBWT::PBWT(uint32_t* comprPBWT_, vector<int> *gCount0_, int K_, int Kwords_, int M_, int ntarget_)
+PBWT::PBWT(uint32_t* comprPBWT_, vector<int> *gCount0_, size_t K_, size_t Kwords_, size_t M_, size_t ntarget_)
     : K(K_),
       Kwords(Kwords_),
       Kinv(1.0/(fp_type)K),
@@ -157,8 +157,8 @@ void PBWT::init() {
 //
 //    cout << "DEBUG: dump " << ntarget << endl;
 //    ofstream ofs(string("pbwt")+to_string(ntarget));
-//    const int Krnd = 2*divideRounded(K,32);
-//    const int Kpad = Kwords - Krnd;
+//    const size_t Krnd = 2*divideRounded(K,32);
+//    const size_t Kpad = Kwords - Krnd;
 //    ofs << "K: " << K << " Kpbwt: " << Kwords << " Kpad: " << Kpad << endl;
 //    ofs << "Mspl: " << M/2 << " Mpbwt: " << M << endl;
 //    uint32_t* dptr = comprPBWT;
@@ -167,14 +167,14 @@ void PBWT::init() {
 //            ofs << "fwd:" << endl;
 //        else
 //            ofs << "bck:" << endl;
-//        for (int midx = 0; midx < M; midx++) {
-//            int m = fwdbck ? M-midx-1 : midx;
+//        for (size_t midx = 0; midx < M; midx++) {
+//            size_t m = fwdbck ? M-midx-1 : midx;
 //            ofs << dec << m << ":";
 //            int count0 = (*gCount0)[m];
 //            int count0x = dptr[Krnd-1];
 //            ofs << " count0: " << count0 << (count0 == count0x ? " ok" : " XXX");
-////            for (int k = 0; k < Kwords/2; k++) {
-//            for (int k = 0; k < Krnd/2; k++) {
+////            for (size_t k = 0; k < Kwords/2; k++) {
+//            for (size_t k = 0; k < Krnd/2; k++) {
 //                if (k%8 == 0)
 //                    ofs << endl;
 //                ofs << " " << hex << setw(8) << setfill('0') << *dptr++; // data
@@ -183,7 +183,7 @@ void PBWT::init() {
 //                else
 //                    ofs << " " << hex << setw(8) << setfill('0') << *dptr++; // print offset field as data
 //            }
-//            for (int k = Krnd; k < Kwords; k++, dptr++);
+//            for (size_t k = Krnd; k < Kwords; k++, dptr++);
 //            ofs << endl;
 //        }
 //    }
@@ -199,7 +199,7 @@ void PBWT::switchToReverse() {
     curr_m = M;
 }
 
-void PBWT::advanceTo(int m) {
+void PBWT::advanceTo(size_t m) {
     curr_m = m;
 }
 
@@ -210,30 +210,30 @@ void PBWT::buildComprPBWT(bool reverse) {
         compr_ptr += M*Kwords;
 
     // the first absPerm is the identity
-    int idx = reverse && refPBWT ? M : 0;
-    for (int i = 0; i < K; i++)
+    size_t idx = reverse && refPBWT ? M : 0;
+    for (size_t i = 0; i < K; i++)
         gAbsPerm[idx][i] = i;
 
-    for (int midx = 0; midx < M; midx++) {
+    for (size_t midx = 0; midx < M; midx++) {
 
         uint32_t *curr_compr_ptr = compr_ptr;
 
-        int m = reverse ? M-1-midx : midx;
+        size_t m = reverse ? M-1-midx : midx;
         const BooleanVector &curr_data = (*dataraw)[m];
 
         // calculate count0:
         // we can determine the number of zeroes in advance, which is advantageous.
         int cnt0 = haveCount0 ? (*gCount0)[m] : curr_data.getFalseCount_withPreInit();
 
-        int abspermidx = refPBWT ? (reverse ? m+1 : m) : 0;
-        int nabspermidx = refPBWT ? (reverse ? m : m+1) : 1;
-        int p0next = 0;
-        int p1next = cnt0;
+        size_t abspermidx = refPBWT ? (reverse ? m+1 : m) : 0;
+        size_t nabspermidx = refPBWT ? (reverse ? m : m+1) : 1;
+        size_t p0next = 0;
+        size_t p1next = cnt0;
         auto it = gAbsPerm[abspermidx].cbegin();
         auto &absPermNew = gAbsPerm[nabspermidx];
         uint32_t curr_permdata = 0; // current vector in permuted order
         uint32_t curr_mask = 1;
-        for (int i = 0; i < K; i++, ++it) {
+        for (size_t i = 0; i < K; i++, ++it) {
             if (!curr_data[*it]) { // curr sample is 0
 
                 // insert index of this 0-sequence in 0 part of vector
@@ -285,7 +285,7 @@ void PBWT::buildComprPBWT(bool reverse) {
 }
 
 
-void PBWT::mapInterval(int m, const PBWTInterval &from, PBWTInterval &to0, PBWTInterval &to1) const {
+void PBWT::mapInterval(size_t m, const PBWTInterval &from, PBWTInterval &to0, PBWTInterval &to1) const {
 
     mapInterval(&comprPBWT[reversePBWT ? (2*M-1-m)*Kwords : m*Kwords], (*gCount0)[m], from, to0, to1);
 

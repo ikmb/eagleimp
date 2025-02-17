@@ -131,7 +131,7 @@ private:
 
     void *mycalloc(size_t size, size_t elt_size, const string &id __attribute__((unused))) {
         void *p = std::calloc(size, elt_size);
-        add(p, size, id);
+        add(p, size * elt_size, id);
         return p;
     }
 
@@ -162,6 +162,11 @@ private:
 //                cerr << "MyMalloc: Address already in use! Double allocation?! ID: " << id << endl;
             mem_map[(size_t)p] = make_pair(size,id);
             mux.unlock();
+        } else {
+            if (size) {
+                cerr << "MyMalloc: Memory allocation of " << size << " bytes failed!" << endl;
+                printSummary(string());
+            }
         }
     }
 

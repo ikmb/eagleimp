@@ -225,7 +225,7 @@ Args::Args(int argc, char *argv[]) :
     ("skipImputation", "skip reference imputation")
     ("makeQref", "create quick reference by dumping the decoded VCF reference, --ref is required with a VCF reference file, all other args are ignored")
     ("maxChunkMemory", value<uint64_t>(&maxChunkMemory)->default_value(16ull), "in GiB, targets that require a pre-estimated amount of memory larger than this will be divided into chunks")
-    ("chunkFlankSize", value<uint64_t>(&chunkFlankSize)->default_value(32), "number of target variants that will be used as flanking region to either side of a chunk; this will not extend a previously set region!")
+    ("chunkFlankSize", value<uint64_t>(&chunkFlankSize)->default_value(64), "number of target variants that will be used as flanking region to either side of a chunk; this will not extend a previously set region!")
     ("stat", value<string>(&statfile), "file for status output")
     ("lockfile", value<string>(&lockfile), "optional lockfile for exclusive CPU usage (used by CPU phasing and imputation). if not present, no CPU lock will be used.")
     ;

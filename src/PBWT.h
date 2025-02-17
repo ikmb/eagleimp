@@ -37,14 +37,14 @@ public:
 
     // constructor that creates a PBWT from a vector of boolean vectors (natural order)
     // all fields had to be preinitialized with zeros!!!
-    PBWT(const RingBuffer<BooleanVector> *dataraw, vector<int> *gCount0, int ntarget = -1);
-    PBWT(const RingBuffer<BooleanVector> *dataraw, bool refPBWT, int ntarget = -1);
+    PBWT(const RingBuffer<BooleanVector> *dataraw, vector<int> *gCount0, size_t ntarget = -1);
+    PBWT(const RingBuffer<BooleanVector> *dataraw, bool refPBWT, size_t ntarget = -1);
 
     // constructor that takes a preliminary created compressed PBWT as input, that is generated without count0 information (also not in the raw data!)
-    PBWT(uint32_t* comprPBWTraw, int K, int Kwords, int M, int ntarget = -1);
+    PBWT(uint32_t* comprPBWTraw, size_t K, size_t Kwords, size_t M, size_t ntarget = -1);
 
     // constructor that takes a preliminary created compressed PBWT as input
-    PBWT(uint32_t* comprPBWT, vector<int> *gCount0, int K, int Kwords, int M, int ntarget = -1);
+    PBWT(uint32_t* comprPBWT, vector<int> *gCount0, size_t K, size_t Kwords, size_t M, size_t ntarget = -1);
 
     ~PBWT() {
         MyMalloc::free(comprPBWT);
@@ -55,27 +55,27 @@ public:
     void switchToReverse();
     bool isReverse() const { return reversePBWT; }
 
-    void advanceTo(int m);
+    void advanceTo(size_t m);
 
-    int getK() const { return K; }
-    int getM() const { return M; }
+    size_t getK() const { return K; }
+    size_t getM() const { return M; }
     fp_type getKInv() const { return Kinv; }
 
     // returns the number of reference sequences that end with 0 at the provided site
-    int getCount0(int m) const { return (*gCount0)[m]; }
+    int getCount0(size_t m) const { return (*gCount0)[m]; }
 
     // maps an interval from position 'm-1' to all intervals at position 'm',
     // assuming that the sequences indicated by the provided interval are extended with 0 and 1 respectively.
     // 'from' is the provided interval from previous cursor position,
     // 'to0' holds the mapped interval for 0-extension after return,
     // 'to1' holds the mapped interval for 1-extension after return.
-    void mapInterval(int m, const PBWTInterval &from, PBWTInterval &to0, PBWTInterval &to1) const;
+    void mapInterval(size_t m, const PBWTInterval &from, PBWTInterval &to0, PBWTInterval &to1) const;
 
     // returns the PBWT sort order (i.e. the global absolute permutation)...
     // ...before(!) the provided site if this is a forward PBWT or
     // ...at(!) the provided site if this is a backward PBWT
     // NOTE: only possible if storeAbsPerm == true
-    const vector<int> &getSortOrder(int m) const { return gAbsPerm[m]; }
+    const vector<int> &getSortOrder(size_t m) const { return gAbsPerm[m]; }
 
 private:
 
@@ -91,14 +91,14 @@ private:
     // returns the relative permutation of element "from" as encoded in the compressed PBWT, gcnt0 is the global count0 at this position
     inline int decodeRelPerm(const uint32_t *comprPBWTatM, int gcnt0, int from) const;
 
-    const int K; // number of conditioning haps
-    const int Kwords; // number of 32 bit words used for one site (i.e. at least 2*ceil(K/32), may include padding): used for offsets in the compressed PBWT when jumping to a specific site
+    const size_t K; // number of conditioning haps
+    const size_t Kwords; // number of 32 bit words used for one site (i.e. at least 2*ceil(K/32), may include padding): used for offsets in the compressed PBWT when jumping to a specific site
     const fp_type Kinv; // inverted number of conditioning haps (1/K)
-    const int M; // PBWT width (2*number of sites in the condensed reference + 1)
+    const size_t M; // PBWT width (2*number of sites in the condensed reference + 1)
     const RingBuffer<BooleanVector> *dataraw; // condensed reference information of conditioning haps at split sites (transposed)
     uint32_t *comprPBWT;
     bool reversePBWT;
-    int curr_m; // current cursor
+    size_t curr_m; // current cursor
 
     // relative permutations (global)
     vector<int> *gCount0; // number of reference sequences that end with 0 for all sites
@@ -108,7 +108,7 @@ private:
     bool refPBWT;
     bool haveCount0;
 
-    int ntarget;
+    size_t ntarget;
 
 //    // DEBUG
 //    void dump(bool offsets);
