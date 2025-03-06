@@ -531,21 +531,13 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         }
 
         // chunks are generated based on the number of target variants
-        startChunkIdx.clear();
-        startChunkFlankIdx.clear();
         endChunkFlankIdx.clear();
 
         // we start with the first target index
-        startChunkIdx.push_back(0);
-        startChunkFlankIdx.push_back(0);
         // we only prepare preliminary limits for the next chunk, others will be generated on-the-fly
         if (minNChunks == 1) { // memory estimation thinks we can handle the imputation without chunking -> and this calculation should be very resolute
-            startChunkIdx.push_back(Mglob);
-            startChunkFlankIdx.push_back(Mglob);
             endChunkFlankIdx.push_back(Mglob);
         } else {
-            startChunkIdx.push_back(maxChunkTgtVars-chunkflanksize);
-            startChunkFlankIdx.push_back(maxChunkTgtVars-2*chunkflanksize);
             endChunkFlankIdx.push_back(maxChunkTgtVars);
         }
 
@@ -654,13 +646,6 @@ void VCFData::processNextChunk() {
         StatusFile::setContext(s.str());
         cout << "Chunk " << currChunk+1 << "/" << nChunks << ":" << endl;
         cout << "----------------------------------------------------------------" << endl;
-
-//        // DEBUG
-//        cerr << "sf/s/e: " << startChunkFlankIdx[currChunk] << "/" << startChunkIdx[currChunk] << "/" << endChunkFlankIdx[currChunk]
-//             << " sizef/size: " <<  endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk] << "/" << endChunkFlankIdx[currChunk] - startChunkIdx[currChunk]
-//             << " tgtlinesread: " << tgtlinesread
-//             << " sfn/sn: " << startChunkFlankIdx[currChunk+1] << "/" << startChunkIdx[currChunk+1]
-//             << endl;
 
         //
         // prepare memory for target data of current chunk, copy overlap from previous chunk
@@ -898,7 +883,7 @@ void VCFData::processNextChunk() {
     StatusFile::updateStatus(0, ss.str());
     int pgb = 0; // for progress bar
     // for progress display: lines per each display step (displaying 80 steps: every 5% and three dots in between)
-    size_t prghelp_total = createQRef ? Mrefglob : (endChunkFlankIdx[currChunk]-startChunkFlankIdx[currChunk]-currMOverlap);
+    size_t prghelp_total = createQRef ? Mrefglob : (endChunkFlankIdx[currChunk] - (currChunk ? endChunkFlankIdx[currChunk-1] : 0));
     size_t prghelp_linesperdispl = divideRounded(prghelp_total, (size_t)80);
 
     int mref_gt = 0; void *ref_gt = NULL; // will be allocated once in bcf_get_genotypes() and then reused for each marker (need void* because of htslib)
@@ -955,8 +940,11 @@ void VCFData::processNextChunk() {
         if (!createQRef) {
             tgt = bcf_sr_get_line(sr, loadQuickRef ? 0 : 1); // read one line of target, if available at current position (otherwise NULL)
             if (tgt) {
+
+                tgtlinesread++;
+                size_t reltgtlines = tgtlinesread - (currChunk ? endChunkFlankIdx[currChunk-1] : 0);
+
                 // progress display
-                size_t reltgtlines = tgtlinesread-startChunkFlankIdx[currChunk]-currMOverlap;
                 if (reltgtlines % prghelp_linesperdispl == 0) {
                     StatusFile::updateStatus(reltgtlines / (float)prghelp_total);
                     if (pgb == 3) { // print % after three dots
@@ -966,23 +954,6 @@ void VCFData::processNextChunk() {
                         cout << "." << flush;
                         pgb++;
                     }
-                }
-
-                tgtlinesread++;
-
-                // check, how we get along with our memory:
-                // if we already used up ~97% of our available memory, we stop this chunk now
-                // NOTE: we still load the reference variants between the last and this tgt site
-                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
-//                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/4) {
-
-                    int64_t reduction = endChunkFlankIdx[currChunk] - tgtlinesread; // difference to the previously calculated end of chunk
-                    startChunkFlankIdx[currChunk+1] -= reduction;
-                    startChunkIdx[currChunk+1] -= reduction;
-                    endChunkFlankIdx[currChunk] -= reduction; // this will also stop reading after this line
-
-//                    // DEBUG
-//                    cerr << "--- REDUCED chunk by " << reduction << " sites." << endl;
                 }
 
                 // check, if the target contains the same chromosome as the chosen reference
@@ -1250,6 +1221,13 @@ void VCFData::processNextChunk() {
             infoexpl = "ref/alt swap";
         addToInfoFileIncluded(tgt->pos, tgt->d.id, tref, talt, variantIDsFullRefRegion[qfoundidx], allelesFullRefRegion[2*qfoundidx], allelesFullRefRegion[2*qfoundidx+1], infoexpl);
 
+        // check, how we get along with our memory:
+        // if we already used up ~97% of our available memory, we stop this chunk now
+        if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/32) {
+//                if (MyMalloc::getCurrentAlloced() > maxchunkmem-maxchunkmem/4) {
+            endChunkFlankIdx[currChunk] = tgtlinesread; // this will stop reading after this line
+        }
+
     } // END while (reading chunk)
 
     // allocated by HTSlib
@@ -1289,8 +1267,6 @@ void VCFData::processNextChunk() {
 
             // no more chunks
             endChunkFlankIdx[currChunk] = Mglob;
-            startChunkFlankIdx[currChunk+1] = Mglob;
-            startChunkIdx[currChunk+1] = Mglob;
 
             // set the final number of chunks (shouldn't be required, but doesn't harm...)
             nChunks = currChunk + 1;
@@ -1301,26 +1277,33 @@ void VCFData::processNextChunk() {
             }
 
         } else { // there will be another chunk
-            // overlap to next chunk
-            currMOverlap = 2*chunkflanksize; // default TODO maybe adjust if the chunk is too small? -> startChunkFlankIdx and startChunkIdx need to be adjusted as well then!
+
+            // overlap to next chunk:
+            // if we have not read enough variants, we need to reduce the regular overlap size
+            size_t readvars = currM - currMOverlap; // the number of newly considered tgt variants (without missings or otherwise excluded) (is at least 1!)
+            if (readvars+currMOverlap/2 < 2*chunkflanksize) {
+                // we want to move forwards by at least half of the previous overlap, but not less than the user defined flank size (half of the default overlap)
+                currMOverlap = max(chunkflanksize, readvars+currMOverlap/2);
+                // NOTE: currM is at least chunkflanksize+1 (as we've read at least one variant and the minimum overlap to the previous chunk is chunkflanksize)
+//                StatusFile::addWarning("Dense reference region. Reduced overlap size in chunk " + to_string(currChunk) + " to " + to_string(currMOverlap) + ".");
+            } else {
+                currMOverlap = 2*chunkflanksize; // default
+            }
             MRightOv = currMOverlap/2; // number of tgt variants in the overlap to next chunk (chunkflanksize for now)
             MrefRightOv = currMref - indexToRefFull[currM-MRightOv-1] - 1; // number of ref vars in overlap to next chunk
 
             // set end of chunk to bp position of last common var in this chunk
             endChunkBp = positionsFullRefRegion[currChunkOffset+indexToRefFull[currM-MRightOv-1]]; // inclusive!
-
 //            // DEBUG
 //            cerr << "endChunkBp: " << endChunkBp << " -- " << bcf_pout[currM-MRightOv-1]->pos << " / " << bcf_pout[currM-MRightOv]->pos << " / " << bcf_pout[currM-MRightOv+1]->pos << endl;
 
-            // prepare preliminary limits
-            size_t nextchunkend = min(Mglob, startChunkFlankIdx[currChunk+1] + maxChunkTgtVars);
+            // prepare preliminary limits for next chunk
+            size_t nextchunkend = min(Mglob, endChunkFlankIdx[currChunk] - currMOverlap + maxChunkTgtVars);
             endChunkFlankIdx.push_back(nextchunkend);
-            startChunkIdx.push_back(nextchunkend - chunkflanksize);
-            startChunkFlankIdx.push_back(nextchunkend - 2*chunkflanksize);
 
             // depending on the potentially reduced chunk size, we can correct the number of chunks now
             int remChunks = nChunks-currChunk-1; // how many chunks are still planned after this chunk
-            int64_t remvars = Mglob - startChunkFlankIdx[currChunk+1]; // variants that still have to be processed (including the current overlap)
+            int64_t remvars = Mglob - (endChunkFlankIdx[currChunk] - currMOverlap); // variants that still have to be processed (including the next overlap)
             remvars -= remChunks * maxChunkTgtVars; // how many vars are spanned by this chunk...
             if (remChunks) // ...with consideration of overlaps (not adjusted)
                 remvars += (nChunks-currChunk-2)*2*chunkflanksize;
@@ -1331,6 +1314,7 @@ void VCFData::processNextChunk() {
             }
 //            // DEBUG
 //            cerr << "Remvars: " << remvars << endl;
+
         }
     }
 
@@ -1386,11 +1370,10 @@ void VCFData::processNextChunk() {
     swrdvcf.stop();
 
 //    // DEBUG
-//    cerr << "sf/s/e: " << startChunkFlankIdx[currChunk] << "/" << startChunkIdx[currChunk] << "/" << endChunkFlankIdx[currChunk]
-//         << " size/sizef: " <<  endChunkFlankIdx[currChunk] - startChunkIdx[currChunk] << "/" << endChunkFlankIdx[currChunk] - startChunkFlankIdx[currChunk]
+//    cerr << "\nendf: " << endChunkFlankIdx[currChunk]
+//         << " reltgtlines: " << ( endChunkFlankIdx[currChunk] - (currChunk ? endChunkFlankIdx[currChunk-1] : 0) )
 //         << " tgtlinesread: " << tgtlinesread
-//         << " sfn/sn: " << startChunkFlankIdx[currChunk+1] << "/" << startChunkIdx[currChunk+1]
-//         << endl;
+//         << " startfnext: " << ( endChunkFlankIdx[currChunk] - currMOverlap ) << endl;
 //    cerr << "currChunkOffset: " << currChunkOffset << " currM: " << M << " currMref: " << Mref << endl;
 //    cerr << "MLeftOv: " << MLeftOv << " MRightOv: " << MRightOv << endl;
 //    cerr << "MrefLeftOv: " << MrefLeftOv << " MrefRightOv: " << MrefRightOv << endl;

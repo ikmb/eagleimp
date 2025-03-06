@@ -481,9 +481,9 @@ int main(int argc, char *argv[]) {
 
 //        // DEBUG
 //        MyMalloc::printSummary(string("after chunk ")+to_string(chunk+1));
-//        ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
-//        MyMalloc::dumpMemMap(ofs);
-//        ofs.close();
+////        ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
+////        MyMalloc::dumpMemMap(ofs);
+////        ofs.close();
 //        // __DEBUG
 
     } // end for all chunks

@@ -285,8 +285,6 @@ private:
     // region for current chunk (without flanks) (end inclusive!), 0-based!
     // set after reading the corresponding target data
     int64_t startChunkBp, endChunkBp;
-    vector<size_t> startChunkIdx; // tgt index for beginning of chunk
-    vector<size_t> startChunkFlankIdx; // tgt index for beginning of chunk (with flanking region)
     vector<size_t> endChunkFlankIdx; // tgt index for end of chunk (with flanking region, exclusive)
     // for phasing: start phase for each target
     // set for next chunk while writing phased or imputed data according to first heterozygous site in overlap region
