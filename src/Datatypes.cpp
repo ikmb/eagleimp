@@ -145,7 +145,7 @@ void GenotypeVector::keepLast(size_t n) {
         size_t lastbitidx = (len-1) % DATATYPEBITS;
         size_t new_lastidx = (n-1) / DATATYPEBITS;
         size_t new_lastbitidx = (n-1) % DATATYPEBITS;
-        size_t worddiff = lastidx - new_lastidx; // will be positive or zero
+        int64_t worddiff = lastidx - new_lastidx; // will be positive or zero
 
         // shift data words to align kept data correctly
         if (new_lastbitidx < lastbitidx) { // need a right shift
@@ -153,7 +153,7 @@ void GenotypeVector::keepLast(size_t n) {
             data_type mask = (1ull << shift)-1; // to mask the carry-over bits
             data_type carry_is0 = 0; // for the bits to shift in
             data_type carry_is2 = 0; // for the bits to shift in
-            for (size_t i = lastidx; i >= worddiff; i--) {
+            for (int64_t i = lastidx; i >= worddiff; i--) {
                 // store the bits that will be shifted out
                 data_type new_carry_is0 = data[2*i] & mask;
                 data_type new_carry_is2 = data[2*i+1] & mask;
