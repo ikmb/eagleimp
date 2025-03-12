@@ -520,7 +520,7 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
                     float maf = af > 0.5 ? 1-af : af;
                     size_t sm_height = sm_matches[idx].refend - sm_matches[idx].refstart + 1;
                     // check if due to AF the minor allele in this match cannot contribute enough (less than 0.1 dosage) to the score
-                    if (maf * vcfdata.getNReferenceHaps() < 0.1 * sm_height) {
+                    if (maf * vcfdata.getNReferenceHaps() < 0.01 * sm_height) {
                         sum += sm_height * single;
                         if (af > 0.5) { // if AF is not MAF -> increase score as if every ref would contribute a '1' haplotype
                             score += sm_height * single;
