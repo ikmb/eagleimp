@@ -39,6 +39,25 @@ PBWTImputer::PBWTImputer(const VCFData& vcfdata_, const string &statfile_, unsig
     setmaxerrors(setmaxerrors_),
     imputeCalls(imputeCalls_),
     debug(debug_) {
+
+    // generate warning if the missingness rate for some targets is too high (>50%)
+    vector<size_t> missgt50tgts;
+    for (size_t t = 0; t < vcfdata_.getNTarget(); t++) {
+        if (vcfdata.getTgtMissPos()[t].size() > M/2)
+            missgt50tgts.push_back(t);
+    }
+    if (missgt50tgts.size()) {
+        cout << endl;
+        stringstream ss;
+        ss << "Missingness rate is >50% for the following targets (idx / rate / ID). Imputation will generate dosage conflicts here.\n";
+        for (size_t t : missgt50tgts) {
+            float mr = vcfdata.getTgtMissPos()[t].size() / (float) M;
+            ss << "  " << t << " / ";
+            ss << fixed << setprecision(1) << roundf(1000*mr)/10.0 << "% / ";
+            ss << vcfdata.getTargetIDs()[t] << "\n";
+        }
+        StatusFile::addWarning(ss.str());
+    }
 }
 
 void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets, const vector<size_t>& num_sites_per_block) {
@@ -135,7 +154,6 @@ void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets, 
         //imputeTarget(nhap, phasedTargets[nhap], pbwt, imputedTargets[nhap], imputedDosages[nhap]);
         targets[nhap].calcSMMatches();
         targets[nhap].prepareBlocks(num_sites_per_block);
-//        cout << "Target: " << nhap/2 << "." << nhap%2 << endl;
     }
     swfindsetmax.stop();
 
