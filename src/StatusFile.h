@@ -247,17 +247,14 @@ private:
                 break;
             string m = message.substr(spos, pos - spos);
             if (!m.empty()) { // only print non-empty messages
-            	s << "\n" << ind;
             	if (first) {
-            		s << "\""; // put message in quotation marks
+            		s << "|"; // begin YAML block
             		first = false;
             	}
-                s << m;
+            	s << "\n" << ind << m;
             }
             start = pos+1; // character after newline
         }
-        if (!first)
-        	s << "\""; // end quotation mark
         s << "\n";
     }
 
