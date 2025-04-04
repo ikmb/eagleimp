@@ -34,7 +34,7 @@ TargetImp::TargetImp(size_t hap_id_, const VCFData& vcfdata_, const PBWT &pbwt_,
     M(vcfdata.getNSNPs()),
     Mref(vcfdata.getNSNPsFullRef()),
     num_blocks(num_blocks_),
-    misspos(vcfdata.getTgtMissPos()[hap_id_/2]),
+    misspos(vcfdata_.getTgtMissPos()[vcfdata_.getHaploidsTgtMap()[hap_id_]/2]),
     setmaxerrors(setmaxerrors_),
     imputeCalls(imputeCalls_),
     debug(debug_) {
@@ -72,6 +72,12 @@ TargetImp::TargetImp(size_t hap_id_, const VCFData& vcfdata_, const PBWT &pbwt_,
 // AND according to the definition of a set-maximal match, as a result, the matches will also be sorted by their "start" field
 // (if not, that would indicate that one match includes another completely, which is not possible by definition)
 void TargetImp::calcSMMatches() {
+
+    // We check the missingness rate of the target here.
+    // If the missingness rate is above 50%, we do not report any set-maximal matches.
+    // As this is usually called in parallel for several targets, we should not generate a warning here.
+    if (misspos.size() > M/2)
+        return;
 
     // keep a history of the last intervals in the reference PBWT matching the target
     // from the current position until beginning of first empty interval.
@@ -114,9 +120,9 @@ void TargetImp::calcSMMatches() {
 
 //        // DEBUG
 //        if (newmatches.size() > 0)
-//            cerr << "New matches: m: " << m << " cnt0: " << pbwt.getCount0(m) << " hap: " << (missing ? "?" : (curr_hap ? "1" : "0")) << " treedepth: " << treedepth << endl;
+//            cerr << "  New matches: m: " << m << " cnt0: " << pbwt.getCount0(m) << " hap: " << (missing ? "?" : (curr_hap ? "1" : "0")) << " treedepth: " << treedepth << endl;
 //        for (const auto &match : newmatches) {
-//           cerr << " [" << match.start << "," << match.end << ")(" << (match.end-match.start) << ") x [" << match.refstart << "," << match.refend << "](" << (match.refend - match.refstart + 1) << ")" << endl;
+//           cerr << "  [" << match.start << "," << match.end << ")(" << (match.end-match.start) << ") x [" << match.refstart << "," << match.refend << "](" << (match.refend - match.refstart + 1) << ")" << endl;
 //        }
 //        // __DEBUG
 
@@ -138,17 +144,14 @@ void TargetImp::calcSMMatches() {
 
 //    // DEBUG
 //    if (newmatches.size() > 0)
-//        cerr << "Last new matches: m: " << M << " treedepth: " << treedepth << endl;
+//        cerr << "  Last new matches: m: " << M << " treedepth: " << treedepth << endl;
 //    for (const auto &match : newmatches) {
-//       cerr << " [" << match.start << "," << match.end << ")(" << (match.end-match.start) << ") x [" << match.refstart << "," << match.refend << "](" << (match.refend - match.refstart + 1) << ")" << endl;
+//       cerr << "  [" << match.start << "," << match.end << ")(" << (match.end-match.start) << ") x [" << match.refstart << "," << match.refend << "](" << (match.refend - match.refstart + 1) << ")" << endl;
 //    }
 //    // __DEBUG
 
     // The reported matches all have the same size, since they are reported only from the maximum depth level.
     // Since the tree is deleted now, all matches are set-maximal.
-//    // DEBUG
-//    cerr << "Last matches are always set-maximal!" << endl;
-//    // __DEBUG
 
     for (auto &nm : newmatches) {
         sm_matches.push_back(move(nm));
