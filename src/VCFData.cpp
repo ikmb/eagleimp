@@ -3465,7 +3465,7 @@ inline size_t VCFData::getNumVariantsFromIndex(const string &vcffilename) {
     int nseq;
     // get the number and names of sequences stored in the target file
     const char** seq = tbx ? tbx_seqnames(tbx, &nseq) : bcf_index_seqnames(idx, hdr, &nseq);
-    // we only pick the first sequence that fits the convention, i.e. a number or literals optionally preceding with "chr" (but no special chars such as "_", ".", ...)
+    // we only pick the first sequence that fits the convention, i.e. a number or literals optionally preceding with "chr" (but no special chars such as "_", ".", ...) and nrecords > 0
     for (int i = 0; i < nseq; i++) {
         uint64_t nrecords, unmapped;
         string seqstring(seq[i]);
@@ -3474,8 +3474,10 @@ inline size_t VCFData::getNumVariantsFromIndex(const string &vcffilename) {
         if (seqstring.find_first_not_of("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") == string::npos) { // only number or literals
             hts_idx_get_stat(tbx ? tbx->idx : idx, i, &nrecords, &unmapped);
 //            cerr << "seq: " << i << " seqname: " << seq[i] << " nrecords: " << nrecords << " unmapped: " << unmapped << endl;
-            numvars = nrecords;
-            break;
+            if (nrecords) {
+                numvars = nrecords;
+                break;
+            }
         }
     }
     free(seq); // allocated by HTSlib
