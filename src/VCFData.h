@@ -284,7 +284,7 @@ private:
     const uint64_t chunkflanksize; // number of tgt variants in the overlap to the left and to the right (total overlap = 2xchunkflanksize)
     // region for current chunk (without flanks) (end inclusive!), 0-based!
     // set after reading the corresponding target data
-    int64_t startChunkBp, endChunkBp;
+    int64_t startChunkBp = 0, endChunkBp = 0;
     vector<size_t> endChunkFlankIdx; // tgt index for end of chunk (with flanking region, exclusive)
     // for phasing: start phase for each target
     // set for next chunk while writing phased or imputed data according to first heterozygous site in overlap region

@@ -1017,14 +1017,8 @@ void VCFData::processNextChunk() {
         }
 
         if (!ref && !qfound) { // SNP is not in reference (thus, it has to be in target only)
-//            if (tgt->n_allele > 1) // report if polymorphic in target -> should be counted even if monomorphic
-            if (ref) { // means ref->n_allele == 1
-                lstats.MmonomorphicRefTgt++;
-                addToInfoFileExcluded(tgt, "monomorphic reference");
-            } else {
-                lstats.MtargetOnly++;
-                addToInfoFileExcluded(tgt, "target only");
-            }
+            lstats.MtargetOnly++;
+            addToInfoFileExcluded(tgt, "target only");
             if (outputUnphased) { // this SNP cannot be used for phasing and imputation, but if the user decides to "outputUnphased" it will be copied to the phased output file
                 bcf_pout.push_back(bcf_dup(tgt));
                 isPhased.push_back(false);
@@ -1394,6 +1388,10 @@ void VCFData::processNextChunk() {
 //                   << positionsFullRefRegion[currChunkOffset+indexToRefFull[M-1]] << "/" // last common loaded
 //                   << positionsFullRefRegion[currChunkOffset+Mref-1] << ")" << endl; // last ref loaded (common if not last chunk, else last ref at all)
 //    // __DEBUG
+
+    // set endChunkBp when creating a Qref
+    if (createQRef)
+        endChunkBp = positionsFullRefRegion.back()+1; // 1-based
 
     if (pgb == 0) // just printed "xx%"
         cout << ".";
