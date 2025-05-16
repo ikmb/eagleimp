@@ -73,6 +73,7 @@ using namespace bpo;
         StatusFile::addError("No VCF or Qref reference file specified. Try --help.");
         exit(EXIT_FAILURE);
     }
+
     size_t qpos = args.ref.rfind(".qref");
     args.isQRef = qpos != string::npos && qpos == args.ref.size()-5;
 
@@ -92,11 +93,20 @@ using namespace bpo;
 //        exit(EXIT_FAILURE);
 //    }
 
-    if (!args.count("output")) { // take the base of the target file as output prefix
-        if (args.vcfTarget.size() >= 7 && args.vcfTarget.substr(args.vcfTarget.size()-7).compare(".vcf.gz") == 0) // special case for .vcf.gz
-            args.outPrefix = args.vcfTarget.substr(0, args.vcfTarget.size() - 7);
+    if (!args.count("output")) { // take the base of the target or reference file as output prefix
+        string base = args.vcfTarget; // take the target name as base (default)
+        if (args.count("makeQref")) { // take the reference name as base if creating a Qref
+            base = args.ref;
+        }
+        // remove file suffix
+        if (base.size() >= 7 && base.substr(base.size()-7).compare(".vcf.gz") == 0) // special case for .vcf.gz
+            args.outPrefix = base.substr(0, base.size() - 7);
         else // standard case: simply leave out file suffix starting with '.'
-            args.outPrefix = args.vcfTarget.substr(0, args.vcfTarget.rfind('.'));
+            args.outPrefix = base.substr(0, base.rfind('.'));
+    }
+
+    if (args.count("target") && args.count("makeQref")) {
+        StatusFile::addWarning("--target is ignored due to --makeQref.");
     }
 
     // set write mode according to desired output mode

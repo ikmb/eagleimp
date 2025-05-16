@@ -113,11 +113,11 @@ VCFData::VCFData(const Args& args, int argc, char** argv, const vector<FPGAConfi
         }
     } else { // createQRef
         // qref filename
-        if (refFileName.size() >= 7 && refFileName.substr(refFileName.size()-7).compare(".vcf.gz") == 0) // special case for .vcf.gz
-            qreffilename = refFileName.substr(0, refFileName.size() - 7);
-        else // standard case: simply leave out file suffix starting with '.'
-            qreffilename = refFileName.substr(0, refFileName.rfind('.'));
-        qreffilename.append(".qref");
+        qreffilename = args.outPrefix;
+        // append .qref if not already provided
+        size_t dp = qreffilename.rfind('.');
+        if (dp == string::npos || qreffilename.substr(dp).compare(".qref"))
+            qreffilename.append(".qref");
 
         // open output stream for variants
         qrefvarsofs.open(qreffilename+".vars", ios_base::binary);
