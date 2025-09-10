@@ -10,6 +10,7 @@ EagleImp also adds support for FPGA-based accelerated phasing if you have an Alp
 
 ### Prerequisites
 EagleImp has been tested on an Ubuntu 22.04 Linux system, but should also work on similar (especially later) distributions.
+Installation time should take only a few minutes on a standard desktop computer.
 Compilation depends on the *development* files of several system libraries, in particular **OpenMP**, **zlib**, **BOOST** (filesystem and program_options), **TBB** and others.
 On Ubuntu, most dependencies can already be resolved by the following installation:
 ```
@@ -54,26 +55,37 @@ $ eagleimp -v
 --------------------------------------------------------
 --- EagleImp: Genotype Phasing + Imputation
 ---
---- v1.00_main_ed6bc8a
---- (compiled on Nov 15 2021, 16:51:35)
+--- v2.00_main_5d13ea7
+--- (compiled on May 16 2025, 12:59:38)
 ---
---- Copyright (C) 2018-2021 by Lars Wienbrandt,
+--- Copyright (C) 2018-2025 by Lars Wienbrandt,
 --- Institute of Clinical Molecular Biology, Kiel University
 --- Distributed under the GNU GPLv3 license.
 --------------------------------------------------------
 
 Provided arguments:
   -v
-This is version v1.00_main_ed6bc8a, compiled on Nov 15 2021, 16:51:35
+This is version v2.00_main_5d13ea7, compiled on May 16 2025, 12:59:38
 Send bugs to Lars Wienbrandt <l.wienbrandt@ikmb.uni-kiel.de>
 ```
 
 ### Quick start
-We have created a minimal example that you can find in the _example_ folder in this repository. To run the example, simply type:
+We have created a minimal example that you can find in the _example_ folder in this repository.
+The expected runtime for this example is only a few seconds.
+The example is based on a VCF reference which has to be converted to a Qref first since version v2.00.
 ```
 $ cd example
-$ eagleimp --geneticMap genetic_map_hg19_chr22.txt --ref 22.example.ref.vcf.gz --target 22.example.vcf.gz
+$ eagleimp --ref 22.example.ref.vcf.gz --makeQref
 ```
+The output should be the example reference converted to a Qref file.
+Then, to run the example, simply type:
+```
+$ eagleimp --geneticMap genetic_map_hg19_chr22.txt --ref 22.example.ref.qref --target 22.example.vcf.gz
+```
+This generates a file ```22.example.imputed.vcf.gz``` that contains the imputed variants. 
+The file ```22.example.varinfo``` contains information on the original target variants, if and how they were used for the imputation.
+Average phasing confidences for each sample are included in ```22.example.phased.confidences```.
+
 However, the provided data is only exemplary. For a real analysis you need the following:
 1. To use EagleImp you need a **genetic map**. For human genome builds GRCh37 and GRCh38 they can be found e.g. at our server
 <https://hybridcomputing.ikmb.uni-kiel.de/downloads>.
@@ -82,17 +94,18 @@ The map is split by chromosomes which is recommended for a faster runtime, but a
 
 2. Phasing and imputation are always performed against a **haplotype reference**. A prominent and freely available reference is the **1000 Genomes** reference panel at
 <ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/>.<br>
-Reference files can be either in _.vcf.gz_, _.bcf_ or in our own _.qref_ format. A reference file must not contain data from more than one chromosome. So, ideally, you should have one reference file ready per chromosome.
-If you are using a _.vcf.gz_ or _.bcf_ reference file, the file must be **indexed** using either _tabix_ or _bcftools_.<br>
+Reference files must be in our own _.qref_ format, but reference files in _.vcf.gz_ or _.bcf_ format can easily be converted using the ```--makeQref``` switch.
+A reference file must not contain data from more than one chromosome. So, ideally, you should have one reference file ready per chromosome.
+If you are using a _.vcf.gz_ or _.bcf_ reference file, the file must be **indexed** using either _tabix_ or _bcftools_ before conversion.<br>
+We have prepared the 1000 Genomes GRCh37/hg19 release in _.qref_ format available for download at <https://hybridcomputing.ikmb.uni-kiel.de/downloads>.<br>
 **NOTE:** EagleImp requires the reference file be named after the chromosome it contains at the beginning of its filename, i.e. the **filename must start with the chromosome number** (or chromosome name in case of X and Y, although 23 and 24 is also allowed). A preceding "chr" is also allowed.<br>
-**NOTE:** If you use a VCF/BCF reference file, the chromosome encodings in your target and the reference must be the same. This is a restriction imposed by the HTSlib reader (that also applies to the original Eagle2). We recommend using a Qref that eliminates this restriction (see _Qref format_ below). We have prepared the 1000 Genomes GRCh37/hg19 release in _.qref_ format available for download at <https://hybridcomputing.ikmb.uni-kiel.de/downloads>.
 
 3. Finally, you need your target data in an **indexed** _.vcf(.gz)_ or _.bcf_ file. 
 Again, a target file must not contain data from more than one chromosome. Please note the special instructions for chromosomes X and Y below if you want to impute data from these chromosomes.
 
 Phasing and imputation are then simply started as in the example:
 ```
-$ eagleimp --geneticMap <path/to/genetic_map.file> --ref <path/to/chrN.reference.file.vcf.gz/.qref> --target <path/to/target.vcf.gz>
+$ eagleimp --geneticMap <path/to/genetic_map.file> --ref <path/to/chrN.reference.file.qref> --target <path/to/target.vcf.gz>
 ```
 After successful imputation you will find a file <path/to/target.imputed.vcf.gz> in your target folder. The *.vcf.gz* format is the default output format. A different format, e.g. *.bcf*, can be specified with the "--vcfOutFormat" option, and a different output prefix with the "-o" option. Please see "eagleimp --help" for more information about the available options.
 
