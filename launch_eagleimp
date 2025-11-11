@@ -138,7 +138,7 @@ fi
 
 # check if output folder exists, if not, create it
 if [[ ! -d $OUTPUTPATH ]]; then
-  mkdir $OUTPUTPATH
+  mkdir -p $OUTPUTPATH
   if [[ $? != 0 ]]; then
     echo "Could not create or find output path."
     exit 1
@@ -147,7 +147,7 @@ fi
 
 # check if stat folder existst, if not, create it
 if [[ ! -d $STATPATH ]]; then
-  mkdir $STATPATH
+  mkdir -p $STATPATH
   if [[ $? != 0 ]]; then
     echo "Could not create or find status path."
     exit 1
