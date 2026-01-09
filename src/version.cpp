@@ -1,5 +1,5 @@
 /*
- *    Copyright (C) 2018-2021 by Lars Wienbrandt and Jan Christian Kässens,
+ *    Copyright (C) 2018-2026 by Lars Wienbrandt and Jan Christian Kässens,
  *    Institute of Clinical Molecular Biology, Kiel University
  *    
  *    This file is part of EagleImp.
@@ -22,6 +22,6 @@
 
 const char * const prog_timestamp = __DATE__ ", " __TIME__;
 
-const char * const prog_version = "v2.00_" GIT_BRANCH "_" GIT_REF;
+const char * const prog_version = "v2.01_" GIT_BRANCH "_" GIT_REF;
 
 const char * const prog_bugaddress = "Lars Wienbrandt <l.wienbrandt@ikmb.uni-kiel.de>";

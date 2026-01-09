@@ -131,15 +131,15 @@ include_directories(${HTSlib_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${HTSlib_LIBRARIES})
 
 # Alpha Data API
-find_package(ADMXRC3) # optional!
-if(ADMXRC3_FOUND)
-    target_link_libraries(${PROJECT_NAME} ${ADMXRC3_LIBRARY})
-    include_directories(${ADMXRC3_INCLUDE_DIR})
-    target_compile_definitions(${PROJECT_NAME} PUBLIC USE_AD_FPGA)
-    message("Found ADMXRC3. Enabling FPGA support!")
-else()
-    message("Alpha Data API not found. Compiling without FPGA support!")
-endif()
+#find_package(ADMXRC3) # optional!
+#if(ADMXRC3_FOUND)
+#    target_link_libraries(${PROJECT_NAME} ${ADMXRC3_LIBRARY})
+#    include_directories(${ADMXRC3_INCLUDE_DIR})
+#    target_compile_definitions(${PROJECT_NAME} PUBLIC USE_AD_FPGA)
+#    message("Found ADMXRC3. Enabling FPGA support!")
+#else()
+#    message("Alpha Data API not found. Compiling without FPGA support!")
+#endif()
 
 # Boost
 find_package(Boost 1.65.1 REQUIRED
