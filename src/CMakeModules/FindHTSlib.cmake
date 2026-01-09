@@ -6,10 +6,10 @@
 #  htslib_LIBRARIES - link these to use htslib
 
 set(HTSLIB_SEARCH_DIRS
-    ${HTSLIB_SEARCH_DIRS}
-    $ENV{HTLSIB_ROOT}
-    /usr/lib/x86_64-linux-gnu
-    /usr
+#    ${HTSLIB_SEARCH_DIRS}
+#    $ENV{HTLSIB_ROOT}
+#    /usr/lib/x86_64-linux-gnu
+#    /usr
     /usr/local
 )
 
