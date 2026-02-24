@@ -27,6 +27,7 @@
 #include <sstream>
 #include <iomanip>
 #include <vector>
+#include <queue>
 #include <cstring>
 #include <map>
 
@@ -189,34 +190,66 @@ inline bool runlengthEncode(const uint64_t *src, size_t srcsize, vector<char>& d
 }
 
 // space at dest must be already reserved for the expected size of the decoded sequence (destsize in number of uint64_t) and pre-initialized with zeros!!!
-inline void runlengthDecode(const vector<char> &enc, uint64_t *dest, size_t destsize) {
-    bool currbit = true; // start condition: since remlength is 0 it will immediately be switched to false for the first word
-    int remlength = 0;
-    auto enc_it = enc.cbegin();
+inline void runlengthDecode(const vector<char> &enc, uint64_t *dest, size_t destsize, const vector<size_t>& maskedsamples) {
+//    // DEBUG
 //    cout << "start" << endl;
+
+    int remlength = 0;
+    bool currbit = true; // start condition: since remlength is 0 it will immediately be switched to false for the first word
+    auto enc_it = enc.cbegin();
+    auto ms_it = maskedsamples.cbegin();
+    queue<size_t> maskedhaps; // need to apply the sample mask to a haplotype mask (2 haps = 1 sample)
+    if (ms_it != maskedsamples.cend()) {
+        maskedhaps.push(2*(*ms_it));
+        maskedhaps.push(2*(*ms_it)+1);
+        ms_it++;
+    }
+
+    size_t hcm = 0; // haplotype count, also counts haps from masked samples
     for (size_t i = 0; i < destsize; i++, dest++) {
         uint64_t *curr = dest;
         int rem = 64;
         while (rem > 0) {
+//            // DEBUG
 //            cout << "i=" << i << " curr: " << (currbit ? "1" : "0") << " remlength: " << remlength << " rem: " << rem;
             while (remlength == 0) { // get next runlength ("while" is used to handle run lengths of zero correctly)
-                if (enc_it == enc.cend()) {
-                    StatusFile::addError("Runlength sequence is not long enough for decoding!");
-                    exit(EXIT_FAILURE);
+                if (enc_it == enc.cend()) { // finished encoded sequence (we should only reach here if we masked samples and have to fill up the remainder with padding)
+                    if ((2*maskedsamples.size()-rem) % 64 == 0) { // fill remaining bits (due to masked samples) in last destination words with padding
+                        remlength = (destsize-i-1)*64 + rem; // this will fill the remaining bits
+                        currbit = false; // zero padding (actually doesn't matter but helps for a clean exit)
+//                        // DEBUG
+//                        cout << "\n fill remainder: " << remlength << endl;
+                        break; // escape while(remlength==0) loop
+                    } else { // preliminary end of encoded sequence
+                        StatusFile::addError("Truncated runlength sequence!");
+                        exit(EXIT_FAILURE);
+                    }
                 }
-                remlength = (*enc_it) & 0x7f; // only the first 7 bits encode the runlength in the first byte
+                remlength = (*enc_it) & 0x7f; // only the 7 lower bits encode the runlength in the first byte
                 if ((*enc_it) & 0x80) { // indicator is set, so next byte has to be considered as well
                     enc_it++;
                     if (enc_it == enc.cend()) {
-                        StatusFile::addError("Runlength sequence is not long enough for decoding!");
+                        StatusFile::addError("Truncated runlength sequence!");
                         exit(EXIT_FAILURE);
                     }
                     remlength |= ((*enc_it) & 0xff) << 7;
                 }
                 enc_it++;
                 currbit = !currbit;
+                // remove haplotypes from masked samples if required
+                hcm += remlength; // count all
+                while (!maskedhaps.empty() && remlength > 0 && maskedhaps.front() < hcm) {
+                    remlength--; // ignore the masked haplotype
+                    maskedhaps.pop();
+                    if (maskedhaps.empty() && ms_it != maskedsamples.cend()) {
+                        maskedhaps.push(2*(*ms_it));
+                        maskedhaps.push(2*(*ms_it)+1);
+                        ms_it++;
+                    }
+                }
+//                // DEBUG
 //                cout << "\n load! curr: " << (currbit ? "1" : "0") << " remlength: " << remlength << " rem: " << rem;
-            }
+            } // END while (remlength == 0)
             // remlength is > 0 now
             int fill;
             if (remlength >= rem) { // will finish the current word with the current run length
@@ -237,14 +270,30 @@ inline void runlengthDecode(const vector<char> &enc, uint64_t *dest, size_t dest
                 // apply to word
                 *curr |= fillvec;
             }
+//            // DEBUG
 //            cout << " word: " << hex << setw(16) << setfill('0') << *curr << dec << endl;
-        }
-    }
-    // final check if decoding was correct
-    if (remlength || enc_it != enc.cend()) {
-        StatusFile::addError("Encoded runlength sequence is longer than excpected!");
-        exit(EXIT_FAILURE);
-    }
+        } // END while (rem > 0)
+    } // END for (i< destsize)
+//    // DEBUG
+//    cerr << "remlength: " << remlength << endl;
+//    cerr << "remlength + 2*maskedsamples.size(): " << (remlength + 2*maskedsamples.size()) << endl;
+//    cerr << " %64: " << ((remlength + 2*maskedsamples.size()) % 64) << endl;
+//    cerr << "enc_it != enc.cend(): " << (enc_it != enc.cend() ? "true" : "false") << endl;
+//    if (enc_it != enc.cend())
+//        cerr << "enc.remainder: " << enc.cend() - enc_it << endl;
+//    cerr << "ms_it != maskedsamples.cend(): " << (ms_it != maskedsamples.cend() ? "true" : "false") << endl;
+//    cerr << "!maskedhaps.empty(): " << (!maskedhaps.empty() ? "true" : "false") << endl;
+//    if (ms_it != maskedsamples.cend() || !maskedhaps.empty())
+//        cerr << "maskedsamples.remainder: " << maskedsamples.cend() - ms_it << " maskedhaps.size(): " << maskedhaps.size() << endl;
+//    cerr << "hcm: " << hcm << endl;
+//    // __DEBUG
+    // final check if decoding was correct:
+    // remlength may only be >0 if adding the masked samples fills complete words (so the remainder must be padding)
+    // ...but in rare cases, enc_it != enc.cend() is also allowed if the complete remainder is masked... so I will skip the final test.
+//    if ((remlength && ((remlength + 2*maskedsamples.size()) % 64)) || enc_it != enc.cend()) {
+//        StatusFile::addError("Encoded runlength sequence is longer than excpected!");
+//        exit(EXIT_FAILURE);
+//    }
 }
 
 inline int setLock(const string& lockdir, const string& lockfile_plain) {

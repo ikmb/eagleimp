@@ -103,7 +103,7 @@ int main(int argc, char *argv[]) {
                     cout << endl << "  ";
                     cpos = 0;
                 } else {
-                    for (; cpos < 18; cpos++) {
+                    for (; cpos < 21; cpos++) { // alignment position
                         cout << ' ';
                     }
                 }

@@ -191,25 +191,30 @@ private:
 
     void writeBCFRecords(vector<tbb::concurrent_bounded_queue<bcf1_t*>> &recq, htsFile *bcfout, bcf_hdr_t *bcfhdr, size_t numrecs);
 
+    // parses a sample list
+    void parseSampleList(const string& samplelist);
+
     int command_argc;
     char** command_argv;
 
     MapInterpolater mapint;
 
     const string refFileName;
-    vector<BooleanVector> reference; // reference haplotypes on target sites (false = ref, true = alt), size is NrefhapsxM (capacity: NrefhapsmaxxM), sample-major (includes space for phased targets for multiple phasing iterations)
+    vector<BooleanVector> reference; // reference haplotypes on target sites (false = ref, true = alt), size is Nrefhaps x M (capacity: Nrefhapsmax x M), sample-major (includes space for phased targets for multiple phasing iterations)
     BooleanVector::data_type *refdata = 0;
-    RingBuffer<BooleanVector> referenceT; // reference haplotypes on target sites (transposed), size MxNrefhaps (capacity: MxNrefhapsmax), haploids are encoded homozygous diploid!
+    RingBuffer<BooleanVector> referenceT; // reference haplotypes on target sites (transposed), size M x Nrefhaps (capacity: M x Nrefhapsmax), haploids are encoded homozygous diploid!
     BooleanVector::data_type *refdataT = 0;
-
+    vector<size_t> maskedRefSamples; // indices of samples that should be ignored when loading the reference
+    size_t NSampleList; // number of samples provided in sample list -> required for check when Qref is loaded
 
     // ATTENTION! Be aware that the underlying data chunks are not a combined portion of memory, but individually for each variant!
     // They also have to be freed individually
     vector<BooleanVector> referenceFullT; // complete reference haplotypes in chunk (false = ref, true = alt), size is Mrefx2xNref, SNP-major (no space for phased targets!)
-    // capacity for haps in one sample
+    // capacity (size in bytes) for haplotypes of all samples for one variant
     size_t hapcapacity;
+    size_t hapcapacity_beforemask; // same as hapcapacity but before masking samples
 
-    vector<GenotypeVector> targets; // target genotypes (0 = hom ref, 1 = het, 2 = hom alt, 9 = missing), size is Ntarget
+    vector<GenotypeVector> targets; // target genotypes, size is Ntarget
     vector<RingBuffer<size_t>> tgtmiss; // positions of missings in targets
     vector<RingBufferBool> tgtinphase; // input target phases, true == mat:1 pat:0, false others (only stored if --skipPhasing is enabled)
     vector<uint64_t> chrBpsReg; // base pair positions of target SNPs on target chromosome, size is Mreg

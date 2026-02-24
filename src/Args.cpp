@@ -93,6 +93,11 @@ using namespace bpo;
 //        exit(EXIT_FAILURE);
 //    }
 
+    if (args.count("excludeWithdrawals") && args.createQuickRef) {
+        StatusFile::addError("Excluding withdrawals for Qref creation is not yet supported. Try --help.");
+        exit(EXIT_FAILURE);
+    }
+
     if (!args.count("output")) { // take the base of the target or reference file as output prefix
         string base = args.vcfTarget; // take the target name as base (default)
         if (args.count("makeQref")) { // take the reference name as base if creating a Qref
@@ -227,6 +232,7 @@ Args::Args(int argc, char *argv[]) :
     ("ref", value<string>(&ref), "Qref file for reference haplotypes (tabix-indexed compressed VCF/BCF file only for Qref creation)")
     ("target", value<string>(&vcfTarget), "tabix-indexed compressed VCF/BCF file for target genotypes")
     ("vcfExclude", value<string>(&vcfExclude), "tabix-indexed compressed VCF/BCF file containing variants to exclude from phasing")
+    ("excludeWithdrawals", value<string>(&sampleList), "Provide a text file with a list of samples matching those in the provided Qref. Identifiers are in the first column (other columns are ignored), identifiers starting with \"W\" followed only by one or more digits will be excluded from the reference. Not yet supported for creating a Qref.")
     ("vcfOutFormat,O", value<string>(&vcfOutFormat)->default_value("z"), "b|u|z|v: compressed BCF (b), uncomp BCF (u), compressed VCF (z), uncomp VCF (v)")
     ("excludeMultiAllRef", "exclude multi-allelic reference markers for phasing as well as for imputation")
     ("allowRefAltSwap", "allow swapping of REF/ALT in target vs. reference VCF (the output will match reference alleles)")

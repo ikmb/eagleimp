@@ -264,6 +264,14 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
 
     ref_hdr = NULL;
     if (loadQuickRef) { // load metadata from Qref
+        if (!args.sampleList.empty())
+            parseSampleList(args.sampleList);
+//        // DEBUG
+//        cout << "Withdrawals:" << endl;
+//        for (const auto& m: maskedRefSamples)
+//            cout << m << " ";
+//        cout << endl;
+//        // __DEBUG
         qRefOpenReadMeta();
     } else { // prepare reading from VCF reference for creating a Qref
         ref_hdr = bcf_sr_get_header(sr, 0);
@@ -275,6 +283,7 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
         Nrefhapsmax = iters > 1 ? Nrefhaps + 2*Ntarget : Nrefhaps;
 #endif
         hapcapacity = roundToMultiple<size_t>(Nrefhaps, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8; // space for 2*Nref haps
+        hapcapacity_beforemask = hapcapacity; // just for consistency
 
         haploidsRef.clear();
         haploidsRef.resize(Nrefhapsmax/2, false); // initialized with all diploid
@@ -302,21 +311,25 @@ inline void VCFData::processMeta(const string &refFile, const string &vcfTarget,
     }
 
     stringstream s;
-    s << "<table><tr><td>Chromosome:         </td><td>" << chromlit << "</td></tr>";
+    s << "<table><tr><td>Chromosome:            </td><td>" << chromlit << "</td></tr>";
     StatusFile::addInfo(s.str(), false);
     yamlinfo << "    Chromosome: " << chromlit << "\n";
 
     if (!createQRef) {
-        StatusFile::addInfo("<tr><td>Target samples:     </td><td>" + to_string(Ntarget) + "</td></tr>", false);
-        StatusFile::addInfo("<tr><td>Target variants:    </td><td>" + to_string(Mglob) + "</td></tr>", false);
+        StatusFile::addInfo("<tr><td>Target samples:        </td><td>" + to_string(Ntarget) + "</td></tr>", false);
+        StatusFile::addInfo("<tr><td>Target variants:       </td><td>" + to_string(Mglob) + "</td></tr>", false);
         yamlinfo << "    Target samples: " << Ntarget << "\n";
         yamlinfo << "    Target variants: " << Mglob << "\n";
     }
-    StatusFile::addInfo("<tr><td>Reference samples:  </td><td>" + to_string(Nref) + "</td></tr>", false);
+    StatusFile::addInfo("<tr><td>Reference samples:     </td><td>" + to_string(Nref) + "</td></tr>", false);
     yamlinfo << "    Reference samples: " << Nref << "\n";
+    if (!args.sampleList.empty()) {
+        StatusFile::addInfo("<tr><td>(Excluded withdrawals: </td><td>" + to_string(maskedRefSamples.size()) + ")</td></tr>", false);
+        yamlinfo << "    Excluded withdrawals: " << maskedRefSamples.size() << "\n";
+    }
 
     if (Mrefreg == Mrefglob || !loadQuickRef) {
-        StatusFile::addInfo("<tr><td>Reference variants: </td><td>" + to_string(Mrefglob) + "</td></tr>", false);
+        StatusFile::addInfo("<tr><td>Reference variants:    </td><td>" + to_string(Mrefglob) + "</td></tr>", false);
         yamlinfo << "    Reference variants: " << Mrefglob << "\n";
     } else {
         StatusFile::addInfo("<tr><td>Reference variants (global): </td><td>" + to_string(Mrefglob) + "</td></tr>", false);
@@ -2116,11 +2129,21 @@ inline void VCFData::qRefOpenReadMeta() {
 
     // chromosome, number of samples, number of SNPs
     chrom = (int) head[7]; // TODO Note: chromlit is taken from the filename yet... change this here?
-    qin.read((char*)&Nref, sizeof(size_t));
-    qin.read((char*)&nHaploidsRef, sizeof(size_t));
+    size_t Nref_beforemask = 0;
+    size_t nHaploidsRef_beforemask = 0;
+    qin.read((char*)&Nref_beforemask, sizeof(size_t));
+    qin.read((char*)&nHaploidsRef_beforemask, sizeof(size_t));
     qin.read((char*)&Mrefglob, sizeof(size_t));
     qin.read((char*)&MrefMultiAllglob, sizeof(size_t));
+    // check if the loaded list of samples for masking participants is consistent with this Qref, i.e. the length of the list must be equal to the number of samples in the Qref
+    if (!maskedRefSamples.empty() && Nref_beforemask != NSampleList) {
+        StatusFile::addError(string("Different numbers of samples in Qref and sample list! Expected in sample list: ") + to_string(Nref_beforemask) + ", got: " + to_string(NSampleList) + ".");
+        exit(EXIT_FAILURE);
+    }
+    // remove number of masked samples from total number of samples
+    Nref = Nref_beforemask - maskedRefSamples.size();
     Nrefhaps = 2*Nref;
+    size_t Nrefhaps_beforemask = 2*Nref_beforemask;
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT
     Nrefhapsmax = iters > 1 ? Nrefhaps + 2*(DEBUG_TARGET_STOP-DEBUG_TARGET_START+1) : Nrefhaps;
 #else
@@ -2135,18 +2158,26 @@ inline void VCFData::qRefOpenReadMeta() {
     // Note, we only load this information per default from chrX to be backward compatible. Otherwise, we load this if at least one sample
     // is haploid with the exception if we know that ALL samples are haploid.
     haploidsRef.clear();
-    haploidsRef.resize(Nrefhapsmax/2, nHaploidsRef == Nref); // initialized with all diploid if not all samples are haploid
+    haploidsRef.resize(Nrefhapsmax/2, nHaploidsRef_beforemask == Nref_beforemask); // initialized with all diploid if not all samples are haploid
     haploidsRef_initialized.clear();
     haploidsRef_initialized.resize(Nref, true); // all initialized, since we are loading them from Qref
     haploidsRefMap.clear();
     haploidsRefMap.reserve(Nrefhapsmax);
-    if ((nHaploidsRef > 0 && nHaploidsRef != Nref) || chrom == CHRX) {
-        for (size_t i = 0; i < Nref; i++) {
+    nHaploidsRef = nHaploidsRef_beforemask; // will be corrected below if haploids get filtered
+    if ((nHaploidsRef_beforemask > 0 && nHaploidsRef_beforemask != Nref_beforemask) || chrom == CHRX) {
+        auto ms_it = maskedRefSamples.cbegin();
+        for (size_t i = 0; i < Nref_beforemask; i++) {
             char flag;
             qin >> flag;
             if (qin.fail() || qin.eof()) {
                 StatusFile::addError("Failed reading haploid flags from reference.");
                 exit(EXIT_FAILURE);
+            }
+            if (ms_it != maskedRefSamples.cend() && *ms_it == i) {
+                ms_it++;
+                if (flag) // masked haploid sample
+                    nHaploidsRef--;
+                continue; // ignore masked sample
             }
             haploidsRef[i] = flag != 0;
             haploidsRefMap.push_back(2*i);
@@ -2154,11 +2185,13 @@ inline void VCFData::qRefOpenReadMeta() {
                 haploidsRefMap.push_back(2*i+1);
         }
         // NOTE: the missing flags (Nrefhaps to Nrefhapsmax) are created during reading of target!
-    } else if (nHaploidsRef == Nref) {
+    } else if (nHaploidsRef_beforemask == Nref_beforemask) {
         // all haploid: map to every second index
         for (size_t i = 0; i < Nrefhapsmax/2; i++)
             haploidsRefMap.push_back(2*i);
-    } else { // all diploid chromosome: identity
+        // correct number of haploids by number of masked samples (as all are haploid)
+        nHaploidsRef -= maskedRefSamples.size();
+    } else { // all diploid chromosome: identity (nHaploidsRef == 0)
         for (size_t i = 0; i < Nrefhapsmax; i++)
             haploidsRefMap.push_back(i);
     }
@@ -2311,6 +2344,7 @@ inline void VCFData::qRefOpenReadMeta() {
 
     // now, the datastream points to the beginning of the samples' haplotypes
     hapcapacity = roundToMultiple<size_t>(Nrefhaps, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8; // space for 2*Nref haps
+    hapcapacity_beforemask = roundToMultiple<size_t>(Nrefhaps_beforemask, UNITWORDS*sizeof(BooleanVector::data_type)*8)/8; // space for 2*Nref haps
 
     qrefcurridxglob = 0;
     // forward to first haps in selected region
@@ -2320,7 +2354,7 @@ inline void VCFData::qRefOpenReadMeta() {
         qin.read((char*)&encsize, sizeof(size_t));
         // if the data was runlength encoded, encsize is > 0, else we need to skip the uncoded sequence
         if (encsize == 0)
-            encsize = hapcapacity;
+            encsize = hapcapacity_beforemask;
         // skip sequence
         qin.seekg(encsize, ios_base::cur);
         qrefcurridxglob++;
@@ -2331,6 +2365,12 @@ inline void VCFData::qRefOpenReadMeta() {
 
 inline void VCFData::qRefLoadNextVariant(bool store) {
     // load haplotype data
+
+//    // DEBUG
+//    // stop after some lines
+//    if (referenceFullT.size() >= 16) {
+//        exit(0);
+//    }
 
     // reserve space for data
     BooleanVector::data_type* hapdata = nullptr;
@@ -2352,12 +2392,14 @@ inline void VCFData::qRefLoadNextVariant(bool store) {
 
     size_t readbytes = 0;
     if (encsize) { // encoding was successful and we read a runlength encoded sequence here
+//        // DEBUG
+//        cout << referenceFullT.size() << " X " << hapcapacity/sizeof(BooleanVector::data_type) << endl;
         // read encoded data
         vector<char> enc(encsize);
         while (readbytes < encsize) {
             if (store)
                 qin.read(enc.data()+readbytes, encsize - readbytes);
-            else // TODO shouldn't have an effect if we leave this. The compiler might recognize that we do not need "enc" anyway.
+            else
                 qin.ignore(encsize - readbytes);
             if (qin.fail() || qin.eof()) {
                 cout << endl;
@@ -2368,19 +2410,81 @@ inline void VCFData::qRefLoadNextVariant(bool store) {
         }
         // decode
         if (store)
-            runlengthDecode(enc, hapdata, hapcapacity/sizeof(BooleanVector::data_type));
+            runlengthDecode(enc, hapdata, hapcapacity/sizeof(BooleanVector::data_type), maskedRefSamples);
     } else { // the original sequence was stored
-        while (readbytes < hapcapacity) {
-            if (store)
-                qin.read(((char*)hapdata)+readbytes, hapcapacity - readbytes);
-            else
-                qin.ignore(hapcapacity - readbytes);
-            if (qin.fail() || qin.eof()) {
-                cout << endl;
-                StatusFile::addError("Failed reading haplotypes from reference.");
-                exit(EXIT_FAILURE);
+//        // DEBUG
+//        cout << referenceFullT.size() << " O" << endl;
+        if (maskedRefSamples.empty() || !store) { // no samples to be masked or the data does not have to be stored anyway
+            // we can directly load the haplotype data into memory (or ignore it, if not stored)
+            while (readbytes < hapcapacity_beforemask) {
+                if (store)
+                    qin.read(((char*)hapdata)+readbytes, hapcapacity_beforemask - readbytes);
+                else
+                    qin.ignore(hapcapacity_beforemask - readbytes);
+                if (qin.fail() || qin.eof()) {
+                    cout << endl;
+                    StatusFile::addError("Failed reading haplotypes from reference.");
+                    exit(EXIT_FAILURE);
+                }
+                readbytes += qin.gcount();
             }
-            readbytes += qin.gcount();
+        } else { // need to ignore masked samples before storing the haplotype data (store == true)
+            BooleanVector::data_type* currstore = hapdata;
+            BooleanVector::data_type currword = 0;
+            size_t currsinword = 0; // how many samples are in "currword"
+            const size_t nsperword = sizeof(BooleanVector::data_type)*4; // samples per word, 2bits per sample
+            size_t scm = 0; // total read sample count, also counts masked samples
+            auto ms_it = maskedRefSamples.cbegin();
+            while (readbytes < hapcapacity_beforemask) {
+                BooleanVector::data_type tmp = 0;
+                qin.read((char*)&tmp, sizeof(BooleanVector::data_type)); // read (max) one word with samples
+                readbytes += qin.gcount();
+                size_t readsamples = qin.gcount() * 4; // 4 samples per byte
+                scm += readsamples; // accumulate
+                size_t maskedsamples = 0; // how many samples get masked here?
+                while (ms_it != maskedRefSamples.cend() && *ms_it < scm) {
+                    size_t pos = ((*ms_it) % nsperword) - maskedsamples; // position of the sample to be masked (sample index in loaded word), corrected by the number of already masked samples in this loop
+                    size_t mask = (1ull << (pos*2)) - 1ull; // lower bits that need to be kept marked with 1
+                    tmp = (tmp & mask) | ((tmp >> 2) & ~mask); // keep lower bits, shift eliminates masked sample (2bits), higher bits are then selected by inverted mask
+                    maskedsamples++; // one (more) sample eliminated from tmp
+                    ms_it++;
+                }
+//                if (maskedsamples == readsamples) {
+//                    // rare case when everything we read was masked
+//                    // Do we really need to catch this case? -> No. Works without, and the case is too rare.
+//                    continue;
+//                }
+
+                // shift sample data from tmp into currword, if full store in destination storage
+                if (currsinword == 0 && maskedsamples == 0 && readsamples == nsperword) {
+                    // nothing in temporary word, nothing masked and read a complete word
+                    // -> directly store it in the destination
+                    *currstore = tmp;
+                    currstore++;
+                } else {
+                    // need to store only a partial word
+                    if (currsinword == 0) { // no samples in current word
+                        // store read samples in current word
+                        currword = tmp;
+                        currsinword = readsamples - maskedsamples;
+                    } else {
+                        // store read samples in current word, but need to adjust for currently stored samples
+                        currword = currword | (tmp << (currsinword*2)); // store lower bits (first samples) of tmp in currword
+                        currsinword += readsamples - maskedsamples;
+                        if (currsinword >= nsperword) { // currword is full and some samples may not have been copied!
+                            *currstore = currword;
+                            currstore++;
+                            currsinword -= nsperword; // new count of samples in currword
+                            if (currsinword > 0) { // some samples still need to be stored
+                                // NOTE: Do NOT use when currsinword == 0 as the shift operation below would result in a shift by 64bit which is undefined behaviour!!
+                                currword = tmp >> ((nsperword - currsinword)*2); // select the top samples that were not copied yet.
+                            } else {
+                                currword = 0;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -3547,6 +3651,41 @@ void VCFData::writeBCFRecords(vector<tbb::concurrent_bounded_queue<bcf1_t*>> &re
     }
 //    // DEBUG
 //    cout << "writeBCFRecords(): Maximum queue size: " << maxqsize << endl;
+}
+
+void VCFData::parseSampleList(const string& samplelist) {
+    maskedRefSamples.clear();
+
+    ifstream file(samplelist);
+    if (!file.is_open()) {
+        StatusFile::addError("Could not open sample file for reading.");
+        exit(EXIT_FAILURE);
+    }
+
+    string line;
+    size_t idx = 0;
+    while (getline(file, line)) {
+        istringstream iss(line);
+        string sid;
+
+        if (iss >> sid) {   // extract first whitespace-separated token that's supposed to be the sample ID
+            // check if the sample ID starts with W and is only followed by digits
+            // (i.e. a typical pattern for participant withdrawals, e.g. in UKB data)
+            if (sid[0] == 'W' && sid.size() >= 2) {
+                bool digit = true;
+                for (size_t i = 1; i < sid.size(); i++) {
+                    if (!isdigit(sid[i])) {
+                        digit = false;
+                        break;
+                    }
+                }
+                if (digit)
+                    maskedRefSamples.push_back(idx); // store the sample index of the withdrawal
+            }
+        }
+        idx++;
+    }
+    NSampleList = idx; // store the total number of samples in the provided list -> has to be checked against the loaded Qref!
 }
 
 void VCFData::printSummary() const {

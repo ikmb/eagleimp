@@ -90,6 +90,7 @@ public:
     bool isQRef;
     string vcfTarget;
     string vcfExclude;
+    string sampleList;
     string writeMode;
     bool impMissing = false;
     bool allowRefAltSwap = false;
