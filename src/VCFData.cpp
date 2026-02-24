@@ -2368,7 +2368,7 @@ inline void VCFData::qRefLoadNextVariant(bool store) {
 
 //    // DEBUG
 //    // stop after some lines
-//    if (referenceFullT.size() >= 16) {
+//    if (referenceFullT.size() >= 3) {
 //        exit(0);
 //    }
 
@@ -3662,25 +3662,38 @@ void VCFData::parseSampleList(const string& samplelist) {
         exit(EXIT_FAILURE);
     }
 
-    string line;
-    size_t idx = 0;
-    while (getline(file, line)) {
-        istringstream iss(line);
-        string sid;
+    bool is_bgen = false;
+    if (samplelist.size() >= 7 && samplelist.substr(samplelist.size()-7,7).compare(".sample") == 0)
+        is_bgen = true; // bgen .sample file
 
-        if (iss >> sid) {   // extract first whitespace-separated token that's supposed to be the sample ID
-            // check if the sample ID starts with W and is only followed by digits
-            // (i.e. a typical pattern for participant withdrawals, e.g. in UKB data)
-            if (sid[0] == 'W' && sid.size() >= 2) {
-                bool digit = true;
-                for (size_t i = 1; i < sid.size(); i++) {
-                    if (!isdigit(sid[i])) {
-                        digit = false;
-                        break;
+    string line;
+    int64_t idx = is_bgen ? -2 : 0; // will ignore 2 header lines in the case of a bgen .sample file
+    while (getline(file, line)) {
+
+        if (idx >= 0) { // ignore header
+            istringstream iss(line);
+            string sid;
+
+            if (iss >> sid) { // extract first whitespace-separated token that's supposed to be the sample ID
+                if (is_bgen) { // we need to extract the ID from the second column for bgen .sample
+                    if (!(iss >> sid)) {
+                        StatusFile::addError("Sample list is not a valid bgen .sample file, as expected from the filename.");
+                        exit(EXIT_FAILURE);
                     }
                 }
-                if (digit)
-                    maskedRefSamples.push_back(idx); // store the sample index of the withdrawal
+                // check if the sample ID starts with W or "-" and is only followed by digits
+                // (i.e. a typical pattern for participant withdrawals, e.g. in UKB data)
+                if ((sid[0] == 'W' || sid[0] == '-') && sid.size() >= 2) {
+                    bool digit = true;
+                    for (size_t i = 1; i < sid.size(); i++) {
+                        if (!isdigit(sid[i])) {
+                            digit = false;
+                            break;
+                        }
+                    }
+                    if (digit)
+                        maskedRefSamples.push_back(idx); // store the sample index of the withdrawal
+                }
             }
         }
         idx++;
