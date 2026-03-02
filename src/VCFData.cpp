@@ -2129,8 +2129,8 @@ inline void VCFData::qRefOpenReadMeta() {
 
     // chromosome, number of samples, number of SNPs
     chrom = (int) head[7]; // TODO Note: chromlit is taken from the filename yet... change this here?
-    size_t Nref_beforemask = 0;
-    size_t nHaploidsRef_beforemask = 0;
+    Nref_beforemask = 0;
+    nHaploidsRef_beforemask = 0;
     qin.read((char*)&Nref_beforemask, sizeof(size_t));
     qin.read((char*)&nHaploidsRef_beforemask, sizeof(size_t));
     qin.read((char*)&Mrefglob, sizeof(size_t));
@@ -2158,31 +2158,39 @@ inline void VCFData::qRefOpenReadMeta() {
     // Note, we only load this information per default from chrX to be backward compatible. Otherwise, we load this if at least one sample
     // is haploid with the exception if we know that ALL samples are haploid.
     haploidsRef.clear();
-    haploidsRef.resize(Nrefhapsmax/2, nHaploidsRef_beforemask == Nref_beforemask); // initialized with all diploid if not all samples are haploid
+    haploidsRef.resize(Nrefhapsmax/2, nHaploidsRef_beforemask == Nref_beforemask); // initialized with all diploid if not all samples are haploid (then all are marked haploid)
     haploidsRef_initialized.clear();
     haploidsRef_initialized.resize(Nref, true); // all initialized, since we are loading them from Qref
     haploidsRefMap.clear();
     haploidsRefMap.reserve(Nrefhapsmax);
+    haploidsRef_idx.clear();
     nHaploidsRef = nHaploidsRef_beforemask; // will be corrected below if haploids get filtered
+    maskedRefSampleIsHaploid.clear(); // will stay empty if there are no masked samples
     if ((nHaploidsRef_beforemask > 0 && nHaploidsRef_beforemask != Nref_beforemask) || chrom == CHRX) {
         auto ms_it = maskedRefSamples.cbegin();
-        for (size_t i = 0; i < Nref_beforemask; i++) {
+        for (size_t i_bm = 0, i_corrected = 0; i_bm < Nref_beforemask; i_bm++, i_corrected++) {
             char flag;
             qin >> flag;
             if (qin.fail() || qin.eof()) {
                 StatusFile::addError("Failed reading haploid flags from reference.");
                 exit(EXIT_FAILURE);
             }
-            if (ms_it != maskedRefSamples.cend() && *ms_it == i) {
+            if (ms_it != maskedRefSamples.cend() && *ms_it == i_bm) {
                 ms_it++;
                 if (flag) // masked haploid sample
                     nHaploidsRef--;
+                // store ploidy of masked sample
+                maskedRefSampleIsHaploid.push_back(flag);
+                i_corrected--; // running index corrected by the masked sample
                 continue; // ignore masked sample
             }
-            haploidsRef[i] = flag != 0;
-            haploidsRefMap.push_back(2*i);
+            if (flag) {
+                haploidsRef[i_corrected] = true; // flag != 0;
+                haploidsRef_idx.push_back(i_corrected);
+            }
+            haploidsRefMap.push_back(2*i_corrected);
             if (flag == 0) // add another index only if not haploid
-                haploidsRefMap.push_back(2*i+1);
+                haploidsRefMap.push_back(2*i_corrected+1);
         }
         // NOTE: the missing flags (Nrefhaps to Nrefhapsmax) are created during reading of target!
     } else if (nHaploidsRef_beforemask == Nref_beforemask) {
@@ -2191,9 +2199,13 @@ inline void VCFData::qRefOpenReadMeta() {
             haploidsRefMap.push_back(2*i);
         // correct number of haploids by number of masked samples (as all are haploid)
         nHaploidsRef -= maskedRefSamples.size();
+        // mark all masked samples as haploid
+        maskedRefSampleIsHaploid.assign(maskedRefSamples.size(), true);
     } else { // all diploid chromosome: identity (nHaploidsRef == 0)
         for (size_t i = 0; i < Nrefhapsmax; i++)
             haploidsRefMap.push_back(i);
+        // mark all masked samples as diploid
+        maskedRefSampleIsHaploid.assign(maskedRefSamples.size(), false);
     }
 
     // load variant positions -> determine indices to load to fulfill region requests
@@ -2368,7 +2380,7 @@ inline void VCFData::qRefLoadNextVariant(bool store) {
 
 //    // DEBUG
 //    // stop after some lines
-//    if (referenceFullT.size() >= 3) {
+//    if (referenceFullT.size() >= 100) {
 //        exit(0);
 //    }
 
@@ -2392,8 +2404,6 @@ inline void VCFData::qRefLoadNextVariant(bool store) {
 
     size_t readbytes = 0;
     if (encsize) { // encoding was successful and we read a runlength encoded sequence here
-//        // DEBUG
-//        cout << referenceFullT.size() << " X " << hapcapacity/sizeof(BooleanVector::data_type) << endl;
         // read encoded data
         vector<char> enc(encsize);
         while (readbytes < encsize) {
@@ -2409,11 +2419,16 @@ inline void VCFData::qRefLoadNextVariant(bool store) {
             readbytes += qin.gcount();
         }
         // decode
-        if (store)
-            runlengthDecode(enc, hapdata, hapcapacity/sizeof(BooleanVector::data_type), maskedRefSamples);
+        if (store) {
+            size_t ac = 0;
+            runlengthDecode(enc, hapdata, hapcapacity/sizeof(BooleanVector::data_type), maskedRefSamples, haploidsRef_idx, ac);
+            // correct refpanel AF (if required)
+            if (!maskedRefSamples.empty()) {
+                alleleFreqsFullRefRegion[qrefcurridxreg] = ((float)ac) / (Nref*2 - nHaploidsRef);
+            }
+        }
+
     } else { // the original sequence was stored
-//        // DEBUG
-//        cout << referenceFullT.size() << " O" << endl;
         if (maskedRefSamples.empty() || !store) { // no samples to be masked or the data does not have to be stored anyway
             // we can directly load the haplotype data into memory (or ignore it, if not stored)
             while (readbytes < hapcapacity_beforemask) {
@@ -2435,6 +2450,8 @@ inline void VCFData::qRefLoadNextVariant(bool store) {
             const size_t nsperword = sizeof(BooleanVector::data_type)*4; // samples per word, 2bits per sample
             size_t scm = 0; // total read sample count, also counts masked samples
             auto ms_it = maskedRefSamples.cbegin();
+            auto mshap_it = maskedRefSampleIsHaploid.cbegin();
+            size_t maskedVarAlleles = 0;
             while (readbytes < hapcapacity_beforemask) {
                 BooleanVector::data_type tmp = 0;
                 qin.read((char*)&tmp, sizeof(BooleanVector::data_type)); // read (max) one word with samples
@@ -2444,16 +2461,23 @@ inline void VCFData::qRefLoadNextVariant(bool store) {
                 size_t maskedsamples = 0; // how many samples get masked here?
                 while (ms_it != maskedRefSamples.cend() && *ms_it < scm) {
                     size_t pos = ((*ms_it) % nsperword) - maskedsamples; // position of the sample to be masked (sample index in loaded word), corrected by the number of already masked samples in this loop
-                    size_t mask = (1ull << (pos*2)) - 1ull; // lower bits that need to be kept marked with 1
+
+                    // count masked variant alleles (for AF correction)
+                    BooleanVector::data_type hapmask = (3ull << (pos*2)); // 11 at the position of the masked sample
+                    if (tmp & hapmask) { // at least one variant allele is masked
+                        maskedVarAlleles++;
+                        if (((tmp & hapmask) == hapmask) && !(*mshap_it))
+                            maskedVarAlleles++; // masked diploid homozygous variant sample
+                    }
+
+                    // remove masked sample
+                    BooleanVector::data_type mask = (1ull << (pos*2)) - 1ull; // lower bits that need to be kept marked with 1
                     tmp = (tmp & mask) | ((tmp >> 2) & ~mask); // keep lower bits, shift eliminates masked sample (2bits), higher bits are then selected by inverted mask
                     maskedsamples++; // one (more) sample eliminated from tmp
                     ms_it++;
+                    mshap_it++;
+
                 }
-//                if (maskedsamples == readsamples) {
-//                    // rare case when everything we read was masked
-//                    // Do we really need to catch this case? -> No. Works without, and the case is too rare.
-//                    continue;
-//                }
 
                 // shift sample data from tmp into currword, if full store in destination storage
                 if (currsinword == 0 && maskedsamples == 0 && readsamples == nsperword) {
@@ -2470,23 +2494,36 @@ inline void VCFData::qRefLoadNextVariant(bool store) {
                     } else {
                         // store read samples in current word, but need to adjust for currently stored samples
                         currword = currword | (tmp << (currsinword*2)); // store lower bits (first samples) of tmp in currword
+                        size_t currsinword_old = currsinword;
                         currsinword += readsamples - maskedsamples;
                         if (currsinword >= nsperword) { // currword is full and some samples may not have been copied!
                             *currstore = currword;
                             currstore++;
-                            currsinword -= nsperword; // new count of samples in currword
-                            if (currsinword > 0) { // some samples still need to be stored
+                            if (currsinword > nsperword) { // some samples still need to be stored
                                 // NOTE: Do NOT use when currsinword == 0 as the shift operation below would result in a shift by 64bit which is undefined behaviour!!
-                                currword = tmp >> ((nsperword - currsinword)*2); // select the top samples that were not copied yet.
+                                currword = tmp >> ((nsperword-currsinword_old)*2); // select the top samples that were not copied yet.
                             } else {
                                 currword = 0;
                             }
+                            currsinword -= nsperword; // new count of samples in currword
                         }
                     }
                 }
+            } // END while (readbytes < hapcapacity_beforemask)
+            // write remainder
+            if (currsinword) {
+                *currstore = currword;
             }
-        }
-    }
+
+            // correct refpanel AF
+            float old_af = alleleFreqsFullRefRegion[qrefcurridxreg];
+            size_t old_an = Nref_beforemask*2 - nHaploidsRef_beforemask;
+            float new_ac = old_an * old_af - maskedVarAlleles;
+            size_t new_an = Nref*2 - nHaploidsRef;
+            alleleFreqsFullRefRegion[qrefcurridxreg] = new_ac / new_an;
+
+        } // END else (ignoring masked samples)
+    } // END else (sequence was not runlength encoded)
 
     qrefcurridxglob++;
     qrefcurridxreg++;

@@ -30,6 +30,7 @@
 #include <queue>
 #include <cstring>
 #include <map>
+#include <algorithm>
 
 extern "C" {
 #include <sys/types.h>
@@ -190,7 +191,7 @@ inline bool runlengthEncode(const uint64_t *src, size_t srcsize, vector<char>& d
 }
 
 // space at dest must be already reserved for the expected size of the decoded sequence (destsize in number of uint64_t) and pre-initialized with zeros!!!
-inline void runlengthDecode(const vector<char> &enc, uint64_t *dest, size_t destsize, const vector<size_t>& maskedsamples) {
+inline void runlengthDecode(const vector<char> &enc, uint64_t *dest, size_t destsize, const vector<size_t>& maskedsamples, const vector<size_t>& haploids_idx, size_t& ac) {
 //    // DEBUG
 //    cout << "start" << endl;
 
@@ -204,6 +205,13 @@ inline void runlengthDecode(const vector<char> &enc, uint64_t *dest, size_t dest
         maskedhaps.push(2*(*ms_it)+1);
         ms_it++;
     }
+    ac = 0; // allele count (1-count)
+    size_t bc = 0; // bit count (all output bits)
+    size_t nexthapbit = ~0ull; // indicates to the next haplotype bit (diploid samples!), default is the largest number if no haploids are present
+    auto nexthap_it = haploids_idx.cbegin(); // if the vector is empty, this will be equal to cend()
+    if (!haploids_idx.empty()) {
+        nexthapbit = 2*(*nexthap_it);
+    }
 
     size_t hcm = 0; // haplotype count, also counts haps from masked samples
     for (size_t i = 0; i < destsize; i++, dest++) {
@@ -216,7 +224,7 @@ inline void runlengthDecode(const vector<char> &enc, uint64_t *dest, size_t dest
                 if (enc_it == enc.cend()) { // finished encoded sequence (we should only reach here if we masked samples and have to fill up the remainder with padding)
                     if ((2*maskedsamples.size()-rem) % 64 == 0) { // fill remaining bits (due to masked samples) in last destination words with padding
                         remlength = (destsize-i-1)*64 + rem; // this will fill the remaining bits
-                        currbit = false; // zero padding (actually doesn't matter but helps for a clean exit)
+                        currbit = false; // zero padding
 //                        // DEBUG
 //                        cout << "\n fill remainder: " << remlength << endl;
                         break; // escape while(remlength==0) loop
@@ -261,6 +269,7 @@ inline void runlengthDecode(const vector<char> &enc, uint64_t *dest, size_t dest
                 rem -= remlength;
                 remlength = 0;
             }
+            bc += fill;
             // fill the next "fill" bits: (only 1's, pre-initialized with 0's)
             if (currbit) {
                 // build a vector of "fill" ones
@@ -269,6 +278,21 @@ inline void runlengthDecode(const vector<char> &enc, uint64_t *dest, size_t dest
                 fillvec <<= 64-(rem+fill);
                 // apply to word
                 *curr |= fillvec;
+                // count the 1's
+                ac += fill;
+            }
+            // correct ac in the case of haploids
+            while (nexthapbit < bc) {
+                // one of the last samples was haploid
+                if (currbit) // correct the allele count (as haploids are stored homozygous diploid)
+                    ac--;
+                nexthap_it++;
+                if (nexthap_it == haploids_idx.cend())
+                    nexthapbit = ~0ull;
+                else
+                    nexthapbit = 2*(*nexthap_it);
+                // DEBUG
+                cout << "nhb: " << nexthapbit << endl;
             }
 //            // DEBUG
 //            cout << " word: " << hex << setw(16) << setfill('0') << *curr << dec << endl;

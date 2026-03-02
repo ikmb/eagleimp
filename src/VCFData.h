@@ -205,6 +205,7 @@ private:
     RingBuffer<BooleanVector> referenceT; // reference haplotypes on target sites (transposed), size M x Nrefhaps (capacity: M x Nrefhapsmax), haploids are encoded homozygous diploid!
     BooleanVector::data_type *refdataT = 0;
     vector<size_t> maskedRefSamples; // indices of samples that should be ignored when loading the reference
+    vector<bool> maskedRefSampleIsHaploid; // to each masked sample store if it is haploid -> required to recalculate refpanel allele frequency
     size_t NSampleList; // number of samples provided in sample list -> required for check when Qref is loaded
 
     // ATTENTION! Be aware that the underlying data chunks are not a combined portion of memory, but individually for each variant!
@@ -229,7 +230,9 @@ private:
     vector<bool> haploidsRef; // flag for all samples in reference that are haploid (only allowed (and used) for X and Y chromosome)
     vector<bool> haploidsRef_initialized; // flag for all samples if the information in haploidsRef is valid, usually set after first reference SNP (just in the case if the first genotype is missing, it will be set later)
     vector<size_t> haploidsRefMap; // map index of any haplotype vector (indexed from where haploids are encoded as haploids) to index in reference where haploids are encoded as homozygous diploid
+    vector<size_t> haploidsRef_idx; // indices of all haploid reference samples (only used for chrX)
     size_t       nHaploidsRef = 0; // number of haploid reference samples
+    size_t       nHaploidsRef_beforemask = 0; // number of haploid reference samples before masking samples
     RingBuffer<float> alleleFreqsCommon; // size corresponds to phased sites, contains the allele frequencies of each variant (-1.0 if unknown)
     RingBuffer<bcf1_t*> bcf_pout; // all records w/o genotypes for phased output; if "outputUnphased" is set, this vector keeps the records of the unphased SNPs including genotypes as well; ensure to add copies only!
     bcf_hdr_t *tgt_hdr_cpy; // copy of the target header used for the phased output file -> for imputation, the sample names are copied
@@ -252,6 +255,7 @@ private:
     BooleanVector multiAllFlagsFullRefRegion;  // marked true if multi-allelic variant was split to bi-allelic, of complete reference in region
 
     size_t Nref;
+    size_t Nref_beforemask;
     size_t Nrefhaps; // number of reference haplotypes (NOTE: originally haploids are encoded homozygous diploid!, so this is 2*Nref)
     size_t Ntarget; // number of target samples
     size_t Nrefhapsmax; // maximum number of reference samples (Nrefhaps if iters <= 1, Nrefhaps+Ntargethaps else)
