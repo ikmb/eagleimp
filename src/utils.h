@@ -291,8 +291,8 @@ inline void runlengthDecode(const vector<char> &enc, uint64_t *dest, size_t dest
                     nexthapbit = ~0ull;
                 else
                     nexthapbit = 2*(*nexthap_it);
-                // DEBUG
-                cout << "nhb: " << nexthapbit << endl;
+//                // DEBUG
+//                cout << "nhb: " << nexthapbit << endl;
             }
 //            // DEBUG
 //            cout << " word: " << hex << setw(16) << setfill('0') << *curr << dec << endl;
