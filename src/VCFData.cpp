@@ -2420,14 +2420,15 @@ inline void VCFData::qRefLoadNextVariant(bool store) {
         }
         // decode
         if (store) {
-            size_t ac = 0;
-            vector<size_t> empty(0);
-            const vector<size_t>& haploids_tmp = maskedRefSamples.empty() ? empty : haploidsRef_idx;
-            // if there are no samples to mask, we don't need the allele count, hence we also do not need the correction for haploids and we supply the method with an empty haploids vector
-            runlengthDecode(enc, hapdata, hapcapacity/sizeof(BooleanVector::data_type), maskedRefSamples, haploids_tmp, ac);
+            size_t maskedVarAlleles = 0;
+            runlengthDecode(enc, hapdata, hapcapacity/sizeof(BooleanVector::data_type), maskedRefSamples, maskedRefSampleIsHaploid, maskedVarAlleles);
             // correct refpanel AF (if required)
             if (!maskedRefSamples.empty()) {
-                alleleFreqsFullRefRegion[qrefcurridxreg] = ((float)ac) / (Nref*2 - nHaploidsRef);
+                float old_af = alleleFreqsFullRefRegion[qrefcurridxreg];
+                size_t old_an = Nref_beforemask*2 - nHaploidsRef_beforemask;
+                float new_ac = old_an * old_af - maskedVarAlleles;
+                size_t new_an = Nref*2 - nHaploidsRef;
+                alleleFreqsFullRefRegion[qrefcurridxreg] = new_ac / new_an;
             }
         }
 
