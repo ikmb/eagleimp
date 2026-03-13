@@ -2021,10 +2021,8 @@ inline void VCFData::qRefWriteMetaAndConcat() {
     qout.write((char*)&MrefMultiAllreg, sizeof(size_t));
     qout << flush;
 
-    // if this is chrX, dump the information on haploid reference samples (for Y we know that all samples are haploid)
-    // Note, this is kept to be backward compatible.
-    // In general, if there is at least one haploid sample, we dump the flags, with the only exception if ALL samples are haploid (e.g. for chrY).
-    if ((nHaploidsRef > 0 && nHaploidsRef != Nref) || chrom == CHRX) {
+    // if there is at least one haploid sample, we dump the flags, with the only exception if ALL samples are haploid (e.g. for chrY).
+    if (nHaploidsRef > 0 && nHaploidsRef != Nref) {
         // we spend one byte per flag... TODO could be compacted!
         for (bool flag : haploidsRef) {
             qout << (char)(flag ? -1 : 0);
@@ -2165,8 +2163,8 @@ inline void VCFData::qRefOpenReadMeta() {
     haploidsRefMap.reserve(Nrefhapsmax);
     haploidsRef_idx.clear();
     nHaploidsRef = nHaploidsRef_beforemask; // will be corrected below if haploids get filtered
-    maskedRefSampleIsHaploid.clear(); // will stay empty if there are no masked samples
-    if ((nHaploidsRef_beforemask > 0 && nHaploidsRef_beforemask != Nref_beforemask) || chrom == CHRX) {
+    maskedRefSampleIsHaploid.clear();
+    if (nHaploidsRef_beforemask > 0 && nHaploidsRef_beforemask != Nref_beforemask) {
         auto ms_it = maskedRefSamples.cbegin();
         for (size_t i_bm = 0, i_corrected = 0; i_bm < Nref_beforemask; i_bm++, i_corrected++) {
             char flag;

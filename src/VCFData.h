@@ -410,8 +410,8 @@ private:
 
     bool yaml = false;
 
-    static const int QREFV_MAJ = 1;
-    static const int QREFV_MIN = 1;
+    static const int QREFV_MAJ = 2;
+    static const int QREFV_MIN = 0;
 
     static const int TMPBUFSIZE = 128;
 

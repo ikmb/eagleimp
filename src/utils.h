@@ -131,19 +131,25 @@ inline string reverseComplement(const char *s) {
 }
 
 inline void addRunlength(size_t runlength, vector<char>& dest) {
-    const size_t MAXRUNLENGTH = 32767; // 2^31-1
+    const size_t MAXRUNLENGTH = 4194303; // 2^22-1
     const size_t MIN2BYTERUNLENGTH = 128;
+    const size_t MIN3BYTERUNLENGTH = 16384;
     while (runlength > MAXRUNLENGTH) {
-        // add maximum run length and following zero byte to encode run lengths exceeding two bytes
-        // NOTE: the MSB of the first byte is only an indicator, that the second byte must be considered as well for the runlength
+        // add maximum run length and a following zero byte to encode run lengths exceeding three bytes
+        // NOTE: the MSB of the first and second bytes are only indicators, that the third byte must be considered as well for the runlength
         dest.push_back((char)0xff); // including indicator
-        dest.push_back((char)0xff);
+        dest.push_back((char)0xff); // including 2nd indicator
+        dest.push_back((char)0xff); // final byte for max runlength
         dest.push_back((char)0); // zero byte
         runlength -= MAXRUNLENGTH;
     }
-    if (runlength >= MIN2BYTERUNLENGTH) { // runlength needs to be encoded in two bytes
-        dest.push_back((char)((runlength & 0x7f) | 0x80)); // lower 7 bits including 2-byte indicator
-        dest.push_back((char)(runlength >> 7)); // higher 8 bits
+    if (runlength >= MIN3BYTERUNLENGTH) { // runlength needs to be encoded in three bytes
+        dest.push_back((char)(( runlength       & 0x7f) | 0x80)); // lower 7 bits including first indicator
+        dest.push_back((char)(((runlength >> 7) & 0x7f) | 0x80)); // next 7 bits including second indicator
+        dest.push_back((char)(  runlength >> 14               )); // higher remaining bits (max. 8)
+    } else if (runlength >= MIN2BYTERUNLENGTH) { // runlength needs to be encoded in two bytes
+        dest.push_back((char)(( runlength       & 0x7f) | 0x80)); // lower 7 bits including indicator
+        dest.push_back((char)(  runlength >> 7                )); // higher remaining bits (max. 7)
     } else // runlength is encoded in one byte
         dest.push_back((char)runlength);
 }
@@ -154,7 +160,7 @@ inline void addRunlength(size_t runlength, vector<char>& dest) {
 // NOTE: the encoding stops and returns false, if the encoded sequence will be greater than the source!!
 inline bool runlengthEncode(const uint64_t *src, size_t srcsize, vector<char>& dest) {
     dest.clear();
-    dest.reserve(srcsize*8+3); // works with any value, but this is probably most efficient for the current implementation; NOTE: srcsize is the number of uint64_t's used for chars
+    dest.reserve((srcsize+1)*8); // works with any value, but this is probably most efficient for the current implementation; NOTE: srcsize is the number of uint64_t's used for chars
     bool currbit = false;
     size_t currlength = 0;
     for (size_t i = 0; i < srcsize; i++, src++) {
@@ -232,14 +238,22 @@ inline void runlengthDecode(const vector<char> &enc, uint64_t *dest, size_t dest
                         exit(EXIT_FAILURE);
                     }
                 }
-                remlength = (*enc_it) & 0x7f; // only the 7 lower bits encode the runlength in the first byte
+                remlength = (uint64_t)((*enc_it) & 0x7f); // read the runlength encoded in the lower 7 bits
                 if ((*enc_it) & 0x80) { // indicator is set, so next byte has to be considered as well
                     enc_it++;
                     if (enc_it == enc.cend()) {
                         StatusFile::addError("Truncated runlength sequence!");
                         exit(EXIT_FAILURE);
                     }
-                    remlength |= ((*enc_it) & 0xff) << 7;
+                    remlength |= ((uint64_t)((*enc_it) & 0x7f)) << 7;
+                    if ((*enc_it) & 0x80) { // indicator is set again, so again consider the next byte
+                        enc_it++;
+                        if (enc_it == enc.cend()) {
+                            StatusFile::addError("Truncated runlength sequence!");
+                            exit(EXIT_FAILURE);
+                        }
+                        remlength |= (((uint64_t)(*enc_it)) & 0xffull) << 14;
+                    }
                 }
                 enc_it++;
                 currbit = !currbit;
