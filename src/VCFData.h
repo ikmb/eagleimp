@@ -357,6 +357,8 @@ private:
     size_t qrefcurridxglob = 0;
     size_t qrefcurridxreg = 0; // points to the next variant to be loaded (equals the number of loaded variants in the region)
     ifstream qin; // for Qref
+    vector<char> qin_buffer; // read buffer for Qref
+    const size_t QINBUFFERSIZE = 64 * 1024 * 1024; // fixed to 64 MiB for now
     bcf_srs_t *sr; // synchronized reader, for VCF/BCF
     bcf_hdr_t *ref_hdr; // header for reading reference VCF
     bcf_hdr_t *tgt_hdr; // header for reading target VCF

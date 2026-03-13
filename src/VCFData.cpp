@@ -1009,8 +1009,8 @@ void VCFData::processNextChunk() {
           continue;
         }
 
-        // if we read a quick reference, tgt is set here and needs to be processed.
-        // so, we forward our qref cursor either to a common variant or to the next variant (in which case the current variant is target-only).
+        // if we read a Qref, tgt is set here and needs to be processed.
+        // so, we forward our Qref cursor either to a common variant or to the next variant (in which case the current variant is target-only).
         size_t qfoundidx = 0, qrold = qridx;
         bool qrswapped = false, qrflipped = false, qrrefalterror = false;
         bool qfound = loadQuickRef ? loadAndFindInQref(tgt, qridx, qrswapped, qrflipped, qrrefalterror) : false;
@@ -1199,10 +1199,11 @@ void VCFData::processNextChunk() {
         // copy ref information for phasing
         af = alleleFreqsFullRefRegion[qfoundidx];
         referenceT[currM].setSize(Nrefhaps); // size will be the number of haps to add
-        for (size_t i = 0; i < Nrefhaps; i++) {
+        for (size_t i = 0; i < Nrefhaps; i++) // TODO move to setWithPreInit here and directly move to runlength decoding -> should be much faster!
             reference[i].push_back_withPreInit(referenceFullT[qfoundidx-currChunkOffset][i]);
-            referenceT[currM].setWithPreInit(i, referenceFullT[qfoundidx-currChunkOffset][i]);
-        }
+//        for (size_t i = 0; i < Nrefhaps; i++)
+//            referenceT[currM].setWithPreInit(i, referenceFullT[qfoundidx-currChunkOffset][i]);
+        memcpy(referenceT[currM].getData(), referenceFullT[qfoundidx-currChunkOffset].getData(), hapcapacity);
 
         // process target genotypes: append Ntarget entries (0/1/2/9) to genosTarget[]
         processTargetSNP(Ntarget, ntgt_gt, reinterpret_cast<int*>(tgt_gt), refaltswap, numMissing, tgt->pos);
@@ -2105,6 +2106,10 @@ inline void VCFData::qRefAppendVariant(const BooleanVector& var) {
 inline void VCFData::qRefOpenReadMeta() {
 //    StatusFile::updateStatus(0, "Loading Qref metadata");
 
+
+    qin_buffer.clear();
+    qin_buffer.resize(QINBUFFERSIZE); // fixed size of 64 MiB (for now)
+    qin.rdbuf()->pubsetbuf(qin_buffer.data(), QINBUFFERSIZE);
     qin.open(refFileName, ios_base::binary);
     if (qin.fail()) {
         StatusFile::addError("Could not open Qref file.");
