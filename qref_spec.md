@@ -35,7 +35,7 @@ Qref is a binary format and consists of:
 ```
 
 Each byte represents a flag if the corresponding sample is haploid (1) or not (0).
-The flags are only present if NrefHap > 0 and NrefHap < Nref or chrom == 23 (chromosome X).
+The flags are only present if NrefHap > 0 and NrefHap < Nref.
 The flags are required to restore haploid samples whose haplotype data was encoded as homozygous diploid.
 
 ### D) Variant positions
@@ -122,24 +122,33 @@ The first 8 bytes (`<encsize>` as uint64, little-endian) before each haplotype v
     The vector is runlength encoded.
 
     `<encsize>` determines the size of the encoded `<hapvec>` in bytes.
-    `<hapvec>` is a byte vector where each byte or double-byte indicates the runlength of **alternating bits** (starting with `0`), depending on the most-significant bit (MSB) of the current byte:
+    `<hapvec>` is a byte vector where groups of up to three bytes indicate the runlength of **alternating bits** (starting with `0`), depending on the most-significant bit (MSB) of the current byte:
 
-    1. MSB is `0`:
+    1. MSB of byte_0 is `0`:
 
         ```
         byte_0: 0 x x x x x x x
         ```
         The runlength of the current bit is `byte_0 & 0x7f`. (`&` is bit-wise AND.)
 
-    2. MSB is `1`:
+    2. MSB of byte_0 is `1` and MSB of byte_1 is `0`:
 
         ```
         byte_0: 1 x x x x x x x
-        byte_1: y y y y y y y y
+        byte_1: 0 y y y y y y y
         ```
-        The runlength of the current bit is `byte_1 << 7 | byte_0 & 0x7f`. (`<<` is arithmetic left-shift, `|` is bit-wise OR, `&` is bit-wise AND.)
+        The runlength of the current bit is `((byte_1 & 0x7f) << 7) | (byte_0 & 0x7f)`. (`<<` is arithmetic left-shift, `|` is bit-wise OR, `&` is bit-wise AND.)
 
-    If the runlength for a bit is larger than the current maximum of 32767, the current bit is encoded with this maximum runlength, the next (alternated) bit is encoded with a runlength of 0, then the remaining runlength is encoded. If the remainder is still greater than 32767, the process continues until the remainder is less than 32767 where the encoding directly follows above rules.
+    3. MSB of byte_0 is `1` and MSB of byte_1 is `1`:
+
+        ```
+        byte_0: 1 x x x x x x x
+        byte_1: 1 y y y y y y y
+        byte_2: z z z z z z z z
+        ```
+        The runlength of the current bit is `(byte_2 << 14) | ((byte_1 & 0x7f) << 7) | (byte_0 & 0x7f)`. (`<<` is arithmetic left-shift, `|` is bit-wise OR, `&` is bit-wise AND.)
+
+    If the runlength for a bit is larger than the current maximum of 4,194,303, the current bit is encoded with this maximum runlength, the next (alternated) bit is encoded with a runlength of 0, then the remaining runlength is encoded. If the remainder is still greater than 4,194,303, the process continues until the remainder is less than 4,194,303 where the encoding directly follows above rules.
 
 **Examples:**
 
@@ -153,21 +162,21 @@ The first 8 bytes (`<encsize>` as uint64, little-endian) before each haplotype v
 * Runlength encoded sequence:
 
     ```
-    0x0000000000000008 | 0x0a 0x03 0xaa 0x02 0xff 0xff 0x00 0x20
+    0x0000000000000009 | 0x0a 0x03 0xaa 0x02 0xff 0xff 0xff 0x00 0x20
     ```
-    The size of the encoded vector is 8 bytes (`0x0000000000000008`), so the following 8 bytes indicate a runlength encoded sequence.
+    The size of the encoded vector is 9 bytes (`0x0000000000000009`), so the following 9 bytes indicate a runlength encoded sequence.
     All runlength encoded sequences start with the 0-bit. (To start a runlength encoded sequence with 1, the first runlength has to be 0.)
 
     `0x0a`: The MSB is zero, so the sequence starts with 10 subsequent zeros (`0x0a & 0x7f = 0x0a = 10`).
 
     `0x03`: The MSB is again zero, so the next bits are 3 subsequent ones (`0x03 & 0x7f = 0x03 = 3`).
 
-    `0xaa 0x02`: The MSB of the current byte is one, so the next byte is also part of the runlength. So, the next bits are 298 subsequent zeros: `0x02 << 7 | (0xaa & 0x7f) = 0x0100 | 0x002a = 256 + 42 = 298`.
+    `0xaa 0x02`: The MSB of the current byte is one, so the next byte is also part of the runlength. The MSB of that second byte is zero, so, the next bits are 298 subsequent zeros: `((0x02 & 0x7f) << 7) | (0xaa & 0x7f) = 0x0100 | 0x002a = 256 + 42 = 298`.
 
-    `0xff 0xff`: As before, both bytes build the runlength, which results in the maximum of 32767 here (`0xff << 7 | (0xff & 0x7f) = 32767`). Thus the sequence continues with 32767 subsequent ones.
+    `0xff 0xff 0xff`: As before, the MSB of the first byte is one, but also the MSB of the second byte is one, so three bytes build the runlength, which results in the maximum of 4,194,303 here (`(0xff << 14) | ((0xff & 0x7f) << 7) | (0xff & 0x7f) = 0x3fffff = 4194303`). Thus the sequence continues with 4,194,303 subsequent ones.
 
-    `0x00`: The runlength is zero, so no zeros follow the 32767 ones from before.
+    `0x00`: The runlength is zero, so no zeros follow the 4,194,303 ones from before.
 
-    `0x20`: The MSB is zero, so `0x20 = 32` ones are attached to the 32767 ones from before (as the runlength for zeros was zero before).
-    In fact, the last four bytes indicate an example how to encode a runlength exceeding the maximum of 32767 (here 32799).
+    `0x20`: The MSB is zero, so `0x20 = 32` ones are attached to the 4,194,303 ones from before (as the runlength for zeros was zero before).
+    In fact, the last five bytes indicate an example how to encode a runlength exceeding the maximum of 4,194,303 (here 4,194,335).
 
