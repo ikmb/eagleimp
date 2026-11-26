@@ -1,12 +1,31 @@
-FROM ubuntu:jammy
-LABEL authors="Eike Wacker & Lars Wienbrandt" \
-      description="Docker image containing EagleImp"
+ARG UBUNTU_VERSION=24.04
 
-RUN apt-get update && apt-get install -y wget cmake zlib1g-dev libboost-dev libboost-filesystem-dev libboost-program-options-dev libtbb2-dev build-essential wget libbz2-dev liblzma-dev libhts-dev && rm -rf /var/lib/apt/lists/*
+FROM ubuntu:${UBUNTU_VERSION} AS build
 
-ADD . /opt/eagleimp
+ARG MARCH=x86-64-v2
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential cmake git \
+        zlib1g-dev libboost-filesystem-dev libboost-program-options-dev libtbb-dev libhts-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
 
-RUN cd /opt && cd eagleimp && cmake -DCMAKE_BUILD_TYPE=Release -S src -B build && cd build && make -j 
+COPY . .
 
-ENV PATH="/opt/eagleimp/build:/opt/eagleimp:${PATH}"
-ARG PATH="/opt/eagleimp/build:/opt/eagleimp:${PATH}"
+RUN cmake -S src -B build -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -march=${MARCH} -mtune=generic" \
+    && cmake --build build -j"$(nproc)"
+
+FROM ubuntu:${UBUNTU_VERSION}
+LABEL org.opencontainers.image.source="https://github.com/ikmb/eagleimp" \
+      org.opencontainers.image.licenses="GPL-3.0-or-later"
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        libboost-program-options1.83.0 libgomp1 libhts3t64 libtbb12 bcftools gawk \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /src/build/eagleimp /src/launch_eagleimp /usr/local/bin/
+COPY --from=build /src/*.awk /opt/eagleimp/
+
+RUN sed -i -E '1,/^###$/ s/^([A-Z0-9]+)=(.*)$/\1=${\1-\2}/' /usr/local/bin/launch_eagleimp
+ENV REPOPATH=/opt/eagleimp
+WORKDIR /data
+CMD ["eagleimp", "-v"]

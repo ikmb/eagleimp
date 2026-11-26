@@ -1,32 +1,46 @@
-name: Docker main
-
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
+name: Docker image
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release-Tag, e.g. v2.03'
+        required: true
 
 jobs:
-  push_dockerhub:
-    name: Push new Docker image to Docker Hub (latest)
+  image:
     runs-on: ubuntu-latest
     env:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_PASS: ${{ secrets.DOCKERHUB_TOKEN }}
+      TAG: ${{ inputs.tag || (github.event_name == 'pull_request' && format('pr-{0}', github.event.number)) || github.ref_name }}
+      IMAGE: ikmb/eagleimp
     steps:
-      - name: Check out pipeline code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
-      - name: Build new docker image
-        run: docker build --no-cache . -t ikmb/eagleimp:latest
+      - uses: actions/checkout@v4
+        with:
+          path: .docker
+          sparse-checkout: Dockerfile
+          sparse-checkout-cone-mode: false
 
-      - name: Push Docker image to DockerHub (latest)
+      - name: Build
+        run: docker build -f .docker/Dockerfile -t "$IMAGE:$TAG" -t "$IMAGE:latest" .
+
+      - name: Smoke test with the repository example
         run: |
-          echo "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-          docker push ikmb/eagleimp:latest
+          docker run --rm -v "$PWD/example:/data" "$IMAGE:$TAG" sh -c '
+            eagleimp --ref 22.example.ref.vcf.gz --makeQref &&
+            eagleimp --geneticMap genetic_map_hg19_chr22.txt --ref 22.example.ref.qref --target 22.example.vcf.gz &&
+            test -s 22.example.imputed.vcf.gz'
+
+      - name: Push nach Docker Hub
+        if: github.event_name != 'pull_request'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+          docker push --all-tags "$IMAGE"
