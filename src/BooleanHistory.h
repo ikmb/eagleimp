@@ -26,6 +26,7 @@
 #include <vector>
 #include <array>
 #include <cassert>
+#include <cstdint>
 
 using namespace std;
 

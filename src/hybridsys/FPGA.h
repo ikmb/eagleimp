@@ -21,6 +21,7 @@
 #ifndef FPGA_H
 #define FPGA_H
 
+#include <array>
 #include <string>
 #include <unordered_map>
 #include <chrono>

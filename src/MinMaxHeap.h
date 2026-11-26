@@ -23,6 +23,8 @@
 
 #include <functional>
 #include <vector>
+#include <cstdint>
+#include <cmath>
 
 template<class T, class Compare = std::less<T>>
 class MinMaxHeap {
