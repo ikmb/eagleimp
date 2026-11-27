@@ -87,7 +87,7 @@ int main(int argc, char *argv[]) {
     cout << "--- " << prog_version << endl;
     cout << "--- (compiled on " <<  prog_timestamp << ")" << endl;
     cout << "---" << endl;
-    cout << "--- Copyright (C) 2018-2021 by Lars Wienbrandt," << endl;
+    cout << "--- Copyright (C) 2018-2025 by Lars Wienbrandt," << endl;
     cout << "--- Institute of Clinical Molecular Biology, Kiel University" << endl;
     cout << "--- Distributed under the GNU GPLv3 license." << endl;
     cout << "--------------------------------------------------------" << endl;
@@ -103,7 +103,7 @@ int main(int argc, char *argv[]) {
                     cout << endl << "  ";
                     cpos = 0;
                 } else {
-                    for (; cpos < 18; cpos++) {
+                    for (; cpos < 21; cpos++) { // alignment position
                         cout << ' ';
                     }
                 }
@@ -205,17 +205,6 @@ int main(int argc, char *argv[]) {
 
     // phasing parameters (hidden options)
     Target::cMmaxSplit = args.cMmaxsplit;
-//    if (args.min_ibd_a != 0 && args.min_ibd_a < args.min_ibd_b) {
-//        cerr << "ERROR! minibdA must be greater or equal to minibdB." << endl;
-//        exit(EXIT_FAILURE);
-//    }
-//    if (args.min_ibd_a == 0 || args.min_ibd_b == 0) { // disable IBD check
-//        Target::MinIBDSplitSitesA = 0ull;
-//        Target::MinIBDSplitSitesB = 0ull;
-//    } else {
-//        Target::MinIBDSplitSitesA = args.min_ibd_a;
-//        Target::MinIBDSplitSitesB = args.min_ibd_b;
-//    }
     if (args.hsize > 128 || args.hsize < args.delta+1) {
         StatusFile::addError("hsize must be <= 128 and >= delta+1.");
         exit(EXIT_FAILURE);
@@ -267,15 +256,24 @@ int main(int argc, char *argv[]) {
     }
 
     // set total number of steps for StatusFile
-    unsigned steps;
-    if (args.createQuickRef)
-        steps = 1;
-    else {
-        steps = args.skipImputation ? 1 : 2; // reading + imputation steps
-        steps += args.iters; // phasing iterations (even if phasing is skipped, we count this step)
+    {
+        unsigned stepsperchunk;
+        if (args.createQuickRef)
+            stepsperchunk = 1;
+        else {
+            stepsperchunk = args.skipImputation ? 1 : 2; // reading + imputation steps
+            stepsperchunk += args.iters; // phasing iterations (even if phasing is skipped, we count this step)
+        }
+        StatusFile::setStepsPerChunk(stepsperchunk);
+        StatusFile::setTotalChunks(vcfdata.getNChunks());
     }
-    steps *= vcfdata.getNChunks(); // all steps repeated for each chunk
-    StatusFile::updateSteps(0,steps);
+
+//    // DEBUG
+//    MyMalloc::printSummary(string("before chunks"));
+////    ofstream memofs(args.outPrefix + ".memmap_bc");
+////    MyMalloc::dumpMemMap(memofs);
+////    memofs.close();
+//    // __DEBUG
 
     // process data in chunks
     for (int chunk = 0; chunk < vcfdata.getNChunks(); chunk++) {
@@ -307,7 +305,10 @@ int main(int argc, char *argv[]) {
             if (args.hist <= 0.0 && args.hist >= 0.0) // due to "unsafe" fp-comparison...
                 args.hist = 1.0;
 
-            cout << "\nPhasing:" << endl;
+            if (args.skipPhasing)
+                cout << "\nParsing target phases:" << endl;
+            else
+                cout << "\nPhasing:" << endl;
 
             int lockfd = 0;
             if (!usefpga && !lockfile_plain.empty() && !args.skipPhasing) {
@@ -328,18 +329,10 @@ int main(int argc, char *argv[]) {
             Stopwatch swp("Phasing");
 
             if (usefpga) {
-                // This commented check is wrong since the current M is NOT the number of split sites!
-                // The limit has already been checked by creating the chunks with an estimated number of split sites of M/3.
-//                // check if current M works for FPGA
-//                if (fpgaconfigs[0].getMaxSites() < vcfdata.getNSNPs()) {
-//                    StatusFile::addError("FPGA does not support M=" + to_string(vcfdata.getNSNPs())
-//                            + " sites. Maximum: " + to_string(fpgaconfigs[0].getMaxSites()));
-//                    exit(EXIT_FAILURE);
-//                }
                 // if not set explicitly numFPGAs+2 buffers are prepared for FPGA<->host communication
                 unsigned buffersFPGA = args.get<unsigned>("buffers-FPGA");
                 size_t buffersizeFPGA = args.get<size_t>("buffer-size-FPGA");
-                phaser.setFPGAParameters(buffersFPGA == 0 ? hysys.getFPGAs().size() + 2 : buffersFPGA, buffersizeFPGA, chrono::milliseconds(args.get<unsigned long>("timeout")), maxpbwtsites);
+                phaser.setFPGAParameters(buffersFPGA == 0 ? hysys.getFPGAs().size() * 4 : buffersFPGA, buffersizeFPGA, chrono::milliseconds(args.get<unsigned long>("timeout")), maxpbwtsites);
                 term_wait = true; // need proper shutdown procedure when using FPGAs
             }
             if (usegpu) {
@@ -363,7 +356,7 @@ int main(int argc, char *argv[]) {
                 vcfdata.determineStartPhases(phasedTargets);
 
             swp.stop();
-            if (!usefpga && !lockfile_plain.empty())
+            if (!usefpga && !lockfile_plain.empty() && !args.skipPhasing)
                 releaseLock(lockfd);
 
 
@@ -378,11 +371,6 @@ int main(int argc, char *argv[]) {
             if (chunk == vcfdata.getNChunks()-1 && !args.skipPhasing) {
                 vcfdata.writePhasedConfidences(totconfidences, ncalls);
             }
-
-//#ifndef DISABLE_MYMALLOC
-//            ofstream ofs(args.outPrefix + ".memmap_p" + to_string(chunk));
-//            MyMalloc::print(ofs, string("intermediate after phasing chunk ")+to_string(chunk));
-//#endif
 
         } // END phasing block
 
@@ -408,20 +396,19 @@ int main(int argc, char *argv[]) {
 
             Stopwatch swimp("Imputation+Write");
 
-            unsigned num_workers = max(1u, args.num_threads - args.num_files);
-            // get bunch size in number of variants
-            size_t bunchsize = vcfdata.getBunchSize();
-            // test if bunch size is appropriate with current chunk
-            if (bunchsize > vcfdata.getNSNPsFullRef()) { // don't exceed the total number of reference variants in current chunk
-                bunchsize = vcfdata.getNSNPsFullRef();
-                // only set to multiple of num_workers if the memory increase would not be too much!
-                if (bunchsize > 4*num_workers)
-                    bunchsize = roundToMultiple(bunchsize, (size_t)num_workers);
-            }
-            size_t icapacity = roundToMultiple(bunchsize, UNITWORDS*8*sizeof(BooleanVector::data_type)) / 8;
+            // prepare writing of imputed data
+            vcfdata.writeVCFImputedPrepare();
 
-            BooleanVector::data_type *idata = (BooleanVector::data_type*) MyMalloc::malloc(2*vcfdata.getNTarget()*icapacity, string("idata_c")+to_string(chunk)); // pre-initialization below
-            vector<BooleanVector> imputedTargets(2*vcfdata.getNTarget(), BooleanVector(idata, 2*vcfdata.getNTarget()*icapacity, 0, toBool(Haplotype::Ref)));
+            unsigned num_workers = vcfdata.getNumWorkers();
+            unsigned num_files = vcfdata.getNumFiles();
+            const vector<size_t>& num_sites_per_file = vcfdata.getNumSitesPerFile();
+            // get (optimal) bunch size in number of variants
+            size_t bunchsize = vcfdata.getBunchSize();
+            size_t nbunches = vcfdata.getNBunches();
+
+            size_t icapacity = roundToMultiple(bunchsize, UNITWORDS*8*sizeof(BooleanVector::data_type)) / 8;
+            BooleanVector::data_type *idata = (BooleanVector::data_type*) MyMalloc::calloc(2*vcfdata.getNTarget()*icapacity, 1, string("idata_c")+to_string(chunk)); // pre-initialization below
+            vector<BooleanVector> imputedTargets(2*vcfdata.getNTarget());
             {
                 auto currdata = idata;
                 for (auto &t : imputedTargets) {
@@ -431,36 +418,40 @@ int main(int argc, char *argv[]) {
             }
             vector<vector<float>> imputedDosages(2*vcfdata.getNTarget(), vector<float>(bunchsize));
 
-            PBWTImputer imputer(vcfdata, args.statfile, args.num_threads, args.num_files, args.setmaxerrors, args.overwriteCalls || args.improveCalls, args.debug); // create with all available threads
-            imputer.prepareImputation(phasedTargets);
+            // prepare imputation
+            PBWTImputer imputer(vcfdata, args.statfile, args.num_threads, num_files, args.setmaxerrors, args.overwriteCalls || args.improveCalls, args.debug); // create with all available threads
+            imputer.prepareImputation(phasedTargets, num_sites_per_file); // this also calculates the set-maximal matches and prepares the distribution on several temp files
 
-            cout << "Using " << num_workers << " threads and " << args.num_files << " temporary files for imputation." << endl;
+            cout << "Using " << num_workers << " threads and " << num_files << " temporary files for imputation." << endl;
             imputer.setNumThreads(num_workers); // after finding the set-maximal matches, share available threads with writers
-            vcfdata.writeVCFImputedPrepare(bunchsize);
 
             // alternating imputation and writing of bunches
-            size_t nbunches = divideRounded(vcfdata.getNSNPsFullRef(), bunchsize * args.num_files);
             size_t startidx = 0;
             cout << "Imputing: 0%" << flush;
             int pgb = 0; // for progress bar
-            for (size_t bunch = 0; bunch < nbunches; bunch++, startidx += bunchsize) {
-                if (pgb == 3) { // print % after three dots
-                    cout << (100*bunch/nbunches) << "%" << flush;
-                    pgb = 0;
-                } else {
-                    cout << "." << flush;
-                    pgb++;
-                }
-                //cout << "Imputing bunch " << bunch+1 << "/" << nbunches << " ..." << endl;
-//                float progress = (bunch/(float)nbunches)/(float)vcfdata.getNChunks();
-//                progress += chunk/(float)vcfdata.getNChunks();
-                StatusFile::updateStatus(bunch/(float)nbunches);
+            // for progress display: lines per each display step (displaying 80 steps: every 5% and three dots in between)
+            size_t prghelp_total = nbunches*num_files;
+            size_t prghelp_linesperdispl = divideRounded(prghelp_total, (size_t)80);
 
-                for (unsigned f = 0; f < args.num_files; f++) {
+            for (size_t bunch = 0; bunch < nbunches; bunch++, startidx += bunchsize) {
+                for (unsigned f = 0; f < num_files; f++) {
+                    // progress display
+                    size_t prg = bunch*num_files+f;
+                    if (prg % prghelp_linesperdispl == 0) {
+                        StatusFile::updateStatus(prg/(float)prghelp_total);
+                        if (pgb == 3) { // print % after three dots
+                            cout << (100*prg/prghelp_total) << "%" << flush;
+                            pgb = 0;
+                        } else {
+                            cout << "." << flush;
+                            pgb++;
+                        }
+                    }
+
                     Stopwatch swimpb("imputeBunch");
-                    imputer.imputeBunch(f, bunchsize, imputedTargets, imputedDosages);
+                    imputer.imputeBunch(f, bunchsize, imputedTargets, imputedDosages); // fills target haps and dosages according to already calculated sm-matches
                     swimpb.stop();
-                    vcfdata.writeVCFImputedBunch(f, startidx, bunchsize, imputedTargets, imputedDosages, phasedTargets, phasedDosages);
+                    vcfdata.writeVCFImputedBunch(f, startidx, bunchsize, imputedTargets, imputedDosages, phasedTargets, phasedDosages); // prepares and writes the VCF records
                     // cleanup data for next block
                     memset(idata, 0, 2*vcfdata.getNTarget()*icapacity);
                 }
@@ -488,10 +479,12 @@ int main(int argc, char *argv[]) {
 
         MyMalloc::free(pdata);
 
-#ifndef DISABLE_MYMALLOC
-        ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
-        MyMalloc::print(ofs, string("intermediate after chunk ")+to_string(chunk));
-#endif
+//        // DEBUG
+//        MyMalloc::printSummary(string("after chunk ")+to_string(chunk+1));
+////        ofstream ofs(args.outPrefix + ".memmap_c" + to_string(chunk));
+////        MyMalloc::dumpMemMap(ofs);
+////        ofs.close();
+//        // __DEBUG
 
     } // end for all chunks
     StatusFile::clearContext();
@@ -513,10 +506,12 @@ int main(int argc, char *argv[]) {
 
     } // all destructors called
 
-#ifndef DISABLE_MYMALLOC
-    ofstream ofs(args.outPrefix + ".memmap_end");
-    MyMalloc::print(ofs, string("at end"));
-#endif
+    // DEBUG
+    MyMalloc::printSummary(string("at end"));
+//    ofstream ofs(args.outPrefix + ".memmap_end");
+//    MyMalloc::dumpMemMap(ofs);
+//    ofs.close();
+    // __DEBUG
 
     return EXIT_SUCCESS;
 }

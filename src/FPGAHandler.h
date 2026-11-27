@@ -54,7 +54,8 @@ public:
     FPGAHandler(
             hybridsys::Hybridsys &hysys,
             chrono::milliseconds timeout,
-            hybridsys::BufferFactory<hybridsys::FPGABuffer> &fpgafactory,
+            hybridsys::BufferFactory<hybridsys::FPGABuffer> &fpgafactory_wr,
+            hybridsys::BufferFactory<hybridsys::FPGABuffer> &fpgafactory_rd,
             hybridsys::BufferFactory<hybridsys::CUDABuffer> &gpufactory,
             const VCFData &vcfdata,
             size_t maxsplitsites,
@@ -83,13 +84,29 @@ public:
     // initializes constants and target data from first_target to first_target+fpgaconf.getNumPipelines() (only one target if FPGAs are not used)
     void initTargets(const vector<Target*>&, bool lastblock, int threadIndex);
 
-    // thread function that initializes the targets and streams the references
+    // processes a target block by calling initTargets and sending the references accordingly
+    void processBlock(const vector<Target*> &target_block, bool lastblock, int threadIndex);
+
+    // thread function that prepares the targets to be processed on the FPGA
+    void preparePhasing(
+            tbb::concurrent_bounded_queue<Target*> &inqueue,
+            tbb::concurrent_bounded_queue<Target*> &outqueue,
+            atomic_bool& termination_request,
+            int threadIndex
+            );
+
+    // thread function that initializes the targets on the FPGA and streams the references
     void provideReferences(
-            tbb::concurrent_bounded_queue<PBWTPhaser::targetQueue_type> &inqueue,
+            tbb::concurrent_bounded_queue<Target*> &inqueue,
             tbb::concurrent_bounded_queue<PBWTPhaser::targetQueue_type> &outqueue,
             atomic_bool& termination_request,
             int threadIndex
             );
+
+//    void readFPGA(
+//            atomic_bool& termination_request,
+//            int threadIndex
+//            );
 
     // processes the returned FPGA buffers with condensed PBWT data, providing it to phaser
     void preProcessFPGAOnly(
@@ -108,12 +125,12 @@ public:
             );
 
     bool isFinished() {
-        return targetsRemaining == 0;
+        return targetsRemaining_out == 0;
     }
 
     // shows the progress of the FPGA buffers between 0 (not started) and 1 (finished)
     double progress() {
-        return 1.0 - ((double)targetsRemaining / totalTargets);
+        return 1.0 - ((double)targetsRemaining_out / totalTargets);
     }
 
     // how many uint32_t words are required for general initialization (including sync word, excluding target specific data)
@@ -124,7 +141,8 @@ private:
     hybridsys::Hybridsys &hysys;
     FPGAConfigurationEagleImp fpgaconf;
     chrono::milliseconds timeout;
-    hybridsys::BufferFactory<hybridsys::FPGABuffer> &bufferFactoryFPGA;
+    hybridsys::BufferFactory<hybridsys::FPGABuffer> &bufferFactoryFPGA_write;
+    hybridsys::BufferFactory<hybridsys::FPGABuffer> &bufferFactoryFPGA_read;
     hybridsys::BufferFactory<hybridsys::CUDABuffer> &bufferFactoryGPU; // only required if used in combination with GPU
     const VCFData &vcfdata;
     vector<hybridsys::FPGABuffer> refbuffers;
@@ -132,12 +150,15 @@ private:
     size_t K = 0;
     size_t iter = 0;
 
+//    tbb::concurrent_bounded_queue<shared_ptr<hybridsys::FPGABuffer>> fpgaReadQueue;
+
     size_t totalTargets;
-    atomic<size_t> targetsRemaining;
+    atomic<size_t> targetsRemaining_in;
+    atomic<size_t> targetsRemaining_out;
     size_t totalBlocks;
     size_t blocksize;
     atomic<size_t> fpga_blocks_sent;
-    atomic<bool> last_block;
+    atomic<bool> last_block_flag;
 
     size_t constrequired_bufsize;
     size_t tgtsize;

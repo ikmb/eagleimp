@@ -73,10 +73,16 @@ using namespace bpo;
         StatusFile::addError("No VCF or Qref reference file specified. Try --help.");
         exit(EXIT_FAILURE);
     }
+
     size_t qpos = args.ref.rfind(".qref");
     args.isQRef = qpos != string::npos && qpos == args.ref.size()-5;
 
-    if (args.count("makeQref") && args.isQRef) {
+    if (!args.isQRef && !args.createQuickRef) {
+        StatusFile::addError("Using a VCF/BCF reference is not supported anymore. Please generate a Qref first by using --makeQref.");
+        exit(EXIT_FAILURE);
+    }
+
+    if (args.isQRef && args.createQuickRef) {
         StatusFile::addError("Qref creation requires a VCF reference. Try --help.");
         exit(EXIT_FAILURE);
     }
@@ -87,11 +93,25 @@ using namespace bpo;
 //        exit(EXIT_FAILURE);
 //    }
 
-    if (!args.count("output")) { // take the base of the target file as output prefix
-        if (args.vcfTarget.size() >= 7 && args.vcfTarget.substr(args.vcfTarget.size()-7).compare(".vcf.gz") == 0) // special case for .vcf.gz
-            args.outPrefix = args.vcfTarget.substr(0, args.vcfTarget.size() - 7);
+    if (args.count("excludeWithdrawals") && args.createQuickRef) {
+        StatusFile::addError("Excluding withdrawals for Qref creation is not yet supported. Try --help.");
+        exit(EXIT_FAILURE);
+    }
+
+    if (!args.count("output")) { // take the base of the target or reference file as output prefix
+        string base = args.vcfTarget; // take the target name as base (default)
+        if (args.count("makeQref")) { // take the reference name as base if creating a Qref
+            base = args.ref;
+        }
+        // remove file suffix
+        if (base.size() >= 7 && base.substr(base.size()-7).compare(".vcf.gz") == 0) // special case for .vcf.gz
+            args.outPrefix = base.substr(0, base.size() - 7);
         else // standard case: simply leave out file suffix starting with '.'
-            args.outPrefix = args.vcfTarget.substr(0, args.vcfTarget.rfind('.'));
+            args.outPrefix = base.substr(0, base.rfind('.'));
+    }
+
+    if (args.count("target") && args.count("makeQref")) {
+        StatusFile::addWarning("--target is ignored due to --makeQref.");
     }
 
     // set write mode according to desired output mode
@@ -121,7 +141,7 @@ using namespace bpo;
         exit(EXIT_FAILURE);
     }
 
-    if (args.bpEnd >= MAX_CSI_COOR) {
+    if (args.bpEnd > MAX_CSI_COOR) {
         StatusFile::addError("End position must not exceed maximum indexable position " + to_string(MAX_CSI_COOR));
         exit(EXIT_FAILURE);
     }
@@ -209,9 +229,13 @@ Args::Args(int argc, char *argv[]) :
     ("threads,t", value<unsigned>(&num_threads)->default_value(std::thread::hardware_concurrency()), "number of threads to use for phasing and imputation")
     ("output,o", value<string>(&outPrefix), "output file prefix (optional)")
     ("geneticMap", value<string>(&genMapFile), "HapMap genetic map")
-    ("ref", value<string>(&ref), "tabix-indexed compressed VCF/BCF file or Qref file for reference haplotypes")
+    ("ref", value<string>(&ref), "Qref file for reference haplotypes (tabix-indexed compressed VCF/BCF file only for Qref creation)")
     ("target", value<string>(&vcfTarget), "tabix-indexed compressed VCF/BCF file for target genotypes")
     ("vcfExclude", value<string>(&vcfExclude), "tabix-indexed compressed VCF/BCF file containing variants to exclude from phasing")
+    ("excludeWithdrawals", value<string>(&sampleList), "Provide a text file with a list of samples matching those in the provided Qref. "
+            "Identifiers are in the first column (other columns are ignored), identifiers starting with \"W\" followed only by one or more digits will be excluded from the reference. "
+            "If the file extension is \".sample\" a BGEN .sample-file is expected, i.e. two header lines are ignored and the identifiers are expected to be in the 2nd column. "
+            "This option is not yet supported for creating a Qref.")
     ("vcfOutFormat,O", value<string>(&vcfOutFormat)->default_value("z"), "b|u|z|v: compressed BCF (b), uncomp BCF (u), compressed VCF (z), uncomp VCF (v)")
     ("excludeMultiAllRef", "exclude multi-allelic reference markers for phasing as well as for imputation")
     ("allowRefAltSwap", "allow swapping of REF/ALT in target vs. reference VCF (the output will match reference alleles)")
@@ -220,7 +244,7 @@ Args::Args(int argc, char *argv[]) :
     ("skipImputation", "skip reference imputation")
     ("makeQref", "create quick reference by dumping the decoded VCF reference, --ref is required with a VCF reference file, all other args are ignored")
     ("maxChunkMemory", value<uint64_t>(&maxChunkMemory)->default_value(16ull), "in GiB, targets that require a pre-estimated amount of memory larger than this will be divided into chunks")
-    ("chunkFlankSize", value<uint64_t>(&chunkFlankSize)->default_value(64), "number of target variants that will be used as flanking region to either side of a chunk; this will not extend a previously set region!")
+    ("chunkFlankSize", value<uint64_t>(&chunkFlankSize)->default_value(96), "number of target variants that will be used as flanking region to either side of a chunk; this will not extend a previously set region!")
     ("stat", value<string>(&statfile), "file for status output")
     ("lockfile", value<string>(&lockfile), "optional lockfile for exclusive CPU usage (used by CPU phasing and imputation). if not present, no CPU lock will be used.")
     ;
@@ -237,10 +261,8 @@ Args::Args(int argc, char *argv[]) :
 #endif
 
     opts_region.add_options()
-    // the chromosome is always set automatically
-    //("chrom", value<string>(&chromStr)->default_value("0"), "chromosome to analyze (if input has many, 0=first (either read from target or reference!))")
-    ("bpStart", value<int64_t>(&bpStart)->default_value(0), "minimum base pair position to analyze (1-based)")
-    ("bpEnd", value<int64_t>(&bpEnd)->default_value(MAX_CSI_COOR-1), "maximum base pair position to analyze (inclusive, 1-based)")
+    ("bpStart", value<int64_t>(&bpStart)->default_value(1), "minimum base pair position to analyze (1-based)")
+    ("bpEnd", value<int64_t>(&bpEnd)->default_value(MAX_CSI_COOR), "maximum base pair position to analyze (inclusive, 1-based)")
     ("bpFlanking", value<int64_t>(&bpFlanking)->default_value(0), "flanking region to use during phasing/imputation but discard in output")
     ;
 
@@ -258,15 +280,14 @@ Args::Args(int argc, char *argv[]) :
 
     opts_imputation.add_options()
     ("imputeInfo", value<string>(&impInfoStr)->default_value("a"), "string indicating desired imputation information for each genotype: 'a' allele dosage, 'g' genotype dosage, 'p' genotype probabilities; argument may contain any combination or none")
-    ("imputeFilter", value<double>(&impFilter)->default_value(0.0), "r2 score threshold for imputation output")
+    ("imputeR2filter", value<float>(&impR2filter)->default_value(0.0), "r2 score filter threshold for imputation output")
+    ("imputeMAFfilter", value<float>(&impMAFfilter)->default_value(0.0), "MAF filter threshold for imputation output (MAF is calculated from allele dosages!)")
     ("outputPhasedFile", "output phased sites in extra file if reference imputation is enabled, otherwise phased sites are written anyway")
     ("noMissingIDs", "convert missing variant IDs to chr:pos:ref:alt in imputation output or Qref, this option is automatically enabled when creating a Qref")
     ;
 
     opts_hidden.add_options()
     ("cMmaxsplit", value<float>(&cMmaxsplit)->default_value(0.125), "max run of homozygous genotypes for phasing in cM")
-//    ("minibdA", value<size_t>(&min_ibd_a)->default_value(40), "minimum number of consistent sites for IBD A condition (zero disables IBD check)")
-//    ("minibdB", value<size_t>(&min_ibd_b)->default_value(20), "minimum number of consistent sites for IBD B condition (must be <= minibdA - zero disables IBD check)")
     ("hsize", value<size_t>(&hsize)->default_value(100), "history size, must not be larger than 128 but larger than delta+1")
     ("hsize_fast", value<size_t>(&hsize_fast)->default_value(30), "history size in fast pre-phasing, must not be larger than 128, but larger than delta_fast+2")
     ("beamwidth", value<size_t>(&beamwidth)->default_value(128), "beam width")
@@ -283,7 +304,6 @@ Args::Args(int argc, char *argv[]) :
     ("overwriteCalls", "imputation is allowed to change genotype calls from the input, it will do so whenever the imputation result is different to the original call")
     ("improveCalls", "as in --overwriteCalls imputation is allowed to change genotype calls, but only if the dosage will be improved")
     ("numTmpFiles", value<unsigned>(&num_files)->default_value(0), "number of temporary files for imputation output (0=auto)")
-    ("overrideChunks", value<int>(&overrideChunks)->default_value(0), "disable automatic chunk division and set to provided number (0=auto enabled)")
     ("skipHeader", "skip writing of VCF header for output files")
     ("deterministic", "disable random generator such that the output is deterministic for each run")
     ("debug", "produce lots of debug output")
@@ -298,7 +318,7 @@ Args::Args(int argc, char *argv[]) :
 #endif
 #ifdef USE_AD_FPGA
     opts_hidden_hybrid.add_options()
-    ("buffer-size-FPGA", value<size_t>()->default_value(128*1024*1024), "Size for transmission buffers (FPGA->host) in bytes.")
+    ("buffer-size-FPGA", value<size_t>()->default_value(512*1024*1024), "Size for transmission buffers (FPGA->host) in bytes.")
     ("buffers-FPGA", value<unsigned>()->default_value(0), "Number of transmission buffers (FPGA->host) to keep around. (0=automatic)")
     ("timeout", value<unsigned long>(&timeout)->default_value(600000), "Timeout for FPGA transmissions (in ms)")
     ;

@@ -22,6 +22,7 @@
 #include <algorithm>
 
 #include "Datatypes.h"
+#include "RingBuffer.h"
 
 #include "BeamPath.h"
 

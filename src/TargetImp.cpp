@@ -34,7 +34,7 @@ TargetImp::TargetImp(size_t hap_id_, const VCFData& vcfdata_, const PBWT &pbwt_,
     M(vcfdata.getNSNPs()),
     Mref(vcfdata.getNSNPsFullRef()),
     num_blocks(num_blocks_),
-    misspos(vcfdata.getTgtMissPos()[hap_id_/2]),
+    misspos(vcfdata_.getTgtMissPos()[vcfdata_.getHaploidsTgtMap()[hap_id_]/2]),
     setmaxerrors(setmaxerrors_),
     imputeCalls(imputeCalls_),
     debug(debug_) {
@@ -45,7 +45,7 @@ TargetImp::TargetImp(size_t hap_id_, const VCFData& vcfdata_, const PBWT &pbwt_,
     currms.clear();
     mmaps.clear();
     idx0s.clear();
-    miss_its.clear();
+    miss_idxs.clear();
     nextmisss.clear();
     mrefs.clear();
 
@@ -54,17 +54,17 @@ TargetImp::TargetImp(size_t hap_id_, const VCFData& vcfdata_, const PBWT &pbwt_,
     mmaps.resize(num_blocks, vcfdata.getSNPIndexToFullRef(0)); // NEXT common site mapped to index in full reference
     idx0s.resize(num_blocks, 0); // points to the first match probably including mref (i.e. the end > m, should be the case for the first match)
 
-    miss_its.resize(num_blocks, misspos.cbegin());
+    miss_idxs.resize(num_blocks, 0);
     nextmisss.resize(num_blocks, ~0ull);
     for (unsigned block = 0; block < num_blocks; block++) {
-        if (miss_its[block] != misspos.cend()) {
-            nextmisss[block] = *(miss_its[block]);
-            miss_its[block]++;
+        if (miss_idxs[block] < misspos.size()) {
+            nextmisss[block] = misspos[miss_idxs[block]];
+            miss_idxs[block]++;
         }
     }
     mrefs.resize(num_blocks, 0);
 
-    // after calculating the sm matches the states have to be forwarded to the corresponding beginning of their block
+    // after calculating the sm matches the states have to be forwarded to the corresponding beginning of their block with prepareBlocks()!!!
 }
 
 // find all set maximal matches for this target
@@ -72,6 +72,12 @@ TargetImp::TargetImp(size_t hap_id_, const VCFData& vcfdata_, const PBWT &pbwt_,
 // AND according to the definition of a set-maximal match, as a result, the matches will also be sorted by their "start" field
 // (if not, that would indicate that one match includes another completely, which is not possible by definition)
 void TargetImp::calcSMMatches() {
+
+    // We check the missingness rate of the target here.
+    // If the missingness rate is above 50%, we do not report any set-maximal matches.
+    // As this is usually called in parallel for several targets, we should not generate a warning here.
+    if (misspos.size() > M/2)
+        return;
 
     // keep a history of the last intervals in the reference PBWT matching the target
     // from the current position until beginning of first empty interval.
@@ -82,11 +88,11 @@ void TargetImp::calcSMMatches() {
 
     // get position of first missing hap
     const auto &curr_misspos = misspos;
-    auto missit = curr_misspos.cbegin();
+    size_t missidx = 0;
     size_t nextmiss = ~0ull;
-    if (missit != curr_misspos.cend()) {
-        nextmiss = *missit;
-        missit++;
+    if (missidx < curr_misspos.size()) {
+        nextmiss = misspos[missidx];
+        missidx++;
     }
 
     // iterate over all target sites
@@ -96,16 +102,12 @@ void TargetImp::calcSMMatches() {
         bool missing = m == nextmiss;
         if (missing) {
             // find next missing
-            if (missit == curr_misspos.cend())
+            if (missidx >= curr_misspos.size())
                 nextmiss = ~0ull;
             else {
-                nextmiss = *missit;
-                missit++;
+                nextmiss = curr_misspos[missidx];
+                missidx++;
             }
-//                // DEBUG set missing allele according to RefPanelAF and still use as anchor, as in original PBWT
-//                missing = false;
-//                curr_hap = vcfdata.getAlleleFreqFullRef(vcfdata.getSNPIndexToFullRef(m)) > 0.5;
-//                // __DEBUG
         }
 
         // process the history tree:
@@ -118,9 +120,9 @@ void TargetImp::calcSMMatches() {
 
 //        // DEBUG
 //        if (newmatches.size() > 0)
-//            cerr << "New matches: m: " << m << " cnt0: " << pbwt.getCount0(m) << " hap: " << (missing ? "?" : (curr_hap ? "1" : "0")) << " treedepth: " << treedepth << endl;
+//            cerr << "  New matches: m: " << m << " cnt0: " << pbwt.getCount0(m) << " hap: " << (missing ? "?" : (curr_hap ? "1" : "0")) << " treedepth: " << treedepth << endl;
 //        for (const auto &match : newmatches) {
-//           cerr << " [" << match.start << "," << match.end << ")(" << (match.end-match.start) << ") x [" << match.refstart << "," << match.refend << "](" << (match.refend - match.refstart + 1) << ")" << endl;
+//           cerr << "  [" << match.start << "," << match.end << ")(" << (match.end-match.start) << ") x [" << match.refstart << "," << match.refend << "](" << (match.refend - match.refstart + 1) << ")" << endl;
 //        }
 //        // __DEBUG
 
@@ -142,17 +144,14 @@ void TargetImp::calcSMMatches() {
 
 //    // DEBUG
 //    if (newmatches.size() > 0)
-//        cerr << "Last new matches: m: " << M << " treedepth: " << treedepth << endl;
+//        cerr << "  Last new matches: m: " << M << " treedepth: " << treedepth << endl;
 //    for (const auto &match : newmatches) {
-//       cerr << " [" << match.start << "," << match.end << ")(" << (match.end-match.start) << ") x [" << match.refstart << "," << match.refend << "](" << (match.refend - match.refstart + 1) << ")" << endl;
+//       cerr << "  [" << match.start << "," << match.end << ")(" << (match.end-match.start) << ") x [" << match.refstart << "," << match.refend << "](" << (match.refend - match.refstart + 1) << ")" << endl;
 //    }
 //    // __DEBUG
 
     // The reported matches all have the same size, since they are reported only from the maximum depth level.
     // Since the tree is deleted now, all matches are set-maximal.
-//    // DEBUG
-//    cerr << "Last matches are always set-maximal!" << endl;
-//    // __DEBUG
 
     for (auto &nm : newmatches) {
         sm_matches.push_back(move(nm));
@@ -162,9 +161,34 @@ void TargetImp::calcSMMatches() {
 #ifdef COUNTSMMATCHES
     {
         num_sites = 0;
-        for (const auto &match : sm_matches)
-            num_sites += (match.end - match.start) * (match.refend - match.refstart + 1);
+        size_t mlsum = 0, mhsum = 0;
+        for (Match &match : sm_matches) {
+            size_t match_length = match.end - match.start;
+            size_t match_height = match.refend - match.refstart + 1;
+            mlsum += match_length;
+            mhsum += match_height;
+
+            // check for which sites quick imputation is possible (if AF is very low)
+            size_t mref_start = vcfdata.getSNPIndexToFullRef(match.start);
+            size_t mref_end = match.end == vcfdata.getNSNPs() ? vcfdata.getNSNPsFullRef() : vcfdata.getSNPIndexToFullRef(match.end);
+            size_t mref_length = mref_end - mref_start;
+            size_t m_height = match.refend - match.refstart + 1;
+            num_sites += mref_length * m_height;
+            size_t nref = vcfdata.getNReferenceHaps();
+            size_t mref_reducable_length = 0; // reducable length (sites that can be quickly imputed)
+            for (size_t mr = mref_start; mr < mref_end; mr++) {
+                float af = vcfdata.getAlleleFreqFullRefRegion(mr);
+                float maf = af > 0.5 ? 1-af : af;
+                if (maf*nref < 0.1*m_height) {
+                    mref_reducable_length++;
+                }
+            }
+            reducable_sites += mref_reducable_length * m_height;
+            match.reducable_length = mref_reducable_length;
+        }
         num_matches = sm_matches.size();
+        av_match_length = mlsum / (double)num_matches;
+        av_match_height = mhsum / (double)num_matches;
     }
 #endif
     // __DEBUG
@@ -219,32 +243,104 @@ void TargetImp::calcSMMatches() {
 //        index++;
 //    }
 //    // __DEBUG
+}
 
+// for the distribution in several blocks (for parallel processing) prepare the start states for each block
+// NOTE: the first and the last field in num_sites_per_block should contain the number of vars in the overlap which should be ignored
+void TargetImp::prepareBlocks(const vector<size_t>& num_sites_per_block) {
 
-    // forward imputation block states:
+    // forward first block by the number of sites in the overlap
+    forwardBlock(0, num_sites_per_block[0]);
 
-    // determine number of sites per block
-    vector<size_t> num_sites_per_block(num_blocks);
-    for (unsigned block = 0; block < num_blocks; block++) {
-        size_t nspb = roundToMultiple(Mref, (size_t) num_blocks) / num_blocks;
-        if (Mref % num_blocks && block >= Mref % num_blocks)
-            nspb--;
-        num_sites_per_block[block] = nspb;
-    }
+    // forward imputation block states
     for (unsigned block = 1; block < num_blocks; block++) {
         // copy state from previous block
         beforefirstcommons[block] = beforefirstcommons[block-1];
         currms[block] = currms[block-1];
         mmaps[block] = mmaps[block-1];
         idx0s[block] = idx0s[block-1];
-        miss_its[block] = miss_its[block-1];
+        miss_idxs[block] = miss_idxs[block-1];
         nextmisss[block] = nextmisss[block-1];
         mrefs[block] = mrefs[block-1];
 
-        // forward state by number of sites in PREVIOUS block
-        forwardBlock(block, num_sites_per_block[block-1]);
+        // forward state by number of sites in PREVIOUS block (but keeping the extra overlap field in mind!)
+        forwardBlock(block, num_sites_per_block[block]);
+    }
+
+//    // DEBUG
+//    if (hap_id == 0) {
+//        cerr << "Mref:\t" << Mref << endl;
+//        cerr << "M:\t" << M << endl;
+//        cerr << "numsites:";
+//        for (size_t n = 0; n < num_blocks+2; n++)
+//            cerr << "\t" << num_sites_per_block[n];
+//        cerr << endl;
+//        cerr << "mrefs:\t\t";
+//        for (size_t n = 0; n < num_blocks; n++)
+//            cerr << "\t" << mrefs[n];
+//        cerr << endl;
+//        cerr << "currms:\t\t";
+//        for (size_t n = 0; n < num_blocks; n++)
+//            cerr << "\t" << currms[n];
+//        cerr << endl;
+//        cerr << "mmaps:\t\t";
+//        for (size_t n = 0; n < num_blocks; n++)
+//            cerr << "\t" << mmaps[n];
+//        cerr << endl;
+//        cerr << "idx0s:\t\t";
+//        for (size_t n = 0; n < num_blocks; n++)
+//            cerr << "\t" << idx0s[n];
+//        cerr << endl;
+//        cerr << "missidx:\t";
+//        for (size_t n = 0; n < num_blocks; n++)
+//            cerr << "\t" << miss_idxs[n];
+//        cerr << endl;
+//        cerr << "nextmiss:\t";
+//        for (size_t n = 0; n < num_blocks; n++)
+//            cerr << "\t" << nextmisss[n];
+//        cerr << endl;
+//    }
+//    // __DEBUG
+}
+
+#ifdef COUNTSMMATCHES
+void TargetImp::printSMMatches() {
+    for (const auto &m : sm_matches) {
+        printSMMatch(m);
+
+        size_t mref_start = vcfdata.getSNPIndexToFullRef(m.start);
+        size_t mref_end = m.end == vcfdata.getNSNPs() ? vcfdata.getNSNPsFullRef() : vcfdata.getSNPIndexToFullRef(m.end);
+        size_t mref_length = mref_end - mref_start;
+        size_t m_height = m.refend - m.refstart + 1;
+        size_t nref = vcfdata.getNReferenceHaps();
+        size_t mref_red_length = mref_length; // reduced length (sites that cannot be quickly imputed)
+//        size_t naf0001=0, naf001=0, naf01=0, naf1=0, nafr=0;
+        for (size_t mr = mref_start; mr < mref_end; mr++) {
+            float af = vcfdata.getAlleleFreqFullRefRegion(mr);
+//            if (af <= 0.00001) {
+//                naf0001++;
+//            } else if (af <= 0.0001) {
+//                naf001++;
+//            } else if (af <= 0.001) {
+//                naf01++;
+//            } else if (af <= 0.01) {
+//                naf1++;
+//            } else
+//                nafr++;
+            float maf = af > 0.5 ? 1-af : af;
+            if (maf*nref < 0.1*m_height) {
+                mref_red_length--;
+            }
+        }
+        cout << "      [ " << mref_start << "\t" << mref_end << "\t(" << mref_red_length << "/" << mref_length << " = " << (mref_red_length*100.0/mref_length) << "%) ]" << endl;
+                //"\t" << naf0001/(double)mref_length << "\t" << naf001/(double)mref_length << "\t" << naf01/(double)mref_length << "\t" << naf1/(double)mref_length << "\t" << nafr/(double)mref_length << "\t]" << endl;
     }
 }
+void TargetImp::printSMMatch(const Match &m) {
+    cout << "\t" << m.start << "\t" << m.end << "\t(" << (m.end - m.start) << ")\t" <<
+                    m.refstart << "\t" << m.refend << "\t(" << (m.refend - m.refstart + 1) << ")" << endl;
+}
+#endif
 
 // rtree is expected to be NULL on entry!
 size_t TargetImp::processHistorySubTree(HistoryTreeNode* &ltree, HistoryTreeNode* &rtree, size_t m, bool curr_hap, bool missing, size_t treedepth, bool perase, vector<Match> &matches) {
@@ -360,11 +456,11 @@ void TargetImp::forwardBlock(unsigned block, size_t nsites) {
         bool missing = currms[block] == nextmisss[block];
         if (missing && mrefs[block] == mmaps[block]) {
             // find next missing
-            if (miss_its[block] == misspos.cend())
+            if (miss_idxs[block] >= misspos.size())
                 nextmisss[block] = ~0ull;
             else {
-                nextmisss[block] = *miss_its[block];
-                miss_its[block]++;
+                nextmisss[block] = misspos[miss_idxs[block]];
+                miss_idxs[block]++;
             }
         }
 
@@ -380,6 +476,7 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
 
     // all sm matches that cover the current site (i.e. curr >= start && curr <= end-1) are used for imputation
     for (size_t nbunch = 0; nbunch < nsites && mrefs[block] < Mref; nbunch++, mrefs[block]++) {
+
         if (mrefs[block] == mmaps[block]) { // found common site
             if (beforefirstcommons[block]) {
                 // special case: we haven't had a common site yet (first segment), so m needs to stay zero for one more segment
@@ -396,11 +493,11 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
         bool missing = currms[block] == nextmisss[block];
         if (missing && mrefs[block] == mmaps[block]) {
             // find next missing
-            if (miss_its[block] == misspos.cend())
+            if (miss_idxs[block] >= misspos.size())
                 nextmisss[block] = ~0ull;
             else {
-                nextmisss[block] = *miss_its[block];
-                miss_its[block]++;
+                nextmisss[block] = misspos[miss_idxs[block]];
+                miss_idxs[block]++;
             }
         }
 
@@ -421,12 +518,24 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
                     // (we adapted the score such that m at the beginning of the match will also generate a value)
                     uint64_t single = (currms[block] - sm_matches[idx].start + 1) * (sm_matches[idx].end - currms[block]);
 
-                    // iterate over all references included in the interval of the match
-                    for (size_t ref = sm_matches[idx].refstart; ref <= sm_matches[idx].refend; ref++) {
-                        sum += single;
-                        size_t absref = pbwt.getSortOrder(sm_matches[idx].end)[ref]; // find the corresponding absolute index in the reference
-                        if (vcfdata.getReferenceFullT()[mrefs[block]][vcfdata.getHaploidsRefMap()[absref]]) { // is the corresponding haplotype == 1?
-                            score += single;
+                    // check if quick imputation for this site is possible (if AF is very low)
+                    float af = vcfdata.getAlleleFreqFullRefRegion(mrefs[block]);
+                    float maf = af > 0.5 ? 1-af : af;
+                    size_t sm_height = sm_matches[idx].refend - sm_matches[idx].refstart + 1;
+                    // check if due to AF the minor allele in this match cannot contribute enough (less than 0.1 dosage) to the score
+                    if (maf * vcfdata.getNReferenceHaps() < 0.01 * sm_height) {
+                        sum += sm_height * single;
+                        if (af > 0.5) { // if AF is not MAF -> increase score as if every ref would contribute a '1' haplotype
+                            score += sm_height * single;
+                        } // else, leave score as is (such as every ref would contribute a '0' haplotype)
+                    } else {
+                        // iterate over all references included in the interval of the match
+                        for (size_t ref = sm_matches[idx].refstart; ref <= sm_matches[idx].refend; ref++) {
+                            sum += single;
+                            size_t absref = pbwt.getSortOrder(sm_matches[idx].end)[ref]; // find the corresponding absolute index in the reference
+                            if (vcfdata.getReferenceFullT()[mrefs[block]][vcfdata.getHaploidsRefMap()[absref]]) { // is the corresponding haplotype == 1?
+                                score += single;
+                            }
                         }
                     }
 
@@ -441,8 +550,9 @@ void TargetImp::imputeBunch(unsigned block, size_t nsites, BooleanVector &impute
             }
         }
 
-        if (mrefs[block] == mmaps[block]) // need to update the mapping for the next common site if we are at a common site
+        if (mrefs[block] == mmaps[block]) { // need to update the mapping for the next common site if we are at a common site
             mmaps[block] = (currms[block]+1) < M ? vcfdata.getSNPIndexToFullRef(currms[block]+1) : Mref;
+        }
 
     }
 }

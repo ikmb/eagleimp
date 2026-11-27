@@ -1,5 +1,5 @@
 /*
- *    Copyright (C) 2018-2021 by Lars Wienbrandt,
+ *    Copyright (C) 2018-2025 by Lars Wienbrandt,
  *    Institute of Clinical Molecular Biology, Kiel University
  *    
  *    This file is part of EagleImp.
@@ -33,6 +33,7 @@
 
 #include "Args.h"
 #include "Datatypes.h"
+#include "RingBuffer.h"
 #include "MapInterpolater.h"
 #include "FPGAConfigurationEagleImp.h"
 
@@ -56,9 +57,7 @@ public:
         if (doImputation)
             infofile.close();
         if (refdata) MyMalloc::free(refdata);
-        if (refdataOverlap) MyMalloc::free(refdataOverlap);
         if (refdataT) MyMalloc::free(refdataT);
-        if (refdataTOverlap) MyMalloc::free(refdataTOverlap);
         if (multiAllFlagsFullRefRegion.getData()) MyMalloc::free(multiAllFlagsFullRefRegion.getData());
         for (auto &r : referenceFullT) {
             if (r.getData()) MyMalloc::free(r.getData());
@@ -79,14 +78,14 @@ public:
     void processNextChunk();
 
     const vector<BooleanVector> &getReference_const() const { return reference; }
-    const vector<BooleanVector> &getReferenceT_const() const { return referenceT; }
+    const RingBuffer<BooleanVector> &getReferenceT_const() const { return referenceT; }
     vector<BooleanVector> &getReference() { return reference; }
-    vector<BooleanVector> &getReferenceT() { return referenceT; }
+    RingBuffer<BooleanVector> &getReferenceT() { return referenceT; }
     const vector<BooleanVector> &getReferenceFullT() const { return referenceFullT; }
     const vector<GenotypeVector> &getTargets() const { return targets; }
-    const vector<vector<size_t>> &getTgtMissPos() const { return tgtmiss; }
-    const vector<vector<bool>> &getTgtInPhases() const { return tgtinphase; }
-    const vector<fp_type> &getCMPos() const { return cMs; }
+    const vector<RingBuffer<size_t>> &getTgtMissPos() const { return tgtmiss; }
+    const vector<RingBufferBool> &getTgtInPhases() const { return tgtinphase; }
+    const RingBuffer<fp_type> &getCMPos() const { return cMs; }
     const vector<string> &getTargetIDs() const { return targetIDs; }
 
     // returns the number of reference haplotypes (NOTE: haploids are encoded as homozygous diploid!)
@@ -108,7 +107,12 @@ public:
     size_t getNHaploidsRef() const { return nHaploidsRef; }
     // returns the number of haploid samples in the target
     size_t getNHaploidsTgt() const { return nHaploidsTgt; }
+    unsigned getNumWorkers() const { return num_workers; }
+    unsigned getNumFiles() const { return num_files; }
+    // returns the number of sites per file, whereby the first and the last element indicate the number of sites in the corresponding overlap, that should be ignored for writing
+    const vector<size_t>& getNumSitesPerFile() const { return num_sites_per_file; }
     size_t getBunchSize() const { return bunchsize; }
+    size_t getNBunches() const { return nbunches; }
 
     // determines the start phases for the next chunk from the phasing results of the current chunk
     void determineStartPhases(const vector<BooleanVector> &phasedTargets);
@@ -117,7 +121,7 @@ public:
 
     void writePhasedConfidences(const vector<fp_type> &totalconfs, const vector<size_t> &ncalls);
     void writeVCFPhased(const vector<BooleanVector> &phasedTargets);
-    void writeVCFImputedPrepare(size_t bunchsize);
+    void writeVCFImputedPrepare();
     void writeVCFImputedBunch(
             unsigned block,
             size_t startidx,
@@ -148,10 +152,10 @@ private:
     // add included variant to info file
     inline void addToInfoFileIncluded(size_t pos, const string& tgtID, const string& tref, const string& talt, const string& refID, const string& refall, const string& altall, const string& explanation);
 
-    inline void processReferenceOnlySNP(bcf1_t *ref, void **ref_gt, int *mref_gt, int &numMissing, int &numUnphased, bool inOverlap, bool multiallelic);
-    inline void processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, int *mref_gt, bool inOverlap,
+    inline void processReferenceOnlySNP(bcf1_t *ref, void **ref_gt, int *mref_gt, int &numMissing, int &numUnphased, bool multiallelic);
+    inline void processReferenceSNP(int nsmpl, bcf1_t *ref, void **ref_gt, int *mref_gt,
             int &numMissing, int &numUnphased, float &af, bool addForPhasing);
-    inline void processTargetSNP(int nsmpl, int ngt, const int32_t *gt, bool refAltSwap, bool inOverlap, int &numMissing, size_t tgtvariantpos);
+    inline void processTargetSNP(int nsmpl, int ngt, const int32_t *gt, bool refAltSwap, int &numMissing, size_t tgtvariantpos);
     inline void processMap(const MapInterpolater &mapInterpolater);
     inline void qRefAppendVariant(const BooleanVector& var);
     inline void qRefWriteMetaAndConcat();
@@ -167,8 +171,9 @@ private:
     // NOTE: the function may swap entries at positions greater or equal to the returned qridx
     //       (happens if tgt was found in a multi-allelic variant, then the matching variant is swapped to qridx, while others are moved to higher indices)
     inline bool loadAndFindInQref(bcf1_t *tgt, size_t &qridx, bool &refaltswapped, bool &strandflipped, bool &refalterror);
-    // loads the next variant from the Qref data stream and adds the data to referenceFullT by using push_back()
-    inline void qRefLoadNextVariant();
+    // loads the next variant from the Qref data stream and adds the data to referenceFullT by using emplace_back() if store == true
+    // ( if store == false only a placeholder without data is added to referenceFullT )
+    inline void qRefLoadNextVariant(bool store);
 
     // split multi-allelic reference SNPs:
     // *ref will be updated to a bi-allelic SNP with the reference and first alternative allele.
@@ -181,9 +186,13 @@ private:
     inline void appendVersionToBCFHeader(bcf_hdr_t *hdr) const;
     inline void concatFiles(const vector<string>& filenames) const;
     inline string getOutputSuffix();
+    // returns the number of variants only from the first valid sequence in the VCF file
     inline size_t getNumVariantsFromIndex(const string &vcffilename);
 
     void writeBCFRecords(vector<tbb::concurrent_bounded_queue<bcf1_t*>> &recq, htsFile *bcfout, bcf_hdr_t *bcfhdr, size_t numrecs);
+
+    // parses a sample list
+    void parseSampleList(const string& samplelist);
 
     int command_argc;
     char** command_argv;
@@ -191,35 +200,29 @@ private:
     MapInterpolater mapint;
 
     const string refFileName;
-    vector<BooleanVector> reference; // reference haplotypes on target sites (false = ref, true = alt), size is NrefhapsxM (capacity: NrefhapsmaxxM), sample-major (includes space for phased targets for multiple phasing iterations)
-    vector<BooleanVector> referenceOverlap;
+    vector<BooleanVector> reference; // reference haplotypes on target sites (false = ref, true = alt), size is Nrefhaps x M (capacity: Nrefhapsmax x M), sample-major (includes space for phased targets for multiple phasing iterations)
     BooleanVector::data_type *refdata = 0;
-    BooleanVector::data_type *refdataOverlap = 0;
-    vector<BooleanVector> referenceT; // reference haplotypes on target sites (transposed), size MxNrefhaps (capacity: MxNrefhapsmax), haploids are encoded homozygous diploid!
-    vector<BooleanVector> referenceTOverlap;
+    RingBuffer<BooleanVector> referenceT; // reference haplotypes on target sites (transposed), size M x Nrefhaps (capacity: M x Nrefhapsmax), haploids are encoded homozygous diploid!
     BooleanVector::data_type *refdataT = 0;
-    BooleanVector::data_type *refdataTOverlap = 0;
-
+    vector<size_t> maskedRefSamples; // indices of samples that should be ignored when loading the reference
+    vector<bool> maskedRefSampleIsHaploid; // to each masked sample store if it is haploid -> required to recalculate refpanel allele frequency
+    size_t NSampleList; // number of samples provided in sample list -> required for check when Qref is loaded
 
     // ATTENTION! Be aware that the underlying data chunks are not a combined portion of memory, but individually for each variant!
     // They also have to be freed individually
     vector<BooleanVector> referenceFullT; // complete reference haplotypes in chunk (false = ref, true = alt), size is Mrefx2xNref, SNP-major (no space for phased targets!)
-    // capacity for haps in one sample
+    // capacity (size in bytes) for haplotypes of all samples for one variant
     size_t hapcapacity;
+    size_t hapcapacity_beforemask; // same as hapcapacity but before masking samples
 
-    vector<GenotypeVector> targets; // target genotypes (0 = hom ref, 1 = het, 2 = hom alt, 9 = missing), size is Ntarget
-    vector<GenotypeVector> targetsOverlap; // target genotypes (0 = hom ref, 1 = het, 2 = hom alt, 9 = missing), size is Ntarget
-    vector<vector<size_t>> tgtmiss; // positions of missings in targets
-    vector<vector<size_t>> tgtmissOverlap; // positions of missings in targets (overlap region)
-    vector<vector<bool>> tgtinphase; // input target phases, true == mat:1 pat:0, false others (only stored if --skipPhasing is enabled)
-    vector<vector<bool>> tgtinphaseOverlap; // input target phases, true == mat:1 pat:0, false others (only stored if --skipPhasing is enabled) (overlap region)
+    vector<GenotypeVector> targets; // target genotypes, size is Ntarget
+    vector<RingBuffer<size_t>> tgtmiss; // positions of missings in targets
+    vector<RingBufferBool> tgtinphase; // input target phases, true == mat:1 pat:0, false others (only stored if --skipPhasing is enabled)
     vector<uint64_t> chrBpsReg; // base pair positions of target SNPs on target chromosome, size is Mreg
-    vector<fp_type> cMs; // size is M
-    vector<fp_type> cMsOverlap;
+    RingBuffer<fp_type> cMs; // size is M
     fp_type cM0; // for the statistics: store first cM value
     vector<string> targetIDs; // identifier strings for target samples
-    vector<bool> isPhased; // size corresponds to the number of SNPs which will be written to phased output file in curr chunk (M if "!outputUnphased") and indicates if the entry is/will be phased or not
-    vector<bool> isPhasedOverlap; // same for overlap region
+    RingBufferBool isPhased; // size corresponds to the number of SNPs which will be written to phased output file in curr chunk (M if "!outputUnphased") and indicates if the entry is/will be phased or not
     vector<bool> haploidsTgt; // flag for all samples in target that are haploid
     vector<bool> haploidsTgt_initialized; // flag for all samples if the information in haploidsTgt is valid, usually set after first target SNP (just in the case if the first genotype is missing, it will be set later)
     vector<size_t> haploidsTgtMap; // map index of any haplotype vector (indexed from where haploids are encoded as haploids) to index in target haps where haploids are encoded as homozygous diploid
@@ -227,49 +230,52 @@ private:
     vector<bool> haploidsRef; // flag for all samples in reference that are haploid (only allowed (and used) for X and Y chromosome)
     vector<bool> haploidsRef_initialized; // flag for all samples if the information in haploidsRef is valid, usually set after first reference SNP (just in the case if the first genotype is missing, it will be set later)
     vector<size_t> haploidsRefMap; // map index of any haplotype vector (indexed from where haploids are encoded as haploids) to index in reference where haploids are encoded as homozygous diploid
+    vector<size_t> haploidsRef_idx; // indices of all haploid reference samples (only used for chrX)
     size_t       nHaploidsRef = 0; // number of haploid reference samples
-    vector<float> alleleFreqsCommon; // size corresponds to phased sites, contains the allele frequencies of each variant (-1.0 if unknown)
-    vector<float> alleleFreqsCommonOverlap; // for overlap
-    vector<bcf1_t*> bcf_pout; // all records w/o genotypes for phased output; if "outputUnphased" is set, this vector keeps the records of the unphased SNPs including genotypes as well; ensure to add copies only!
-    vector<bcf1_t*> bcf_poutOverlap; // same for overlap region
+    size_t       nHaploidsRef_beforemask = 0; // number of haploid reference samples before masking samples
+    RingBuffer<float> alleleFreqsCommon; // size corresponds to phased sites, contains the allele frequencies of each variant (-1.0 if unknown)
+    RingBuffer<bcf1_t*> bcf_pout; // all records w/o genotypes for phased output; if "outputUnphased" is set, this vector keeps the records of the unphased SNPs including genotypes as well; ensure to add copies only!
     bcf_hdr_t *tgt_hdr_cpy; // copy of the target header used for the phased output file -> for imputation, the sample names are copied
 
-    vector<bool> isImputed; // size corresponds to imputation output of current chunk, indicates if the SNP is/will be imputed or not
-    vector<bool> isImputedOverlap; // overlap region
-    // for each analyzed target SNP the index in the full reference vector that corresponds to this SNP, size is M
-    vector<size_t> indexToRefFull;
-    vector<size_t> indexToRefFullOverlap; // for overlap region
-    // for each reference SNP the index for the next common site in the the target, size as Mref
-    // (index corresponds to position in targets vector if the current site is common, the index corresponds to the same site;
-    // if no common index follows, the stored value is M)
-    vector<size_t> nextPidx;
-    vector<size_t> nextPidxOverlap;
+    RingBufferBool isImputed; // size corresponds to imputation output of current chunk, indicates if the SNP is/will be imputed or not
+    // for each analyzed target SNP the index in the full reference vector (relative to current chunk) that corresponds to this SNP, size is M
+    RingBuffer<size_t> indexToRefFull;
+    // for each reference SNP the index for the next common site in the the target (isPhased or bcf_pout), size as Mref
+    // (index points to position in bcf_pout vector;
+    //  if the current site is common, the index corresponds to the same site;
+    //  if no common index follows, the stored value is M)
+    RingBuffer<size_t> nextPidx;
     // for each reference SNP the index for the commonly analyzed target site (i.e. the index in phasedTarget), it points to the next common site if this site was not analyzed in phasing
-    vector<size_t> ptgtIdx;
-    vector<size_t> ptgtIdxOverlap;
+    RingBuffer<size_t> ptgtIdx;
 
-    vector<int64_t> positionsFullRefRegion; // chromosome positions of complete reference in region
+    vector<int64_t> positionsFullRefRegion; // chromosome positions of complete reference in region, 0-based
     vector<float> alleleFreqsFullRefRegion; // allele frequencies of each variant in complete reference in region
     vector<string> allelesFullRefRegion; // alleles, alternating ref and alt allele per variant, of complete reference in region
     vector<string> variantIDsFullRefRegion; // variant IDs of complete reference in region
     BooleanVector multiAllFlagsFullRefRegion;  // marked true if multi-allelic variant was split to bi-allelic, of complete reference in region
 
-
     size_t Nref;
+    size_t Nref_beforemask;
     size_t Nrefhaps; // number of reference haplotypes (NOTE: originally haploids are encoded homozygous diploid!, so this is 2*Nref)
     size_t Ntarget; // number of target samples
     size_t Nrefhapsmax; // maximum number of reference samples (Nrefhaps if iters <= 1, Nrefhaps+Ntargethaps else)
-    size_t M; // number of SNPs common in target and reference in current chunk
+    size_t M; // number of SNPs common in target and reference in current chunk (incl. overlap)
     size_t Mglob; // complete number of SNPs in target file
-    size_t Mref; // number of SNPs in reference (for imputation) in current chunk
+    size_t Mref; // number of SNPs in reference (for imputation) in current chunk (incl. overlap)
     size_t Mrefreg; // number of SNPs in reference (for imputation) in selected region -- only set with a Qref!
     size_t Mrefglob; // global number of SNPs in reference (before reduction to region)
     size_t MrefMultiAllreg; // number of SNPs in reference that originate from a split multi-allelic variant in selected region -- only set with a Qref!
     size_t MrefMultiAllglob; // global number of SNPs in reference that originate from a split multi-allelic variant (before reduction to region) -- only set with a Qref!
-    size_t bunchsize;
+    size_t MLeftOv, MRightOv; // number of common tgt sites in overlap to previous (left) or next (right) chunk
+    size_t MrefLeftOv, MrefRightOv; // number of ref sites in overlap to previous (left) or next (right) chunk
+    size_t bunchsize; // number of sites for each file to be imputed in parallel (nbunches * bunchsize * num_files = Mref)
+    size_t nbunches = 1;
     bool useExclude; // using an exclude file?
 
-    size_t currM = 0, currMref = 0, currMOverlap = 0, currMrefOverlap = 0;
+    // continuously updated while reading, after reading used to update M/Mref: currM: number of common tgt sites in chunk (incl. overlap); currMref: number of reference sites in chunk (incl. overlap)
+    size_t currM = 0, currMref = 0;
+    // after reading: number of tgt sites in chunk in overlap to NEXT chunk.
+    size_t currMOverlap = 0;
 
     bool allowRefAltSwap;
     bool allowStrandFlip;
@@ -279,16 +285,15 @@ private:
     bool chrliterally;
     bool setChrom = false;
     bool checkedChrom = false;
-    // global region (end inclusive!)
+    // global region (end inclusive!), 1-based!
     int64_t startRegionBp, endRegionBp;
     int64_t startFlankRegionBp, endFlankRegionBp; // including flanks
-    // this is the maximum size of a chunk in target variants
-    const uint64_t maxchunkmem, chunkflanksize;
-    // region for current chunk (without flanks) (end inclusive!)
+    // this is the maximum size of a chunk in bytes
+    const uint64_t maxchunkmem;
+    const uint64_t chunkflanksize; // number of tgt variants in the overlap to the left and to the right (total overlap = 2xchunkflanksize)
+    // region for current chunk (without flanks) (end inclusive!), 0-based!
     // set after reading the corresponding target data
-    int64_t startChunkBp, endChunkBp;
-    vector<size_t> startChunkIdx; // tgt index for beginning of chunk
-    vector<size_t> startChunkFlankIdx; // tgt index for beginning of chunk (with flanking region)
+    int64_t startChunkBp = 0, endChunkBp = 0;
     vector<size_t> endChunkFlankIdx; // tgt index for end of chunk (with flanking region, exclusive)
     // for phasing: start phase for each target
     // set for next chunk while writing phased or imputed data according to first heterozygous site in overlap region
@@ -318,10 +323,12 @@ private:
     bool writeADosage = false;
     bool writeGDosage = false;
     bool writeProbs = false;
-    double impFilter = 0.0;
+    float impR2filter = 0.0;
+    float impMAFfilter = 0.0;
     unsigned num_workers = 1;
-    vector<size_t> site_offsets;
     unsigned num_files = 1;
+    vector<size_t> num_sites_per_file;
+    vector<size_t> site_offsets;
     vector<vector<float>> ads_vec;
     vector<vector<float>> ds_vec;
     vector<vector<float>> gp_vec;
@@ -341,21 +348,23 @@ private:
     bool improveCalls;
 
     bool skipHeader;
-    int overrideChunks;
+//    int overrideChunks;
 
     size_t tgtlinesread;
     size_t reflinesread;
     size_t qrefregfirstidx = 0;
     size_t qrefreglastidx = UINT64_MAX; // exclusive!
     size_t qrefcurridxglob = 0;
-    size_t qrefcurridxreg = 0;
+    size_t qrefcurridxreg = 0; // points to the next variant to be loaded (equals the number of loaded variants in the region)
     ifstream qin; // for Qref
     bcf_srs_t *sr; // synchronized reader, for VCF/BCF
     bcf_hdr_t *ref_hdr; // header for reading reference VCF
     bcf_hdr_t *tgt_hdr; // header for reading target VCF
-    int nChunks = 1; // default
+    int nChunks = 1; // total number of chunks (immediate number, only valid after all data was read)
+    int minNChunks = 1; // minimum number of chunks the analysis is conducted with
+    size_t maxChunkTgtVars = ~0ull; // maximum number of tgt variants allowed in a chunk
     int currChunk = -1; // indicates the currently loaded chunk, -1 indicates "chunk not yet loaded"
-    size_t currChunkOffset; // index offset of current chunk's first local imputation index to reference index in current region
+    size_t currChunkOffset = 0; // index offset of current chunk's first local imputation index to reference index in current region
 
     ofstream infofile; // imputation info file that contains information on each target variant
 

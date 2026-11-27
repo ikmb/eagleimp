@@ -70,11 +70,11 @@ void PBWTPhaser::phase(vector<BooleanVector> &phasedTargets, vector<vector<float
 
     // do the phasing
 
-    if (usefpga) {
+    if (usefpga && !skipPhasing) {
 
         phaseFPGA(phasedTargets, phasedDosages, chunk, totconfidences, ncalls);
 
-    } else if (usegpu) {
+    } else if (usegpu && !skipPhasing) {
 
         phaseGPU(phasedTargets, phasedDosages, chunk, totconfidences, ncalls);
 
@@ -100,9 +100,14 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
             << " threads for phasing." << endl;
 
     // init FPGA buffers
-    BufferFactory<FPGABuffer> fpgaBufferFactory(fpga_buffersize);
+    BufferFactory<FPGABuffer> fpgaBufferFactory_wr(fpga_buffersize/4);
+    BufferFactory<FPGABuffer> fpgaBufferFactory_rd(fpga_buffersize);
+    // two buffers for FPGA writes (consumer and producer are single threads)
+    fpgaBufferFactory_wr.preallocateBuffer();
+    fpgaBufferFactory_wr.preallocateBuffer();
+    // user defined number of buffers for reading (should at least be two again)
     for(unsigned j = 0; j < fpga_num_buffers; ++j) {
-        fpgaBufferFactory.preallocateBuffer();
+        fpgaBufferFactory_rd.preallocateBuffer();
     }
 
     // init GPU buffers
@@ -118,20 +123,22 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
     }
 
     // set up transmission queues
-    tbb::concurrent_bounded_queue<targetQueue_type> provideQueue;
+    tbb::concurrent_bounded_queue<Target*> prepareTargetsQueue;
+    tbb::concurrent_bounded_queue<Target*> provideQueue;
     tbb::concurrent_bounded_queue<targetQueue_type> processQueue;
-//    tbb::concurrent_bounded_queue<condensedRefQueue_type> crefFPGAQueue;
     tbb::concurrent_bounded_queue<cPBWTQueue_type> cPBWTQueue;
     tbb::concurrent_bounded_queue<confidence_type> confidenceQueue; // contains only target ID and corresponding phasing confidence (incl. number of call sites) for result printing
-    cPBWTQueue.set_capacity(2); // if this is larger and the FPGA is faster than the phasing process, we can quickly get out of memory here for large datasets!
-    confidenceQueue.set_capacity(nTarget);
 
     stringstream ss;
     ss << "Phasing (Chunk " << chunk+1 << "/" << vcfdata.getNChunks() << ")";
     string statusstring = ss.str();
     StatusFile::updateStatus(0, statusstring);
 
-    FPGAHandler fpgahandler(hysys, fpga_timeout, fpgaBufferFactory, gpuBufferFactory, vcfdata, maxpbwtsites, numthreads, !usegpu, debug);
+    FPGAHandler fpgahandler(hysys, fpga_timeout, fpgaBufferFactory_wr, fpgaBufferFactory_rd, gpuBufferFactory, vcfdata, maxpbwtsites, numthreads, !usegpu, debug);
+    size_t blocksize = fpgahandler.getBlockSize();
+    provideQueue.set_capacity(2*blocksize); // two blocks to prevent the FPGA from waiting for the host
+    cPBWTQueue.set_capacity(2*numthreads); // Note: This holds a lot of memory here (2*PBWT per target). Don't make this queue too large!
+    confidenceQueue.set_capacity(nTarget);
 
     for (uint32_t iter = 1; iter <= iters; iter++) {
 
@@ -221,16 +228,26 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
         fpgahandler.prepareReferenceBuffers();
 
         cout << "Phasing iteration " << iter << "/" << iters << " (K=" << localK << "): 0%" << flush;
-        int pgb = 0; // for progress bar
 
-        // processor (currently only 1 thread) that initializes the targets to the FPGA and streams the references
-        ThreadPool<targetQueue_type, targetQueue_type> fpgaProvider(
+        // processor that prepares the phasing process for each target
+        ThreadPool<Target*, Target*> fpgaPrepare(
+#if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT || defined STOPWATCH
+                1,
+#else
+                numthreads, // use user assigned number of threads
+#endif
+                prepareTargetsQueue,
+                provideQueue,
+                bind(&FPGAHandler::preparePhasing, &fpgahandler, _1, _2, _3, _4));
+
+        // processor (should be 1 thread per FPGA) that initializes the targets to the FPGA and streams the references
+        ThreadPool<Target*, targetQueue_type> fpgaProvider(
                 1,
                 provideQueue,
                 processQueue,
                 bind(&FPGAHandler::provideReferences, &fpgahandler, _1, _2, _3, _4));
 
-        // processor (currently only 1 thread) that collects the condensed references created by the FPGA and prepares
+        // processor (should be 1 thread per FPGA) that collects the condensed references created by the FPGA and prepares
         // targets that can be phased multi-threaded by the fpgaPhasingProcessor
         ThreadPool<targetQueue_type, cPBWTQueue_type> fpgaOnlyPreProcessor(
                 1,
@@ -255,44 +272,32 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
         fpgaOnlyPreProcessor.run();
         // start providing target/reference data to FPGA
         fpgaProvider.run();
+        // start phasing preparation
+        fpgaPrepare.run();
 
-        // fill inqueue of provide thread
-        size_t curr_filled = 0;
-        size_t blocksize = fpgahandler.getBlockSize();
-        vector<Target*> *target_block = new vector<Target*>;
+        // fill inqueue of preparation thread
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT
         for (size_t nt = DEBUG_TARGET_START; nt <= DEBUG_TARGET_STOP; nt++)
 #else
         for (size_t nt = 0; nt < nTarget && !terminate; nt++)
 #endif
         {
-            if (curr_filled == blocksize) { // need to push the current data to the queue
-                if (debug)
-                    cout << "Pushing block. (curr target: " << nt << ")" << endl;
+//            if (debug)
+//                cout << "Pushing target " << nt << endl;
 
-                provideQueue.push(shared_ptr<vector<Target*>>(target_block));
-
-                target_block = new vector<Target*>; // assign new block
-                curr_filled = 0;
-            }
             Target* tgtptr = new Target(phasedTargets[2*nt], phasedTargets[2*nt+1], phasedDosages[2*nt], phasedDosages[2*nt+1],
                     nt, targetIDs[nt], vcfdata, localNrefhapsAD, localNrefhapsCorr, localK, expectIBDcM, hist, pErr, pLimit, doPrePhasing,
                     doRevPhasing, iter == iters, impMissing, skipPhasing, usefpga);
-            target_block->push_back(tgtptr);
-            curr_filled++;
+            prepareTargetsQueue.push(tgtptr); // blocks if queue contains two FPGA blocks of targets!
         }
 
-        // push the last data (probably containing less than blocksize targets, but at least one!)
-        if (debug)
-            cout << "Pushing last block. (size: " << target_block->size() << ")" << endl;
-        // sets the termination request and ensures that at least one block is in the queue to release a pop operation
-        // and to mark the last block transmitted to the FPGA as "last_block".
-        if (terminate) {
-            fpgaProvider.setTerminationRequest(false); // do not abort inqueue! the next pop operation has to be successful to mark the block sent to the FPGA as "last_block"
-            fpgaOnlyPreProcessor.setTerminationRequest(false); // do not abort inqueue as the targets in the queue were all going to be processed by the FPGA and need to be fetched!
-            fpgaPhasingProcessor.setTerminationRequest(true); // abort inqueue as the preliminary process will not push to its outqueue after receiving the termination request
-        }
-        provideQueue.push(shared_ptr<vector<Target*>>(target_block));
+        // At this point, we just need to collect the data from the other threads.
+        // The capacity of the last queue ensures, that we didn't run into a deadlock before.
+
+        int pgb = 0; // for progress bar
+        // for progress display: lines per each display step (displaying 80 steps: every 5% and three dots in between)
+        size_t prghelp_total = nTarget;
+        size_t prghelp_linesperdispl = divideRounded(prghelp_total, (size_t)80);
 
         // just fetch all confidences
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT
@@ -301,13 +306,11 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
         for (size_t nt = 0; nt < nTarget; nt++)
 #endif
         { // we might not know the order in which the results arrive, but we know that there must be exactly nTarget results
-            if (nt % 64 == 0) { // update status file every 64 targets
-//                float progress = ((nt/(float)nTarget)/(float)iters)/(float)vcfdata.getNChunks();
-//                progress += ((iter-1)/(float)iters)/(float)vcfdata.getNChunks();
-//                progress += chunk/(float)vcfdata.getNChunks();
-                StatusFile::updateStatus(nt/(float)nTarget);
+            // progress display
+            if (nt % prghelp_linesperdispl == 0) {
+                StatusFile::updateStatus(nt/(float)prghelp_total);
                 if (pgb==3) { // printing % after three dots
-                    cout << (100*nt)/nTarget << "%" << flush;
+                    cout << (100*nt)/prghelp_total << "%" << flush;
                     pgb = 0;
                 } else {
                     cout << "." << flush;
@@ -316,7 +319,8 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
             }
             // terminate the processor threads if there's a user termination request
             if (terminate) { // termination request received -> terminate processor threads and leave
-                fpgaProvider.setTerminationRequest(false); // do not abort inqueue! the next pop operation has to be successful to mark the block sent to the FPGA as "last_block"
+                fpgaPrepare.setTerminationRequest(true); // as there are many threads potentially waiting, we need to abort the queue
+                fpgaProvider.setTerminationRequest(true); // no problem to abort inqueue, the last (incomplete) block will be sent to the FPGA and marked as last block anyway
                 fpgaOnlyPreProcessor.setTerminationRequest(false); // do not abort inqueue as the targets in the queue were all going to be processed by the FPGA and need to be fetched!
                 fpgaPhasingProcessor.setTerminationRequest(true); // abort inqueue as the preliminary process will not push to its outqueue after receiving the termination request
                 break;
@@ -327,10 +331,12 @@ void PBWTPhaser::phaseFPGA(vector<BooleanVector> &phasedTargets __attribute__((u
             ncalls[tconf.id] += tconf.ncalls;
         }
 
-        if (terminate) { // we could terminate now
+        if (terminate) {
+            fpgaPrepare.waitForTermination();
             fpgaProvider.waitForTermination();
             fpgaOnlyPreProcessor.waitForTermination();
             fpgaPhasingProcessor.waitForTermination();
+            // we can terminate now
             cerr << "\nUser abort." << endl;
             exit(EXIT_FAILURE);
         }
@@ -586,17 +592,23 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
 
     {
         stringstream ss;
-        ss << "Phasing (Chunk " << chunk+1 << "/" << vcfdata.getNChunks() << ")";
+        if (skipPhasing)
+            ss << "Phase parsing";
+        else
+            ss << "Phasing";
+        ss << "(Chunk " << chunk+1 << "/" << vcfdata.getNChunks() << ")";
         StatusFile::updateStatus(0, ss.str());
     }
 
-    cout << "Using " <<
+    if (!skipPhasing) {
+        cout << "Using " <<
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT //|| defined STOPWATCH
                      1
 #else
                     numthreads
 #endif
                     << " threads for phasing." << endl;
+    }
 
     for (uint32_t iter = 1; iter <= iters; iter++) {
         Stopwatch swpi(string("iter ").append(to_string(iter)).c_str());
@@ -670,8 +682,15 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
         }
         localK = min(localNrefhapsCorr, Karg);
 
-        cout << "Phasing iteration " << iter << "/" << iters << " (K=" << localK << "): 0%" << flush;
-        int pgb = 0; // for progress bar
+        if (!skipPhasing)
+            cout << "Phasing iteration " << iter << "/" << iters << " (K=" << localK << "): ";
+        else
+            cout << "Parsing: ";
+        cout << "0%" << flush;
+        atomic<int> pgb(0); // for progress bar
+        // for progress display: lines per each display step (displaying 80 steps: every 5% and three dots in between)
+        size_t prghelp_total = nTarget;
+        size_t prghelp_linesperdispl = divideRounded(prghelp_total, (size_t)80);
 
 #if defined DEBUG_TARGET || defined DEBUG_TARGET_LIGHT || defined DEBUG_TARGET_SILENT
         for (size_t nt = DEBUG_TARGET_START; nt <= DEBUG_TARGET_STOP; nt++)
@@ -683,13 +702,11 @@ void PBWTPhaser::phaseCPU(vector<BooleanVector> &phasedTargets, vector<vector<fl
         for (size_t nt = 0; nt < nTarget; nt++)
 #endif
         {
-            if (nt % 64 == 0) { // update status file every 64 targets
-//                float progress = ((nt/(float)nTarget)/(float)iters)/(float)vcfdata.getNChunks();
-//                progress += ((iter-1)/(float)iters)/(float)vcfdata.getNChunks();
-//                progress += chunk/(float)vcfdata.getNChunks();
-                StatusFile::updateStatus(nt/(float)nTarget);
+            // progress display
+            if (nt % prghelp_linesperdispl == 0) {
+                StatusFile::updateStatus(nt/(float)prghelp_total);
                 if (pgb==3) { // printing % after three dots
-                    cout << (100*nt)/nTarget << "%" << flush;
+                    cout << (100*nt)/prghelp_total << "%" << flush;
                     pgb = 0;
                 } else {
                     cout << "." << flush;

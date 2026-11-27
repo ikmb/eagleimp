@@ -24,6 +24,7 @@
 #include "VCFData.h"
 #include "PBWT.h"
 #include "Datatypes.h"
+#include "RingBuffer.h"
 
 //// DEBUG
 //#define COUNTSMMATCHES
@@ -39,6 +40,10 @@ public:
     // and forwards the block states correspondingly (if there is more than one block)
     void calcSMMatches();
 
+    // for the distribution in several blocks (for parallel processing) prepare the start states for each block;
+    // num_sites_per_block indicates the number of sites for each block
+    void prepareBlocks(const vector<size_t>& num_sites_per_block);
+
     // imputes the next nsites variants according to pre-calculated set-maximal matches and stores the results in imputedTargetBunch and imputedDosageBunch
     void imputeBunch(unsigned block, size_t nsites, BooleanVector &imputedTargetBunch, vector<float> &imputedDosageBunch);
 
@@ -46,6 +51,10 @@ public:
 #ifdef COUNTSMMATCHES
     size_t num_matches = 0;
     size_t num_sites = 0;
+    double av_match_length = 0.0;
+    double av_match_height = 0.0;
+    size_t reducable_sites = 0;
+    void printSMMatches();
 #endif
     // __DEBUG
 
@@ -60,7 +69,14 @@ private:
         size_t end;      // end position (SNP), exclusive
         size_t refstart; // first ref index in PBWT sort order at end position of match (end-1)
         size_t refend;   // last ref index (inclusive) in PBWT sort order at end position of match (end-1)
+#ifdef COUNTSMMATCHES
+        size_t reducable_length = 0;
+#endif
     };
+
+#ifdef COUNTSMMATCHES
+    void printSMMatch(const Match &m);
+#endif
 
     // a tree consisting of these nodes stores PBWT intervals in the history when finding set-maximal-matches
     // @depth depth of the tree until this node, represents the length of the path represented by this node
@@ -108,8 +124,8 @@ private:
     vector<size_t> currms; // last common site (frame index) if beforefirstcommon == false
     vector<size_t> mmaps; // NEXT common site mapped to index in full reference
     vector<size_t> idx0s; // points to the first match probably including mref (i.e. the end > m, should be the case for the first match)
-    const vector<size_t> &misspos;
-    vector<vector<size_t>::const_iterator> miss_its;
+    const RingBuffer<size_t> &misspos;
+    vector<size_t> miss_idxs;
     vector<size_t> nextmisss;
     vector<size_t> mrefs; // curr position (in reference) for imputation
 

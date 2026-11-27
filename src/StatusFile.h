@@ -1,5 +1,5 @@
 /*
- *    Copyright (C) 2018-2021 by Lars Wienbrandt,
+ *    Copyright (C) 2018-2025 by Lars Wienbrandt,
  *    Institute of Clinical Molecular Biology, Kiel University
  *    
  *    This file is part of EagleImp.
@@ -60,10 +60,19 @@ public:
             ofs << instance.statvalue << "," << instance.statinfostr << endl;
     }
 
-    static void updateSteps(unsigned currstep, unsigned totalsteps = 0) {
-        instance.statcurrstep = currstep;
-        if (totalsteps)
-            instance.stattotalsteps = totalsteps;
+    static void setStepsPerChunk(unsigned stepsperchunk) {
+        instance.statstepsperchunk = stepsperchunk;
+        instance.stattotalsteps = instance.statstepsperchunk * instance.stattotalchunks;
+    }
+
+    static void setTotalChunks(unsigned totalchunks) {
+        instance.stattotalchunks = totalchunks;
+        instance.stattotalsteps = instance.statstepsperchunk * instance.stattotalchunks;
+    }
+
+    static void begin() {
+        instance.statcurrstep = 0;
+        updateStatus(0);
     }
 
     static void nextStep() {
@@ -238,17 +247,14 @@ private:
                 break;
             string m = message.substr(spos, pos - spos);
             if (!m.empty()) { // only print non-empty messages
-            	s << "\n" << ind;
             	if (first) {
-            		s << "\""; // put message in quotation marks
+            		s << "|"; // begin YAML block
             		first = false;
             	}
-                s << m;
+            	s << "\n" << ind << m;
             }
             start = pos+1; // character after newline
         }
-        if (!first)
-        	s << "\""; // end quotation mark
         s << "\n";
     }
 
@@ -260,6 +266,8 @@ private:
     string statinfostr;
     unsigned statcurrstep = 0;
     unsigned stattotalsteps = 1; // initial default value
+    unsigned statstepsperchunk = 1; // initial default
+    unsigned stattotalchunks = 1; // initial default
     float statvalue = 0.0;
 
     string infofile;

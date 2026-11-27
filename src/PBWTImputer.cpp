@@ -39,9 +39,28 @@ PBWTImputer::PBWTImputer(const VCFData& vcfdata_, const string &statfile_, unsig
     setmaxerrors(setmaxerrors_),
     imputeCalls(imputeCalls_),
     debug(debug_) {
+
+    // generate warning if the missingness rate for some targets is too high (>50%)
+    vector<size_t> missgt50tgts;
+    for (size_t t = 0; t < vcfdata_.getNTarget(); t++) {
+        if (vcfdata.getTgtMissPos()[t].size() > M/2)
+            missgt50tgts.push_back(t);
+    }
+    if (missgt50tgts.size()) {
+        cout << endl;
+        stringstream ss;
+        ss << "Missingness rate is >50% for the following targets (idx / rate / ID). Imputation will generate dosage conflicts here.\n";
+        for (size_t t : missgt50tgts) {
+            float mr = vcfdata.getTgtMissPos()[t].size() / (float) M;
+            ss << "  " << t << " / ";
+            ss << fixed << setprecision(1) << roundf(1000*mr)/10.0 << "% / ";
+            ss << vcfdata.getTargetIDs()[t] << "\n";
+        }
+        StatusFile::addWarning(ss.str());
+    }
 }
 
-void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets) {
+void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets, const vector<size_t>& num_sites_per_block) {
 
     // create transposed reference (reduced to target sites):
     // (only required when haploids are present)
@@ -49,10 +68,11 @@ void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets) 
 
         // allocate memory and create vector structure for transposed reference
         size_t capacity = roundToMultiple(K, UNITWORDS * sizeof(BooleanVector::data_type) * 8) / 8;
-        BooleanVector::data_type *refdata = (BooleanVector::data_type*) MyMalloc::malloc(M * capacity, string("refdata")); // pre-initialization below
+        BooleanVector::data_type *refdata = (BooleanVector::data_type*) MyMalloc::calloc(M * capacity, 1, string("refdata")); // initialized with 'false'
 
         // transposed reference reduced to target sites (used as base for PBWT)
-        vector<BooleanVector> refT = move(vector<BooleanVector>(M, BooleanVector(refdata, M * capacity, 0, false))); // init complete area with false
+//        vector<BooleanVector> refT = vector<BooleanVector>(M, BooleanVector(refdata, M * capacity, 0, false)); // init complete area with false
+        RingBuffer<BooleanVector> refT(M,M);
 
         auto curr_data = refdata;
         for (auto &ref : refT) {
@@ -133,7 +153,7 @@ void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets) 
 #endif
         //imputeTarget(nhap, phasedTargets[nhap], pbwt, imputedTargets[nhap], imputedDosages[nhap]);
         targets[nhap].calcSMMatches();
-//        cout << "Target: " << nhap/2 << "." << nhap%2 << endl;
+        targets[nhap].prepareBlocks(num_sites_per_block);
     }
     swfindsetmax.stop();
 
@@ -141,15 +161,23 @@ void PBWTImputer::prepareImputation(const vector<BooleanVector> &phasedTargets) 
 #ifdef COUNTSMMATCHES
     size_t totalmatches = 0;
     size_t totalsites = 0;
+    size_t total_reducable_sites = 0;
     for (size_t nt = 0; nt < nTargetHap/2; nt++) {
         for (int i = 0; i < 2; i++) {
-            cout << nt << "." << i << ": " << targets[2*nt + i].num_matches << " matches. " << targets[2*nt + i].num_sites << " sites." << endl;
+            cout << nt << "." << i << ":\t" <<
+                    targets[2*nt + i].num_matches << " matches.\t" <<
+                    targets[2*nt + i].num_sites << " sites (" << targets[2*nt+i].reducable_sites << " reducable).\t" <<
+                    "avl: " << targets[2*nt + i].av_match_length << "\t" <<
+                    "avh: " << targets[2*nt + i].av_match_height << endl;
             totalmatches += targets[2*nt + i].num_matches;
             totalsites += targets[2*nt + i].num_sites;
+            total_reducable_sites += targets[2*nt + i].reducable_sites;
+            // more DEBUG - print matches
+            targets[2*nt+i].printSMMatches();
         }
     }
     cout << "Total matches: " << totalmatches << endl;
-    cout << "Total sites: " << totalsites << endl;
+    cout << "Total sites: " << totalsites << " (" << total_reducable_sites << " removable / " << (total_reducable_sites*100/(double)totalsites) << "%)" << endl;
     cout << "M: " << M << endl;
 #endif
     // __DEBUG

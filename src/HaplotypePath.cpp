@@ -297,7 +297,7 @@ void HaplotypePath::calculateHaplotypeProbabilities(
                 p0 = cnt0 * tmp[0];
             extPbwtInts0.emplace_back(0, cnt0-1);
         }
-        if (cnt0 < pbwt.getK()) {
+        if ((size_t)cnt0 < pbwt.getK()) {
             if (calcP1)
                 p1 = (pbwt.getK()-cnt0) * tmp[0];
             extPbwtInts1.emplace_back(cnt0, pbwt.getK()-1);

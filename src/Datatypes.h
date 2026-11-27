@@ -112,7 +112,6 @@ class BooleanVector {
 public:
     using data_type = std::uint64_t;
     static const size_t DATATYPEBITS = sizeof(data_type) * 8;
-//    static const size_t UNITWORDS = 8; // number of data_type words to present one unit (here: 512 bit = FPGA RAM bus word width)
 
     BooleanVector() : len(0), capacity(0), data(NULL), nextpushbit(1ull), nextpushword(NULL) {};
 
@@ -154,13 +153,6 @@ public:
 
     // only works if capacity is set large enough and memory is preinitialized with zero! otherwise you risk a segfault or undefined behaviour, no length check!!!
     inline void push_back_withPreInit(bool b) {
-//        data_type bit = b ? 1ull : 0ull;
-//        if (len % DATATYPEBITS == 0) {
-//            data[len/DATATYPEBITS] = bit;
-//        } else if (b) {
-//            data_type &curr = data[len/DATATYPEBITS];
-//            curr |= bit << (len % DATATYPEBITS);
-//        }
         if (b)
             *nextpushword |= nextpushbit;
 
@@ -264,6 +256,67 @@ public:
     /* no length check for speed reasons!! */
     inline bool operator[](size_t pos) const { return at(pos); }
 
+    // resizes the vector to keep only the last n elements
+    // also takes care of the memory to be erased properly (i.e. now unused areas are set to zero again)
+    inline void keepLast(size_t n) {
+        // DEBUG
+        if (n > len)
+            cerr << "WARNING: BooleanVector: tried to keep more elements (" << n << ") than the current size (" << len << ")." << endl;
+
+        // keeping nothing is the same as clearing the vector
+        if (n == 0) {
+            clear();
+            return;
+        }
+
+        // only need to proceed if n is lower than the number of stored elements
+        if (n < len) {
+            size_t lastidx = (len-1) / DATATYPEBITS;
+            size_t lastbitidx = (len-1) % DATATYPEBITS;
+            size_t new_lastidx = (n-1) / DATATYPEBITS;
+            size_t new_lastbitidx = (n-1) % DATATYPEBITS;
+            int64_t worddiff = lastidx - new_lastidx; // will be positive or zero
+
+            // shift data words to align kept data correctly
+            if (new_lastbitidx < lastbitidx) { // need a right shift
+                size_t shift = lastbitidx - new_lastbitidx;
+                data_type mask = (1ull << shift)-1; // to mask the carry-over bits
+                data_type carry = 0; // for the bits to shift in
+                for (int64_t i = lastidx; i >= worddiff; i--) {
+                    // store the bits that will be shifted out
+                    data_type new_carry = data[i] & mask;
+                    data[i] = (data[i] >> shift) | (carry << (DATATYPEBITS-shift));
+                    carry = new_carry;
+                }
+            } else if (new_lastbitidx > lastbitidx) { // need a left shift
+                size_t shift = new_lastbitidx - lastbitidx;
+                data_type mask = ((1ull << shift)-1) << (DATATYPEBITS-shift); // to mask the carry-over bits
+                data_type carry = data[worddiff-1] & mask; // directly take the carry bits for the first word (note that worddiff will be positive here)
+                for (size_t i = worddiff; i <= lastidx; i++) {
+                    // store the bits that will be shifted out
+                    data_type new_carry = data[i] & mask;
+                    data[i] = (data[i] << shift) | (carry >> (DATATYPEBITS-shift));
+                    carry = new_carry;
+                }
+            } // else: new_lastbitidx == lastbitidx: no shift required
+
+            // copy kept data to the front and erase previously used area (only if necessary)
+            if (worddiff) {
+                // copy
+                for (size_t d = 0, s = worddiff; d <= new_lastidx; d++,s++)
+                    data[d] = data[s];
+                // erase
+                for (size_t i = new_lastidx+1; i <= lastidx; i++)
+                    data[i] = 0;
+            }
+
+            // update
+            len = n;
+            nextpushbit = 1ull << (n % DATATYPEBITS);
+            nextpushword = data + (n / DATATYPEBITS);
+        }
+    }
+
     inline void dump(ostream &out) const {
         size_t ac = 0;
         for (size_t i = 0; i < len; i++) {
@@ -337,6 +390,10 @@ public:
 
     // returns a BooleanVector indicating all inconsistent sites in inconret. The vector must at least have the capacity of hapvec size.
     void getInconsistencies(BooleanVector &inconret, const BooleanVector &hapvec) const;
+
+    // resizes the vector to keep only the last n elements
+    // also takes care of the memory to be erased properly (i.e. now unused areas are set to zero again)
+    void keepLast(size_t n);
 
     // returns the data in the following encoding: even words are "is0", odd words are "is2".
     const vector<data_type> &getData() const { return data; }

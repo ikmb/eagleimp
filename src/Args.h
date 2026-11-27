@@ -90,6 +90,7 @@ public:
     bool isQRef;
     string vcfTarget;
     string vcfExclude;
+    string sampleList;
     string writeMode;
     bool impMissing = false;
     bool allowRefAltSwap = false;
@@ -98,7 +99,8 @@ public:
     bool outputUnphased = false;
 
     bool skipImputation = false;
-    double impFilter;
+    float impR2filter;
+    float impMAFfilter;
     bool noMissingIDs = false;
 
     bool outputPhased = false;
@@ -153,7 +155,7 @@ public:
     bool createQuickRef = false;
     bool skipHeader = false;
 
-    int overrideChunks;
+//    int overrideChunks;
     bool deterministic = false;
     bool debug = false;
     bool yaml = false;
@@ -174,7 +176,7 @@ protected:
     bpo::options_description opts_regular_hybrid; /**< regular options, shown on help output */
     bpo::options_description opts_region;         /**< regular region select options, shown on help output */
     bpo::options_description opts_phasing;        /**< regular phasing algorithm options, shown on help output */
-    bpo::options_description opts_imputation;        /**< regular imputation algorithm options, shown on help output */
+    bpo::options_description opts_imputation;     /**< regular imputation algorithm options, shown on help output */
     bpo::options_description opts_hidden;         /**< hidden options */
     bpo::options_description opts_hidden_hybrid;  /**< hidden options */
 
